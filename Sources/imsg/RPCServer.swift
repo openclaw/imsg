@@ -49,6 +49,7 @@ let kSupportedRPCMethods: [String] = [
   "group.addParticipant",
   "group.removeParticipant",
   "group.leave",
+  "handles.check",
 ]
 
 final class RPCServer {
@@ -178,6 +179,8 @@ final class RPCServer {
         try await handleGroupRemoveParticipant(id: id, params: params)
       case "group.leave":
         try await handleGroupLeave(id: id, params: params)
+      case "handles.check":
+        try await handleHandlesCheck(params: params, id: id)
       default:
         output.sendError(id: id, error: RPCError.methodNotFound(method))
       }

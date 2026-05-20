@@ -370,7 +370,11 @@ static void probeSelectors(void) {
 @end
 
 @interface IDSIDQueryController : NSObject
++ (instancetype)sharedInstance;
 + (instancetype)sharedController;
+- (NSInteger)_currentIDStatusForDestination:(NSString *)destination
+                                    service:(NSString *)service
+                                 listenerID:(NSString *)listenerID;
 - (id)currentIDStatusForDestination:(NSString *)destination service:(id)service;
 @end
 
@@ -3055,7 +3059,16 @@ static NSDictionary *handleCheckIMessageAvailability(NSInteger requestId, NSDict
     if (!address.length) return errorResponse(requestId, @"Missing address");
     Class q = NSClassFromString(@"IDSIDQueryController");
     if (!q) return errorResponse(requestId, @"IDSIDQueryController unavailable");
-    id ctrl = [q performSelector:@selector(sharedController)];
+    id ctrl = nil;
+    @try {
+        if ([q respondsToSelector:@selector(sharedInstance)]) {
+            ctrl = ((id (*)(id, SEL))objc_msgSend)(q, @selector(sharedInstance));
+        } else if ([q respondsToSelector:@selector(sharedController)]) {
+            ctrl = ((id (*)(id, SEL))objc_msgSend)(q, @selector(sharedController));
+        }
+    } @catch (NSException *ex) {
+        return errorResponse(requestId, ex.reason ?: @"controller unavailable");
+    }
     if (!ctrl) return errorResponse(requestId, @"controller nil");
 
     NSString *destination = address;
@@ -3067,14 +3080,22 @@ static NSDictionary *handleCheckIMessageAvailability(NSInteger requestId, NSDict
 
     NSInteger status = 0;
     @try {
-        SEL sel = @selector(currentIDStatusForDestination:service:);
-        if ([ctrl respondsToSelector:sel]) {
-            id result = [ctrl performSelector:sel withObject:destination withObject:nil];
-            if ([result isKindOfClass:[NSNumber class]]) {
-                status = [(NSNumber *)result integerValue];
+        SEL privateSel = @selector(_currentIDStatusForDestination:service:listenerID:);
+        if ([ctrl respondsToSelector:privateSel]) {
+            status = ((NSInteger (*)(id, SEL, id, id, id))objc_msgSend)(
+                ctrl, privateSel, destination, @"com.apple.madrid", @"imsg-bridge");
+        } else {
+            SEL sel = @selector(currentIDStatusForDestination:service:);
+            if ([ctrl respondsToSelector:sel]) {
+                id result = [ctrl performSelector:sel withObject:destination withObject:nil];
+                if ([result isKindOfClass:[NSNumber class]]) {
+                    status = [(NSNumber *)result integerValue];
+                }
             }
         }
-    } @catch (__unused NSException *ex) {}
+    } @catch (NSException *ex) {
+        return errorResponse(requestId, ex.reason ?: @"availability check failed");
+    }
 
     return successResponse(requestId, @{
         @"address": address,

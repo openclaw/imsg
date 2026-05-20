@@ -320,6 +320,50 @@ extension RPCServer {
     respond(id: id, result: result)
   }
 
+  func handleHandlesCheck(params: [String: Any], id: Any?) async throws {
+    let address = stringParam(params["address"]) ?? ""
+    guard !address.isEmpty else {
+      throw RPCError.invalidParams("address is required")
+    }
+
+    let aliasType =
+      stringParam(params["alias_type"]) ?? (address.contains("@") ? "email" : "phone")
+    guard aliasType == "phone" || aliasType == "email" else {
+      throw RPCError.invalidParams("alias_type must be phone or email")
+    }
+
+    let service = stringParam(params["service"]) ?? "iMessage"
+    guard service.caseInsensitiveCompare("iMessage") == .orderedSame else {
+      throw RPCError.invalidParams("handles.check only supports service iMessage")
+    }
+
+    if !isBridgeReady() {
+      throw RPCError.internalError(
+        "handles.check requires bridge transport (Messages.app must be injected)"
+      )
+    }
+
+    let data = try await bridgeInvoker(.checkImessageAvailability, [
+      "address": address,
+      "aliasType": aliasType,
+    ])
+
+    var result: [String: Any] = ["ok": true]
+    result["address"] = data["address"] as? String ?? address
+    result["alias_type"] = data["alias_type"] as? String ?? aliasType
+    if let destination = data["destination"] as? String, !destination.isEmpty {
+      result["destination"] = destination
+    }
+    if let idStatus = intParam(data["id_status"]) {
+      result["id_status"] = idStatus
+    }
+    if let available = boolParam(data["available"]) {
+      result["available"] = available
+    }
+    result["service"] = "iMessage"
+    respond(id: id, result: result)
+  }
+
   /// `typing` — start/stop the local-user typing indicator. Mirrors the
   /// `imsg typing` CLI surface (which is purely a wrapper over `TypingIndicator`)
   /// so callers that talk to `imsg rpc` over JSON-RPC have parity with the CLI.
