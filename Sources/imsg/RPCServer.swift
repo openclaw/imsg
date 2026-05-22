@@ -44,6 +44,7 @@ let kSupportedRPCMethods: [String] = [
   "message.unsend",
   "message.delete",
   "message.notifyAnyways",
+  "message.send_status",
   "group.rename",
   "group.setIcon",
   "group.addParticipant",
@@ -162,6 +163,8 @@ final class RPCServer {
         try await handleMessageDelete(params: params, id: id)
       case "message.notifyAnyways":
         try await handleMessageNotifyAnyways(params: params, id: id)
+      case "message.send_status":
+        try await handleMessageSendStatus(params: params, id: id)
       case "chats.create":
         try await handleChatsCreate(id: id, params: params)
       case "chats.delete":

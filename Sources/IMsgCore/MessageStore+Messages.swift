@@ -328,6 +328,41 @@ extension MessageStore {
     }
   }
 
+  public func messageSendStatus(guid: String) throws -> MessageSendStatus? {
+    let trimmed = guid.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+
+    return try withConnection { db in
+      let columns = MessageStore.tableColumns(connection: db, table: "message")
+      func column(_ name: String, defaultValue: String) -> String {
+        columns.contains(name.lowercased()) ? "m.\(name)" : defaultValue
+      }
+
+      let sql = """
+        SELECT m.ROWID AS message_rowid,
+               \(column("guid", defaultValue: "''")) AS guid,
+               \(column("service", defaultValue: "''")) AS service,
+               \(column("error", defaultValue: "0")) AS error,
+               \(column("date_delivered", defaultValue: "0")) AS date_delivered,
+               \(column("date_read", defaultValue: "0")) AS date_read,
+               \(column("is_sent", defaultValue: "0")) AS is_sent,
+               \(column("is_delivered", defaultValue: "0")) AS is_delivered,
+               \(column("is_finished", defaultValue: "0")) AS is_finished,
+               \(column("is_delayed", defaultValue: "0")) AS is_delayed,
+               \(column("is_prepared", defaultValue: "0")) AS is_prepared,
+               \(column("is_pending_satellite_send", defaultValue: "0")) AS is_pending_satellite_send,
+               \(column("was_downgraded", defaultValue: "0")) AS was_downgraded
+        FROM message m
+        WHERE \(column("guid", defaultValue: "''")) = ?
+        ORDER BY m.ROWID DESC
+        LIMIT 1
+        """
+      let rows = try db.prepareRowIterator(sql, bindings: [trimmed])
+      guard let row = try rows.failableNext() else { return nil }
+      return try decodeMessageSendStatus(row)
+    }
+  }
+
   func decodeMessageRow(
     _ row: Row,
     columns: MessageRowColumns,
@@ -376,6 +411,26 @@ extension MessageStore {
       associatedType: associatedType,
       attachments: attachments,
       threadOriginatorGUID: threadOriginatorGUID
+    )
+  }
+
+  func decodeMessageSendStatus(_ row: Row) throws -> MessageSendStatus {
+    let deliveredRaw = try int64Value(row, "date_delivered")
+    let readRaw = try int64Value(row, "date_read")
+    return MessageSendStatus(
+      rowID: try int64Value(row, "message_rowid") ?? 0,
+      guid: try stringValue(row, "guid"),
+      service: try stringValue(row, "service"),
+      error: try intValue(row, "error") ?? 0,
+      dateDelivered: deliveredRaw.flatMap { $0 > 0 ? appleDate(from: $0) : nil },
+      dateRead: readRaw.flatMap { $0 > 0 ? appleDate(from: $0) : nil },
+      isSent: (try intValue(row, "is_sent") ?? 0) != 0,
+      isDelivered: (try intValue(row, "is_delivered") ?? 0) != 0,
+      isFinished: (try intValue(row, "is_finished") ?? 0) != 0,
+      isDelayed: (try intValue(row, "is_delayed") ?? 0) != 0,
+      isPrepared: (try intValue(row, "is_prepared") ?? 0) != 0,
+      isPendingSatelliteSend: (try intValue(row, "is_pending_satellite_send") ?? 0) != 0,
+      wasDowngraded: (try intValue(row, "was_downgraded") ?? 0) != 0
     )
   }
 }

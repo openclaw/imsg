@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import IMsgCore
@@ -15,6 +16,7 @@ func rpcStatusAdvertisesBridgeMessageMethods() {
     "message.unsend",
     "message.delete",
     "message.notifyAnyways",
+    "message.send_status",
   ] {
     #expect(methods.contains(method))
   }

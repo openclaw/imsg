@@ -135,6 +135,63 @@ func latestUnjoinedSentMessageRowIDMatchesAnyGroupTargetVariants() throws {
   #expect(rowID == 20)
 }
 
+@Test
+func messageSendStatusMapsFailedSentDeliveredAndPendingRows() throws {
+  let db = try makeSentMessageDatabase()
+  let deliveredAt = Date()
+  try insertSentMessageFixture(
+    db,
+    rowID: 30,
+    chatID: 1,
+    text: "failed",
+    guid: "failed-guid",
+    date: deliveredAt,
+    isFromMe: true,
+    error: 22,
+    isSent: false
+  )
+  try insertSentMessageFixture(
+    db,
+    rowID: 31,
+    chatID: 1,
+    text: "sent",
+    guid: "sent-guid",
+    date: deliveredAt,
+    isFromMe: true,
+    isSent: true
+  )
+  try insertSentMessageFixture(
+    db,
+    rowID: 32,
+    chatID: 1,
+    text: "delivered",
+    guid: "delivered-guid",
+    date: deliveredAt,
+    isFromMe: true,
+    isSent: true,
+    isDelivered: true,
+    dateDelivered: deliveredAt
+  )
+  try insertSentMessageFixture(
+    db,
+    rowID: 33,
+    chatID: 1,
+    text: "pending",
+    guid: "pending-guid",
+    date: deliveredAt,
+    isFromMe: true
+  )
+  let store = try MessageStore(connection: db, path: ":memory:")
+
+  #expect(try store.messageSendStatus(guid: "failed-guid")?.state == .failed)
+  #expect(try store.messageSendStatus(guid: "sent-guid")?.state == .sent)
+  let delivered = try store.messageSendStatus(guid: "delivered-guid")
+  #expect(delivered?.state == .delivered)
+  #expect(delivered?.dateDelivered != nil)
+  #expect(try store.messageSendStatus(guid: "pending-guid")?.state == .pending)
+  #expect(try store.messageSendStatus(guid: "missing-guid") == nil)
+}
+
 private func makeSentMessageDatabase() throws -> Connection {
   let db = try Connection(.inMemory)
   try db.execute(
@@ -147,8 +204,18 @@ private func makeSentMessageDatabase() throws -> Connection {
       associated_message_guid TEXT,
       associated_message_type INTEGER,
       date INTEGER,
+      date_delivered INTEGER,
+      date_read INTEGER,
       is_from_me INTEGER,
-      service TEXT
+      service TEXT,
+      error INTEGER DEFAULT 0,
+      is_sent INTEGER DEFAULT 0,
+      is_delivered INTEGER DEFAULT 0,
+      is_finished INTEGER DEFAULT 0,
+      is_delayed INTEGER DEFAULT 0,
+      is_prepared INTEGER DEFAULT 0,
+      is_pending_satellite_send INTEGER DEFAULT 0,
+      was_downgraded INTEGER DEFAULT 0
     );
     """
   )
@@ -185,21 +252,29 @@ private func insertSentMessageFixture(
   text: String,
   guid: String,
   date: Date,
-  isFromMe: Bool
+  isFromMe: Bool,
+  error: Int = 0,
+  isSent: Bool = false,
+  isDelivered: Bool = false,
+  dateDelivered: Date? = nil
 ) throws {
   try db.run(
     """
     INSERT INTO message(
       ROWID, handle_id, text, guid, associated_message_guid, associated_message_type,
-      date, is_from_me, service
+      date, date_delivered, is_from_me, service, error, is_sent, is_delivered, is_finished
     )
-    VALUES (?, 1, ?, ?, NULL, 0, ?, ?, 'iMessage')
+    VALUES (?, 1, ?, ?, NULL, 0, ?, ?, ?, 'iMessage', ?, ?, ?, 1)
     """,
     rowID,
     text,
     guid,
     TestDatabase.appleEpoch(date),
-    isFromMe ? 1 : 0
+    dateDelivered.map { TestDatabase.appleEpoch($0) } ?? 0,
+    isFromMe ? 1 : 0,
+    error,
+    isSent ? 1 : 0,
+    isDelivered ? 1 : 0
   )
   try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (?, ?)", chatID, rowID)
 }
