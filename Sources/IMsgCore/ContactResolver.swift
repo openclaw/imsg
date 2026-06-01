@@ -67,9 +67,11 @@ public final class ContactResolver: ContactResolving, @unchecked Sendable {
       case .authorized:
         return load(store: store, region: region)
       case .notDetermined:
-        let granted = await requestAccess(store: store)
-        return granted
-          ? load(store: store, region: region) : NoOpContactResolver(contactsUnavailable: true)
+        // Do not block core CLI read paths on a permission request that may never
+        // resolve promptly in headless or non-app contexts. Commands like
+        // `imsg chats` and `imsg history` should still work without contact-name
+        // enrichment.
+        return NoOpContactResolver(contactsUnavailable: true)
       case .denied, .restricted:
         return NoOpContactResolver(contactsUnavailable: true)
       @unknown default:
