@@ -41,7 +41,7 @@ enum HistoryCommand {
     values: ParsedValues,
     runtime: RuntimeOptions,
     contactResolverFactory: @escaping () async -> any ContactResolving = {
-      await ContactResolver.create()
+      await ContactResolver.create(accessPolicy: .skipIfNotDetermined)
     }
   ) async throws {
     guard let chatID = values.optionInt64("chatID") else {

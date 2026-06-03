@@ -34,6 +34,11 @@ public final class NoOpContactResolver: ContactResolving, Sendable {
   public func searchByName(_ query: String) -> [ContactMatch] { [] }
 }
 
+public enum ContactsAccessPolicy: Sendable {
+  case requestIfNeeded
+  case skipIfNotDetermined
+}
+
 public final class ContactResolver: ContactResolving, @unchecked Sendable {
   #if os(macOS)
     private let phoneToName: [String: String]
@@ -60,28 +65,51 @@ public final class ContactResolver: ContactResolving, @unchecked Sendable {
     public let contactsUnavailable = true
   #endif
 
-  public static func create(region: String = "US") async -> any ContactResolving {
+  public static func create(
+    region: String = "US",
+    accessPolicy: ContactsAccessPolicy = .requestIfNeeded
+  ) async -> any ContactResolving {
     #if os(macOS)
       let store = CNContactStore()
-      switch CNContactStore.authorizationStatus(for: .contacts) {
+      return await create(
+        region: region,
+        accessPolicy: accessPolicy,
+        store: store,
+        authorizationStatus: CNContactStore.authorizationStatus(for: .contacts),
+        requestAccess: requestAccess(store:)
+      )
+    #else
+      _ = region
+      _ = accessPolicy
+      return NoOpContactResolver(contactsUnavailable: true)
+    #endif
+  }
+
+  #if os(macOS)
+    static func create(
+      region: String = "US",
+      accessPolicy: ContactsAccessPolicy = .requestIfNeeded,
+      store: CNContactStore,
+      authorizationStatus: CNAuthorizationStatus,
+      requestAccess: @escaping (CNContactStore) async -> Bool
+    ) async -> any ContactResolving {
+      switch authorizationStatus {
       case .authorized:
         return load(store: store, region: region)
       case .notDetermined:
-        // Do not block core CLI read paths on a permission request that may never
-        // resolve promptly in headless or non-app contexts. Commands like
-        // `imsg chats` and `imsg history` should still work without contact-name
-        // enrichment.
-        return NoOpContactResolver(contactsUnavailable: true)
+        guard accessPolicy == .requestIfNeeded else {
+          return NoOpContactResolver(contactsUnavailable: true)
+        }
+        let granted = await requestAccess(store)
+        return granted
+          ? load(store: store, region: region) : NoOpContactResolver(contactsUnavailable: true)
       case .denied, .restricted:
         return NoOpContactResolver(contactsUnavailable: true)
       @unknown default:
         return NoOpContactResolver(contactsUnavailable: true)
       }
-    #else
-      _ = region
-      return NoOpContactResolver(contactsUnavailable: true)
-    #endif
-  }
+    }
+  #endif
 
   public func displayName(for handle: String) -> String? {
     #if os(macOS)

@@ -26,7 +26,7 @@ enum ChatsCommand {
     values: ParsedValues,
     runtime: RuntimeOptions,
     contactResolverFactory: @escaping () async -> any ContactResolving = {
-      await ContactResolver.create()
+      await ContactResolver.create(accessPolicy: .skipIfNotDetermined)
     }
   ) async throws {
     let dbPath = values.option("db") ?? MessageStore.defaultPath
