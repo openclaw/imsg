@@ -4371,8 +4371,13 @@ static void startV2InboxWatcher(void) {
 
 #pragma mark - Dylib Entry Point
 
-__attribute__((constructor))
-static void injectedInit(void) {
+// Bridge bootstrap. Intentionally NOT run from the dylib constructor: macOS 26
+// tightened dyld initializer ordering for platform/system apps, so touching
+// ObjC/Foundation/IMCore at constructor time can execute before libSystem has
+// finished bootstrapping ("dyld initialized but libSystem has not") and abort
+// Messages.app on launch. injectedInit() defers this onto the main queue, which
+// only drains once the process is fully initialized.
+static void bridgeBootstrap(void) {
     NSLog(@"[imsg-bridge] Dylib injected into %@", [[NSProcessInfo processInfo] processName]);
 
     // Connect to IMDaemon for full IMCore access
@@ -4411,6 +4416,15 @@ static void injectedInit(void) {
         startV2InboxWatcher();
         registerEventObservers();
     });
+}
+
+__attribute__((constructor))
+static void injectedInit(void) {
+    // Keep the constructor tiny: only enqueue onto the main queue (a libdispatch
+    // call, no synchronous ObjC message dispatch). All ObjC/Foundation/IMCore
+    // work happens later in bridgeBootstrap, after the runloop is live — see the
+    // comment there for the macOS 26 dyld init-order rationale.
+    dispatch_async(dispatch_get_main_queue(), ^{ bridgeBootstrap(); });
 }
 
 __attribute__((destructor))
