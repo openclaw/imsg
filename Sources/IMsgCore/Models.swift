@@ -315,6 +315,10 @@ public struct Message: Sendable, Equatable {
   /// this can help distinguish between messages actually sent by the local user vs
   /// messages received on a secondary phone number registered with the same Apple ID.
   public let destinationCallerID: String?
+  /// Raw Messages `message.balloon_bundle_id`, when present. Consumers can use
+  /// Apple-owned bundle identifiers such as URLBalloonProvider as structural
+  /// metadata instead of inferring message shape from user text.
+  public let balloonBundleID: String?
   /// Native Messages Polls metadata when the row is a Polls extension balloon
   /// or a Polls vote update.
   public let poll: MessagePollEvent?
@@ -341,6 +345,7 @@ public struct Message: Sendable, Equatable {
     attachmentsCount: Int,
     guid: String = "",
     routing: RoutingMetadata = RoutingMetadata(),
+    balloonBundleID: String? = nil,
     reaction: ReactionMetadata = ReactionMetadata(),
     poll: MessagePollEvent? = nil
   ) {
@@ -360,6 +365,7 @@ public struct Message: Sendable, Equatable {
     self.handleID = handleID
     self.attachmentsCount = attachmentsCount
     self.destinationCallerID = routing.destinationCallerID
+    self.balloonBundleID = balloonBundleID
     self.poll = poll
     self.isReaction = reaction.isReaction
     self.reactionType = reaction.reactionType
@@ -382,6 +388,7 @@ public struct Message: Sendable, Equatable {
     threadOriginatorGUID: String? = nil,
     threadOriginatorPart: String? = nil,
     destinationCallerID: String? = nil,
+    balloonBundleID: String? = nil,
     replyToText: String? = nil,
     replyToSender: String? = nil,
     isReaction: Bool = false,
@@ -409,6 +416,7 @@ public struct Message: Sendable, Equatable {
         replyToText: replyToText,
         replyToSender: replyToSender
       ),
+      balloonBundleID: balloonBundleID,
       reaction: ReactionMetadata(
         isReaction: isReaction,
         reactionType: reactionType,

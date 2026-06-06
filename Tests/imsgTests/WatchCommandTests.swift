@@ -97,7 +97,8 @@ func watchCommandRunsWithJsonOutput() async throws {
     isFromMe: false,
     service: "iMessage",
     handleID: nil,
-    attachmentsCount: 0
+    attachmentsCount: 0,
+    balloonBundleID: "com.apple.messages.URLBalloonProvider"
   )
   let (output, _) = try await StdoutCapture.capture {
     try await WatchCommand.run(
@@ -114,6 +115,7 @@ func watchCommandRunsWithJsonOutput() async throws {
   #expect(payload["chat_guid"] as? String == "iMessage;+;chat123")
   #expect(payload["chat_name"] as? String == "Group Chat")
   #expect(payload["participants"] as? [String] == ["+123", "me@icloud.com"])
+  #expect(payload["balloon_bundle_id"] as? String == "com.apple.messages.URLBalloonProvider")
 }
 
 @Test

@@ -102,6 +102,7 @@ extension MessageStore {
               replyToText: parent?.text,
               replyToSender: parent?.sender
             ),
+            balloonBundleID: decoded.balloonBundleID.isEmpty ? nil : decoded.balloonBundleID,
             poll: poll
           ))
       }

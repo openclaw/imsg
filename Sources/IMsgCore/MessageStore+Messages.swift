@@ -72,6 +72,7 @@ struct DecodedMessageRow {
   let threadOriginatorGUID: String
   let threadOriginatorPart: String
   let databaseReplyToGUID: String
+  let balloonBundleID: String
   let poll: MessagePollEvent?
 }
 
@@ -217,6 +218,7 @@ extension MessageStore {
               replyToText: parent?.text,
               replyToSender: parent?.sender
             ),
+            balloonBundleID: decoded.balloonBundleID.isEmpty ? nil : decoded.balloonBundleID,
             poll: poll
           ))
       }
@@ -322,6 +324,7 @@ extension MessageStore {
               replyToText: parent?.text,
               replyToSender: parent?.sender
             ),
+            balloonBundleID: decoded.balloonBundleID.isEmpty ? nil : decoded.balloonBundleID,
             reaction: Message.ReactionMetadata(
               isReaction: reaction.isReaction,
               reactionType: reaction.reactionType,
@@ -395,6 +398,7 @@ extension MessageStore {
             replyToText: parent?.text,
             replyToSender: parent?.sender
           ),
+          balloonBundleID: decoded.balloonBundleID.isEmpty ? nil : decoded.balloonBundleID,
           poll: poll
         )
       }
@@ -508,6 +512,7 @@ extension MessageStore {
       threadOriginatorGUID: threadOriginatorGUID,
       threadOriginatorPart: threadOriginatorPart,
       databaseReplyToGUID: databaseReplyToGUID,
+      balloonBundleID: balloonBundleID,
       poll: poll
     )
   }

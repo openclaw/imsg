@@ -49,6 +49,7 @@ Returned by `imsg history`, `imsg watch`, and the JSON-RPC `messages.history` an
 | `guid` | string | Message GUID. Stable across machines. |
 | `reply_to_guid` | string | When set, this message is an inline reply to that GUID. |
 | `destination_caller_id` | string | Outgoing only — which of your numbers Messages routed through. |
+| `balloon_bundle_id` | string | Raw Messages `message.balloon_bundle_id`, when present. URL preview rows use `com.apple.messages.URLBalloonProvider`, which lets consumers recognize link-preview payload rows without inferring from message text. |
 | `sender` | string | Raw handle. Empty for some self-sent messages. |
 | `sender_name` | string | Resolved Contacts name when permission granted. |
 | `is_from_me` | bool | True for outbound. |

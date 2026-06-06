@@ -170,6 +170,7 @@ func messagesAfterDeduplicatesURLBalloonsAcrossPolls() throws {
   let store = try MessageStore(connection: db, path: ":memory:")
   let firstPoll = try store.messagesAfter(afterRowID: 0, chatID: 1, limit: 10)
   #expect(firstPoll.map(\.rowID) == [1])
+  #expect(firstPoll.first?.balloonBundleID == "com.apple.messages.URLBalloonProvider")
 
   try db.run(
     """
@@ -200,6 +201,53 @@ func messagesAfterDeduplicatesURLBalloonsAcrossPolls() throws {
 
   let thirdPoll = try store.messagesAfter(afterRowID: 1, chatID: 1, limit: 10)
   #expect(thirdPoll.map(\.rowID) == [3])
+  #expect(thirdPoll.first?.balloonBundleID == "com.apple.messages.URLBalloonProvider")
+}
+
+@Test
+func messagesByChatPreservesBalloonBundleID() throws {
+  let db = try makeInMemoryMessageDB(includeBalloonBundleID: true)
+  let now = Date()
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
+  try db.run(
+    """
+    INSERT INTO message(
+      ROWID, handle_id, text, guid, associated_message_guid, associated_message_type,
+      balloon_bundle_id, date, is_from_me, service
+    )
+    VALUES (1, 1, 'https://example.com', 'msg-guid-1', NULL, 0, 'com.apple.messages.URLBalloonProvider', ?, 0, 'iMessage')
+    """,
+    TestDatabase.appleEpoch(now)
+  )
+  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 1)")
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let messages = try store.messages(chatID: 1, limit: 10)
+  #expect(messages.map(\.rowID) == [1])
+  #expect(messages.first?.balloonBundleID == "com.apple.messages.URLBalloonProvider")
+}
+
+@Test
+func searchMessagesPreservesBalloonBundleID() throws {
+  let db = try makeInMemoryMessageDB(includeBalloonBundleID: true)
+  let now = Date()
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
+  try db.run(
+    """
+    INSERT INTO message(
+      ROWID, handle_id, text, guid, associated_message_guid, associated_message_type,
+      balloon_bundle_id, date, is_from_me, service
+    )
+    VALUES (1, 1, 'https://example.com/search', 'msg-guid-1', NULL, 0, 'com.apple.messages.URLBalloonProvider', ?, 0, 'iMessage')
+    """,
+    TestDatabase.appleEpoch(now)
+  )
+  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 1)")
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let messages = try store.searchMessages(query: "example.com/search", match: "contains", limit: 10)
+  #expect(messages.map(\.rowID) == [1])
+  #expect(messages.first?.balloonBundleID == "com.apple.messages.URLBalloonProvider")
 }
 
 @Test
