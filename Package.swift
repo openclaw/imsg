@@ -9,7 +9,7 @@ let package = Package(
     .executable(name: "imsg", targets: ["imsg"]),
   ],
   dependencies: [
-    .package(url: "https://github.com/steipete/Commander.git", from: "0.2.1"),
+    .package(url: "https://github.com/nathm-bit/Commander.git", branch: "main"),
     .package(url: "https://github.com/stephencelis/SQLite.swift.git", from: "0.15.5"),
     .package(url: "https://github.com/marmelroy/PhoneNumberKit.git", from: "4.2.5"),
   ],
