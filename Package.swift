@@ -1,9 +1,9 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 5.9
 import PackageDescription
 
 let package = Package(
   name: "imsg",
-  platforms: [.macOS(.v14)],
+  platforms: [.macOS(.v13)],
   products: [
     .library(name: "IMsgCore", targets: ["IMsgCore"]),
     .executable(name: "imsg", targets: ["imsg"]),
