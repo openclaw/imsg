@@ -41,15 +41,16 @@ public final class IMsgBridgeClient: @unchecked Sendable {
   public func invoke(
     action: BridgeAction,
     params: [String: Any] = [:],
-    timeout: TimeInterval = IMsgBridgeProtocol.defaultResponseTimeout
+    timeout: TimeInterval? = nil
   ) async throws -> [String: Any] {
+    let effectiveTimeout = timeout ?? IMsgBridgeProtocol.defaultResponseTimeout(for: action)
     if useLegacyIPC {
       try launcher.ensureRunning()
       return try await invokeLegacy(action: action, params: params)
     }
 
     try launcher.ensureLaunched()
-    return try await invokeV2(action: action, params: params, timeout: timeout)
+    return try await invokeV2(action: action, params: params, timeout: effectiveTimeout)
   }
 
   // MARK: - v2 path

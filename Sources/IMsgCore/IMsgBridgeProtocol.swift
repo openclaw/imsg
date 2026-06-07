@@ -22,8 +22,21 @@ public enum IMsgBridgeProtocol {
   public static let rotatedEventsFileName: String = ".imsg-events.jsonl.1"
   public static let eventsRotationBytes: Int = 1 * 1024 * 1024
 
-  /// Default per-request timeout for synchronous RPC waits.
+  /// Default per-request timeout for synchronous non-send RPC waits.
   public static let defaultResponseTimeout: TimeInterval = 10.0
+
+  /// Default timeout for send-style bridge waits. macOS 26 private sends can
+  /// stall for well over the probe window before Messages.app returns.
+  public static let defaultSendResponseTimeout: TimeInterval = 150.0
+
+  public static func defaultResponseTimeout(for action: BridgeAction) -> TimeInterval {
+    switch action {
+    case .sendMessage, .sendMultipart, .sendAttachment, .sendPoll, .sendReaction:
+      return defaultSendResponseTimeout
+    default:
+      return defaultResponseTimeout
+    }
+  }
 }
 
 /// All action verbs exposed by the v2 bridge. Names match the BlueBubbles

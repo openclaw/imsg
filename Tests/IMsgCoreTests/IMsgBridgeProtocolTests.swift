@@ -82,4 +82,41 @@ struct IMsgBridgeProtocolTests {
     #expect(response.success == false)
     #expect(response.error == "Chat not found")
   }
+
+  @Test
+  func bridgeProtocolUsesLongerDefaultForSendActions() {
+    #expect(IMsgBridgeProtocol.defaultResponseTimeout == 10.0)
+    #expect(IMsgBridgeProtocol.defaultSendResponseTimeout == 150.0)
+
+    for action in [
+      BridgeAction.sendMessage,
+      .sendMultipart,
+      .sendAttachment,
+      .sendPoll,
+      .sendReaction,
+    ] {
+      #expect(
+        IMsgBridgeProtocol.defaultResponseTimeout(for: action)
+          == IMsgBridgeProtocol.defaultSendResponseTimeout
+      )
+    }
+  }
+
+  @Test
+  func bridgeProtocolKeepsShortDefaultForNonSendActions() {
+    for action in [
+      BridgeAction.status,
+      .typing,
+      .read,
+      .editMessage,
+      .unsendMessage,
+      .deleteMessage,
+      .notifyAnyways,
+    ] {
+      #expect(
+        IMsgBridgeProtocol.defaultResponseTimeout(for: action)
+          == IMsgBridgeProtocol.defaultResponseTimeout
+      )
+    }
+  }
 }
