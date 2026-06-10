@@ -4375,56 +4375,74 @@ static void startV2InboxWatcher(void) {
 // tightened dyld initializer ordering for platform/system apps, so touching
 // ObjC/Foundation/IMCore at constructor time can execute before libSystem has
 // finished bootstrapping ("dyld initialized but libSystem has not") and abort
-// Messages.app on launch. injectedInit() defers this onto the main queue, which
-// only drains once the process is fully initialized.
+// Messages.app on launch. injectedInit() only schedules this delayed bootstrap;
+// the lock file is written after the watchers are installed below.
 static void bridgeBootstrap(void) {
-    NSLog(@"[imsg-bridge] Dylib injected into %@", [[NSProcessInfo processInfo] processName]);
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        @autoreleasepool {
+            initFilePaths();
+            NSLog(@"[imsg-bridge] Dylib injected into %@",
+                  [[NSProcessInfo processInfo] processName]);
+            debugLog(@"bootstrap starting in process=%@ pid=%d",
+                     [[NSProcessInfo processInfo] processName], getpid());
 
-    // Connect to IMDaemon for full IMCore access
-    Class daemonClass = NSClassFromString(@"IMDaemonController");
-    if (daemonClass) {
-        id daemon = [daemonClass performSelector:@selector(sharedInstance)];
-        if (daemon && [daemon respondsToSelector:@selector(connectToDaemon)]) {
-            [daemon performSelector:@selector(connectToDaemon)];
-            NSLog(@"[imsg-bridge] Connected to IMDaemon");
-        } else {
-            NSLog(@"[imsg-bridge] IMDaemonController available but couldn't connect");
-        }
-    } else {
-        NSLog(@"[imsg-bridge] IMDaemonController class not found");
-    }
-
-    // Delay initialization to let Messages.app fully start
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        NSLog(@"[imsg-bridge] Initializing after delay...");
-
-        // Log IMCore status
-        Class registryClass = NSClassFromString(@"IMChatRegistry");
-        if (registryClass) {
-            id registry = [registryClass performSelector:@selector(sharedInstance)];
-            if ([registry respondsToSelector:@selector(allExistingChats)]) {
-                NSArray *chats = [registry performSelector:@selector(allExistingChats)];
-                NSLog(@"[imsg-bridge] IMChatRegistry available with %lu chats",
-                      (unsigned long)chats.count);
+            // Connect to IMDaemon for full IMCore access
+            Class daemonClass = NSClassFromString(@"IMDaemonController");
+            if (daemonClass) {
+                id daemon = [daemonClass performSelector:@selector(sharedInstance)];
+                if (daemon && [daemon respondsToSelector:@selector(connectToDaemon)]) {
+                    [daemon performSelector:@selector(connectToDaemon)];
+                    NSLog(@"[imsg-bridge] Connected to IMDaemon");
+                    debugLog(@"connected to IMDaemon");
+                } else {
+                    NSLog(@"[imsg-bridge] IMDaemonController available but couldn't connect");
+                    debugLog(@"IMDaemonController available but couldn't connect");
+                }
+            } else {
+                NSLog(@"[imsg-bridge] IMDaemonController class not found");
+                debugLog(@"IMDaemonController class not found");
             }
-        } else {
-            NSLog(@"[imsg-bridge] IMChatRegistry NOT available");
-        }
 
-        probeSelectors();
-        startFileWatcher();
-        startV2InboxWatcher();
-        registerEventObservers();
+            NSLog(@"[imsg-bridge] Initializing after delay...");
+
+            // Log IMCore status
+            Class registryClass = NSClassFromString(@"IMChatRegistry");
+            if (registryClass) {
+                id registry = [registryClass performSelector:@selector(sharedInstance)];
+                if ([registry respondsToSelector:@selector(allExistingChats)]) {
+                    NSArray *chats = [registry performSelector:@selector(allExistingChats)];
+                    NSLog(@"[imsg-bridge] IMChatRegistry available with %lu chats",
+                          (unsigned long)chats.count);
+                    debugLog(@"IMChatRegistry available chats=%lu",
+                             (unsigned long)chats.count);
+                }
+            } else {
+                NSLog(@"[imsg-bridge] IMChatRegistry NOT available");
+                debugLog(@"IMChatRegistry not available");
+            }
+
+            probeSelectors();
+            startFileWatcher();
+            startV2InboxWatcher();
+            registerEventObservers();
+            debugLog(@"bootstrap complete");
+        }
     });
 }
 
 __attribute__((constructor))
 static void injectedInit(void) {
-    // Keep the constructor tiny: only enqueue onto the main queue (a libdispatch
-    // call, no synchronous ObjC message dispatch). All ObjC/Foundation/IMCore
-    // work happens later in bridgeBootstrap, after the runloop is live — see the
-    // comment there for the macOS 26 dyld init-order rationale.
-    dispatch_async(dispatch_get_main_queue(), ^{ bridgeBootstrap(); });
+    // Keep the constructor tiny: only enqueue onto the main queue with
+    // libdispatch. Start the startup delay from that first main-queue turn so
+    // bridgeBootstrap cannot become ready to run before Messages services the
+    // queue for the first time.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
+                       dispatch_get_main_queue(), ^{
+            bridgeBootstrap();
+        });
+    });
 }
 
 __attribute__((destructor))

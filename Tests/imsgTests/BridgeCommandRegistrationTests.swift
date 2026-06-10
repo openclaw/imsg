@@ -148,6 +148,37 @@ func injectedHelperWiresNativePollSend() throws {
     ))
 }
 
+@Test
+func injectedHelperConstructorOnlySchedulesDelayedBootstrap() throws {
+  let testFile = URL(fileURLWithPath: #filePath)
+  let repoRoot =
+    testFile
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
+  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
+  let constructorBody = try #require(functionBody(named: "injectedInit", in: source))
+  let bootstrapBody = try #require(functionBody(named: "bridgeBootstrap", in: source))
+
+  #expect(constructorBody.contains("dispatch_after"))
+  #expect(constructorBody.contains("dispatch_async"))
+  #expect(constructorBody.contains("bridgeBootstrap();"))
+  #expect(!constructorBody.contains("NSLog"))
+  #expect(!constructorBody.contains("NSProcessInfo"))
+  #expect(!constructorBody.contains("NSClassFromString"))
+  #expect(!constructorBody.contains("IMDaemonController"))
+  #expect(!constructorBody.contains("startFileWatcher"))
+  #expect(!constructorBody.contains("startV2InboxWatcher"))
+
+  #expect(bootstrapBody.contains("dispatch_once"))
+  #expect(bootstrapBody.contains("@autoreleasepool"))
+  #expect(bootstrapBody.contains("connectToDaemon"))
+  #expect(bootstrapBody.contains("startFileWatcher()"))
+  #expect(bootstrapBody.contains("startV2InboxWatcher()"))
+  #expect(bootstrapBody.contains("registerEventObservers()"))
+}
+
 private func stripObjectiveCComments(_ source: String) -> String {
   source
     .replacingOccurrences(of: #"/\*[\s\S]*?\*/"#, with: "", options: .regularExpression)
