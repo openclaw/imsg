@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import IMsgCore
@@ -118,5 +119,13 @@ struct IMsgBridgeProtocolTests {
           == IMsgBridgeProtocol.defaultResponseTimeout
       )
     }
+  }
+
+  @Test
+  func bridgeClientKeepsExplicitTimeoutInvokeSignature() {
+    let explicitTimeoutInvoke:
+      (BridgeAction, [String: Any], TimeInterval) async throws -> [String: Any] =
+        IMsgBridgeClient.shared.invoke
+    _ = explicitTimeoutInvoke
   }
 }

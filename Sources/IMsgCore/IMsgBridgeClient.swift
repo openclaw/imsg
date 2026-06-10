@@ -40,17 +40,30 @@ public final class IMsgBridgeClient: @unchecked Sendable {
   /// `IMSG_BRIDGE_LEGACY_IPC=1`.
   public func invoke(
     action: BridgeAction,
-    params: [String: Any] = [:],
-    timeout: TimeInterval? = nil
+    params: [String: Any] = [:]
   ) async throws -> [String: Any] {
-    let effectiveTimeout = timeout ?? IMsgBridgeProtocol.defaultResponseTimeout(for: action)
+    try await invoke(
+      action: action,
+      params: params,
+      timeout: IMsgBridgeProtocol.defaultResponseTimeout(for: action)
+    )
+  }
+
+  /// Invoke a v2 bridge action with an explicit timeout.
+  /// Legacy single-file IPC is only used when explicitly requested through
+  /// `IMSG_BRIDGE_LEGACY_IPC=1`.
+  public func invoke(
+    action: BridgeAction,
+    params: [String: Any] = [:],
+    timeout: TimeInterval
+  ) async throws -> [String: Any] {
     if useLegacyIPC {
       try launcher.ensureRunning()
       return try await invokeLegacy(action: action, params: params)
     }
 
     try launcher.ensureLaunched()
-    return try await invokeV2(action: action, params: params, timeout: effectiveTimeout)
+    return try await invokeV2(action: action, params: params, timeout: timeout)
   }
 
   // MARK: - v2 path
