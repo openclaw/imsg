@@ -59,7 +59,7 @@ public final class IMsgBridgeClient: @unchecked Sendable {
   ) async throws -> [String: Any] {
     if useLegacyIPC {
       try launcher.ensureRunning()
-      return try await invokeLegacy(action: action, params: params)
+      return try await invokeLegacy(action: action, params: params, timeout: timeout)
     }
 
     try launcher.ensureLaunched()
@@ -125,10 +125,15 @@ public final class IMsgBridgeClient: @unchecked Sendable {
 
   private func invokeLegacy(
     action: BridgeAction,
-    params: [String: Any]
+    params: [String: Any],
+    timeout: TimeInterval
   ) async throws -> [String: Any] {
     do {
-      let raw = try await launcher.sendCommand(action: action.rawValue, params: params)
+      let raw = try await launcher.sendCommand(
+        action: action.rawValue,
+        params: params,
+        timeout: timeout
+      )
       let response = try BridgeResponse.parse(raw)
       if response.success {
         return response.data

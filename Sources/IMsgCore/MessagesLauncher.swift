@@ -72,7 +72,11 @@ import Foundation
         return false
       }
       do {
-        let response = try sendCommandSync(action: "ping", params: [:])
+        let response = try sendCommandSync(
+          action: "ping",
+          params: [:],
+          timeout: IMsgBridgeProtocol.defaultResponseTimeout
+        )
         return response["success"] as? Bool == true
       } catch {
         return false
@@ -172,6 +176,17 @@ import Foundation
     public func sendCommand(
       action: String, params: [String: Any]
     ) async throws -> [String: Any] {
+      try await sendCommand(
+        action: action,
+        params: params,
+        timeout: IMsgBridgeProtocol.defaultResponseTimeout
+      )
+    }
+
+    /// Send a command asynchronously with an explicit response timeout.
+    public func sendCommand(
+      action: String, params: [String: Any], timeout: TimeInterval
+    ) async throws -> [String: Any] {
       try ensureRunning()
       // Serialize params to JSON data to cross the Sendable boundary safely
       let paramsData = try JSONSerialization.data(withJSONObject: params, options: [])
@@ -182,7 +197,11 @@ import Foundation
             let deserializedParams =
               (try? JSONSerialization.jsonObject(with: paramsData, options: []))
               as? [String: Any] ?? [:]
-            let response = try self.sendCommandSync(action: action, params: deserializedParams)
+            let response = try self.sendCommandSync(
+              action: action,
+              params: deserializedParams,
+              timeout: timeout
+            )
             continuation.resume(returning: response)
           } catch {
             continuation.resume(throwing: error)
@@ -273,7 +292,7 @@ import Foundation
     }
 
     private func sendCommandSync(
-      action: String, params: [String: Any]
+      action: String, params: [String: Any], timeout: TimeInterval
     ) throws -> [String: Any] {
       lock.lock()
       defer { lock.unlock() }
@@ -287,7 +306,7 @@ import Foundation
       let jsonData = try JSONSerialization.data(withJSONObject: command, options: [])
       try jsonData.write(to: URL(fileURLWithPath: commandFile))
 
-      let deadline = Date().addingTimeInterval(10.0)
+      let deadline = Date().addingTimeInterval(timeout)
       while Date() < deadline {
         Thread.sleep(forTimeInterval: 0.05)
 
@@ -342,8 +361,19 @@ import Foundation
     public func killMessages() {}
 
     public func sendCommand(action: String, params: [String: Any]) async throws -> [String: Any] {
+      try await sendCommand(
+        action: action,
+        params: params,
+        timeout: IMsgBridgeProtocol.defaultResponseTimeout
+      )
+    }
+
+    public func sendCommand(
+      action: String, params: [String: Any], timeout: TimeInterval
+    ) async throws -> [String: Any] {
       _ = action
       _ = params
+      _ = timeout
       throw MessagesLauncherError.launchFailed("Messages.app is only available on macOS.")
     }
 

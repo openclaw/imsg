@@ -129,4 +129,14 @@ struct IMsgBridgeProtocolTests {
         IMsgBridgeClient.shared.invoke
     _ = explicitTimeoutInvoke
   }
+
+  @Test
+  func messagesLauncherKeepsLegacyCommandSignatureAndAllowsExplicitTimeout() {
+    let defaultTimeoutSend: (String, [String: Any]) async throws -> [String: Any] =
+      MessagesLauncher.shared.sendCommand
+    let explicitTimeoutSend: (String, [String: Any], TimeInterval) async throws -> [String: Any] =
+      MessagesLauncher.shared.sendCommand
+    _ = defaultTimeoutSend
+    _ = explicitTimeoutSend
+  }
 }
