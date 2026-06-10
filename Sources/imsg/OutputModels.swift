@@ -54,6 +54,27 @@ struct ChatPayload: Codable {
 }
 
 struct MessagePayload: Codable {
+  struct URLPreviewPayload: Codable {
+    let id: Int64
+    let guid: String
+    let balloonBundleID: String
+    let createdAt: String
+
+    init(preview: Message.URLPreviewMetadata) {
+      self.id = preview.rowID
+      self.guid = preview.guid
+      self.balloonBundleID = preview.balloonBundleID
+      self.createdAt = CLIISO8601.format(preview.date)
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case id
+      case guid
+      case balloonBundleID = "balloon_bundle_id"
+      case createdAt = "created_at"
+    }
+  }
+
   let id: Int64
   let chatID: Int64
   let guid: String
@@ -78,6 +99,7 @@ struct MessagePayload: Codable {
   /// messages received on a secondary phone number registered with the same Apple ID.
   let destinationCallerID: String?
   let balloonBundleID: String?
+  let urlPreview: URLPreviewPayload?
   let poll: MessagePollEvent?
 
   // Reaction event metadata (populated when this message is a reaction event)
@@ -113,6 +135,7 @@ struct MessagePayload: Codable {
     }
     self.destinationCallerID = message.destinationCallerID
     self.balloonBundleID = message.balloonBundleID
+    self.urlPreview = message.urlPreview.map { URLPreviewPayload(preview: $0) }
     self.poll = message.poll
 
     // Reaction event metadata
@@ -149,6 +172,7 @@ struct MessagePayload: Codable {
     case reactions
     case destinationCallerID = "destination_caller_id"
     case balloonBundleID = "balloon_bundle_id"
+    case urlPreview = "url_preview"
     case poll
     case isReaction = "is_reaction"
     case reactionType = "reaction_type"

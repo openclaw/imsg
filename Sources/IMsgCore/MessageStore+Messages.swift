@@ -1,155 +1,6 @@
 import Foundation
 import SQLite
 
-struct MessageRowColumns {
-  static let balloonBundleID = "balloon_bundle_id"
-  static let payloadData = "payload_data"
-  static let messageSummaryInfo = "message_summary_info"
-
-  let rowID: String
-  let chatID: String?
-  let handleID: String
-  let sender: String
-  let text: String
-  let date: String
-  let isFromMe: String
-  let service: String
-  let isAudioMessage: String
-  let destinationCallerID: String
-  let guid: String
-  let associatedGUID: String
-  let associatedType: String
-  let attachments: String
-  let body: String
-  let threadOriginatorGUID: String
-  let threadOriginatorPart: String
-  let replyToGUID: String
-  let balloonBundleID: String
-  let payloadData: String
-  let messageSummaryInfo: String
-
-  static func message(chatID: String?) -> MessageRowColumns {
-    MessageRowColumns(
-      rowID: "message_rowid",
-      chatID: chatID,
-      handleID: "handle_id",
-      sender: "sender",
-      text: "text",
-      date: "date",
-      isFromMe: "is_from_me",
-      service: "service",
-      isAudioMessage: "is_audio_message",
-      destinationCallerID: "destination_caller_id",
-      guid: "guid",
-      associatedGUID: "associated_guid",
-      associatedType: "associated_type",
-      attachments: "attachments",
-      body: "body",
-      threadOriginatorGUID: "thread_originator_guid",
-      threadOriginatorPart: "thread_originator_part",
-      replyToGUID: "reply_to_guid",
-      balloonBundleID: MessageRowColumns.balloonBundleID,
-      payloadData: MessageRowColumns.payloadData,
-      messageSummaryInfo: MessageRowColumns.messageSummaryInfo
-    )
-  }
-}
-
-struct DecodedMessageRow {
-  let rowID: Int64
-  let chatID: Int64
-  let handleID: Int64?
-  let sender: String
-  let text: String
-  let date: Date
-  let isFromMe: Bool
-  let service: String
-  let destinationCallerID: String
-  let guid: String
-  let associatedGUID: String
-  let associatedType: Int?
-  let attachments: Int
-  let threadOriginatorGUID: String
-  let threadOriginatorPart: String
-  let databaseReplyToGUID: String
-  let balloonBundleID: String
-  let poll: MessagePollEvent?
-}
-
-struct PollOptionTextCache {
-  var optionsByPollGUID: [String: [String: String]] = [:]
-  var missingPollGUIDs = Set<String>()
-}
-
-struct MessageRowSelection {
-  let selectList: String
-  let columns: MessageRowColumns
-
-  init(store: MessageStore, includeChatID: Bool) {
-    let columns = MessageRowColumns.message(chatID: includeChatID ? "chat_id" : nil)
-    let schema = store.schema
-    let bodyColumn = schema.hasAttributedBody ? "m.attributedBody" : "NULL"
-    let guidColumn = schema.hasReactionColumns ? "m.guid" : "NULL"
-    let associatedGuidColumn = schema.hasReactionColumns ? "m.associated_message_guid" : "NULL"
-    let associatedTypeColumn = schema.hasReactionColumns ? "m.associated_message_type" : "NULL"
-    let destinationCallerColumn =
-      schema.hasDestinationCallerID ? "m.destination_caller_id" : "NULL"
-    let audioMessageColumn = schema.hasAudioMessageColumn ? "m.is_audio_message" : "0"
-    let threadOriginatorColumn =
-      schema.hasThreadOriginatorGUIDColumn ? "m.thread_originator_guid" : "NULL"
-    let threadOriginatorPartColumn =
-      schema.hasThreadOriginatorPartColumn ? "m.thread_originator_part" : "NULL"
-    let replyToColumn = schema.hasReplyToGUIDColumn ? "m.reply_to_guid" : "NULL"
-    let balloonColumn = schema.hasBalloonBundleIDColumn ? "m.balloon_bundle_id" : "NULL"
-    let pollCandidatePredicate = Self.pollCandidatePredicate(schema: schema)
-    let payloadDataColumn =
-      schema.hasPayloadDataColumn
-      ? "CASE WHEN \(pollCandidatePredicate) THEN m.payload_data ELSE NULL END" : "NULL"
-    let summaryInfoColumn =
-      schema.hasMessageSummaryInfoColumn
-      ? "CASE WHEN \(pollCandidatePredicate) THEN m.message_summary_info ELSE NULL END" : "NULL"
-    let chatColumn = includeChatID ? ", cmj.chat_id AS \(columns.chatID!)" : ""
-
-    let selectList = """
-      m.ROWID AS \(columns.rowID)\(chatColumn), m.handle_id AS \(columns.handleID),
-             h.id AS \(columns.sender), IFNULL(m.text, '') AS \(columns.text),
-             m.date AS \(columns.date), m.is_from_me AS \(columns.isFromMe),
-             m.service AS \(columns.service),
-             \(audioMessageColumn) AS \(columns.isAudioMessage),
-             \(destinationCallerColumn) AS \(columns.destinationCallerID),
-             \(guidColumn) AS \(columns.guid), \(associatedGuidColumn) AS \(columns.associatedGUID),
-             \(associatedTypeColumn) AS \(columns.associatedType),
-             (SELECT COUNT(*) FROM message_attachment_join maj WHERE maj.message_id = m.ROWID) AS \(columns.attachments),
-             \(bodyColumn) AS \(columns.body),
-             \(threadOriginatorColumn) AS \(columns.threadOriginatorGUID),
-             \(threadOriginatorPartColumn) AS \(columns.threadOriginatorPart),
-             \(replyToColumn) AS \(columns.replyToGUID),
-             \(balloonColumn) AS \(columns.balloonBundleID),
-             \(payloadDataColumn) AS \(columns.payloadData),
-             \(summaryInfoColumn) AS \(columns.messageSummaryInfo)
-      """
-    self.selectList = selectList
-    self.columns = columns
-  }
-
-  private static func pollCandidatePredicate(schema: MessageStoreSchema) -> String {
-    let pollBundle = sqlStringLiteral(MessagePollDecoder.pollsBundleIdentifier)
-    let pollBalloonPredicate =
-      schema.hasBalloonBundleIDColumn
-      ? "(m.balloon_bundle_id = \(pollBundle) OR m.balloon_bundle_id LIKE '%:' || \(pollBundle))"
-      : "0"
-    let votePredicate =
-      schema.hasReactionColumns
-      ? "m.associated_message_type = \(MessagePollDecoder.voteAssociatedMessageType)"
-      : "0"
-    return "(\(pollBalloonPredicate) OR \(votePredicate))"
-  }
-
-  private static func sqlStringLiteral(_ value: String) -> String {
-    "'\(value.replacingOccurrences(of: "'", with: "''"))'"
-  }
-}
-
 extension MessageStore {
   public func maxRowID() throws -> Int64 {
     return try withConnection { db in
@@ -163,67 +14,77 @@ extension MessageStore {
   }
 
   public func messages(chatID: Int64, limit: Int, filter: MessageFilter?) throws -> [Message] {
-    let query = ChatMessagesQuery(
-      store: self,
-      chatID: ChatID(rawValue: chatID),
-      limit: limit,
-      filter: filter
-    )
+    guard limit > 0 else { return [] }
+    var physicalLimit = limit
 
     return try withConnection { db in
-      var messages: [Message] = []
-      var parentCache: ReplyParentCache = [:]
-      var pollOptionCache = PollOptionTextCache()
-      let rows = try db.prepareRowIterator(query.sql, bindings: query.bindings)
-      while let row = try rows.failableNext() {
-        let decoded = try decodeMessageRow(
-          row,
-          columns: query.selection.columns,
-          fallbackChatID: query.fallbackChatID
+      while true {
+        let query = ChatMessagesQuery(
+          store: self,
+          chatID: ChatID(rawValue: chatID),
+          limit: physicalLimit,
+          filter: filter
         )
-        let poll = try enrichedPollEvent(
-          decoded.poll,
-          db: db,
-          cache: &pollOptionCache
-        )
-        let replyToGUID = routedReplyToGUID(decoded)
-        let threadOriginatorGUID =
-          decoded.threadOriginatorGUID.isEmpty ? nil : decoded.threadOriginatorGUID
-        let threadOriginatorPart =
-          decoded.threadOriginatorPart.isEmpty ? nil : decoded.threadOriginatorPart
-        let parent = enrichedReplyContext(
-          db,
-          replyToGUID: replyToGUID,
-          threadOriginatorGUID: threadOriginatorGUID,
-          cache: &parentCache
-        )
-        messages.append(
-          Message(
-            rowID: decoded.rowID,
-            chatID: decoded.chatID,
-            sender: decoded.sender,
-            text: decoded.text,
-            date: decoded.date,
-            isFromMe: decoded.isFromMe,
-            service: decoded.service,
-            handleID: decoded.handleID,
-            attachmentsCount: decoded.attachments,
-            guid: decoded.guid,
-            routing: Message.RoutingMetadata(
-              replyToGUID: replyToGUID,
-              threadOriginatorGUID: threadOriginatorGUID,
-              threadOriginatorPart: threadOriginatorPart,
-              destinationCallerID: decoded.destinationCallerID.isEmpty
-                ? nil : decoded.destinationCallerID,
-              replyToText: parent?.text,
-              replyToSender: parent?.sender
-            ),
-            balloonBundleID: decoded.balloonBundleID.isEmpty ? nil : decoded.balloonBundleID,
-            poll: poll
-          ))
+        var messages: [Message] = []
+        var parentCache: ReplyParentCache = [:]
+        var pollOptionCache = PollOptionTextCache()
+        let rows = try db.prepareRowIterator(query.sql, bindings: query.bindings)
+        while let row = try rows.failableNext() {
+          let decoded = try decodeMessageRow(
+            row,
+            columns: query.selection.columns,
+            fallbackChatID: query.fallbackChatID
+          )
+          messages.append(
+            try message(
+              from: decoded,
+              db,
+              parentCache: &parentCache,
+              pollOptionCache: &pollOptionCache
+            ))
+        }
+        var usedFallbackReplacement = false
+        let coalesced = try coalesceURLPreviewMessages(
+          messages,
+          validateExistingCoalescence: { text, preview in
+            try self.precedingTextMessageForURLPreview(preview, db: db)?.rowID == text.rowID
+          },
+          fallbackForUnmatchedPreview: { preview in
+            guard let previous = try self.precedingTextMessageForURLPreview(preview, db: db) else {
+              return nil
+            }
+            if let filter, !filter.allows(previous) {
+              return nil
+            }
+            return .replace(previous)
+          },
+          fallbackReplacementUsed: {
+            usedFallbackReplacement = true
+          }
+        ).sorted(by: messageHistoryNewestFirst)
+
+        if messages.count < physicalLimit || (coalesced.count >= limit && !usedFallbackReplacement)
+        {
+          return Array(coalesced.prefix(limit))
+        }
+        guard let nextLimit = nextHistoryPhysicalLimit(after: physicalLimit) else {
+          return Array(coalesced.prefix(limit))
+        }
+        physicalLimit = nextLimit
       }
-      return messages
     }
+  }
+
+  private func nextHistoryPhysicalLimit(after current: Int) -> Int? {
+    guard current > 0, current <= Int.max / 2 else { return nil }
+    return current * 2
+  }
+
+  private func messageHistoryNewestFirst(_ lhs: Message, _ rhs: Message) -> Bool {
+    if lhs.date == rhs.date {
+      return lhs.rowID > rhs.rowID
+    }
+    return lhs.date > rhs.date
   }
 
   public func messagesAfter(afterRowID: Int64, chatID: Int64?, limit: Int) throws -> [Message] {
@@ -241,6 +102,31 @@ extension MessageStore {
     limit: Int,
     includeReactions: Bool
   ) throws -> [Message] {
+    guard limit > 0 else { return [] }
+    var cursor = afterRowID
+    while true {
+      let batch = try messagesAfterBatch(
+        afterRowID: cursor,
+        chatID: chatID,
+        limit: limit,
+        includeReactions: includeReactions
+      )
+      if !batch.messages.isEmpty {
+        return batch.messages
+      }
+      guard batch.maxScannedRowID > cursor else {
+        return []
+      }
+      cursor = batch.maxScannedRowID
+    }
+  }
+
+  func messagesAfterBatch(
+    afterRowID: Int64,
+    chatID: Int64?,
+    limit: Int,
+    includeReactions: Bool
+  ) throws -> MessagesAfterBatch {
     let query = MessagesAfterQuery(
       store: self,
       afterRowID: MessageID(rawValue: afterRowID),
@@ -253,7 +139,7 @@ extension MessageStore {
       var messages: [Message] = []
       var parentCache: ReplyParentCache = [:]
       var pollOptionCache = PollOptionTextCache()
-      let urlBalloonProvider = "com.apple.messages.URLBalloonProvider"
+      var maxScannedRowID = afterRowID
 
       let rows = try db.prepareRowIterator(query.sql, bindings: query.bindings)
       while let row = try rows.failableNext() {
@@ -262,79 +148,39 @@ extension MessageStore {
           columns: query.selection.columns,
           fallbackChatID: query.fallbackChatID
         )
-        let poll = try enrichedPollEvent(
-          decoded.poll,
-          db: db,
-          cache: &pollOptionCache
-        )
-        let balloonBundleID = try stringValue(row, MessageRowColumns.balloonBundleID)
-        if balloonBundleID == urlBalloonProvider,
-          shouldSkipURLBalloonDuplicate(
-            chatID: decoded.chatID,
-            sender: decoded.sender,
-            text: decoded.text,
-            isFromMe: decoded.isFromMe,
-            date: decoded.date,
-            rowID: decoded.rowID
-          )
-        {
-          continue
-        }
-
-        let reaction = decodeReaction(
-          associatedType: decoded.associatedType,
-          associatedGUID: decoded.associatedGUID,
-          text: decoded.text
-        )
-        let replyToGUID = routedReplyToGUID(decoded)
-        let threadOriginatorGUID =
-          reaction.isReaction || decoded.threadOriginatorGUID.isEmpty
-          ? nil : decoded.threadOriginatorGUID
-        let threadOriginatorPart =
-          reaction.isReaction || decoded.threadOriginatorPart.isEmpty
-          ? nil : decoded.threadOriginatorPart
-        let parent =
-          reaction.isReaction
-          ? nil
-          : enrichedReplyContext(
-            db,
-            replyToGUID: replyToGUID,
-            threadOriginatorGUID: threadOriginatorGUID,
-            cache: &parentCache
-          )
-
+        maxScannedRowID = max(maxScannedRowID, decoded.rowID)
         messages.append(
-          Message(
-            rowID: decoded.rowID,
-            chatID: decoded.chatID,
-            sender: decoded.sender,
-            text: decoded.text,
-            date: decoded.date,
-            isFromMe: decoded.isFromMe,
-            service: decoded.service,
-            handleID: decoded.handleID,
-            attachmentsCount: decoded.attachments,
-            guid: decoded.guid,
-            routing: Message.RoutingMetadata(
-              replyToGUID: replyToGUID,
-              threadOriginatorGUID: threadOriginatorGUID,
-              threadOriginatorPart: threadOriginatorPart,
-              destinationCallerID: decoded.destinationCallerID.isEmpty
-                ? nil : decoded.destinationCallerID,
-              replyToText: parent?.text,
-              replyToSender: parent?.sender
-            ),
-            balloonBundleID: decoded.balloonBundleID.isEmpty ? nil : decoded.balloonBundleID,
-            reaction: Message.ReactionMetadata(
-              isReaction: reaction.isReaction,
-              reactionType: reaction.reactionType,
-              isReactionAdd: reaction.isReactionAdd,
-              reactedToGUID: reaction.reactedToGUID
-            ),
-            poll: poll
+          try message(
+            from: decoded,
+            db,
+            parentCache: &parentCache,
+            pollOptionCache: &pollOptionCache
           ))
       }
-      return messages
+      let coalesced = try coalesceURLPreviewMessages(
+        messages,
+        validateExistingCoalescence: { text, preview in
+          try self.precedingTextMessageForURLPreview(preview, db: db)?.rowID == text.rowID
+        },
+        fallbackForUnmatchedPreview: { preview in
+          guard try self.precedingTextMessageForURLPreview(preview, db: db) != nil else {
+            return nil
+          }
+          return .suppress
+        }
+      )
+      let visibleMessages = coalesced.filter { message in
+        guard isURLPreviewBalloon(message) else { return true }
+        return !shouldSkipURLBalloonDuplicate(
+          chatID: message.chatID,
+          sender: message.sender,
+          text: message.text,
+          isFromMe: message.isFromMe,
+          date: message.date,
+          rowID: message.rowID
+        )
+      }
+      return MessagesAfterBatch(messages: visibleMessages, maxScannedRowID: maxScannedRowID)
     }
   }
 

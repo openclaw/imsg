@@ -322,6 +322,10 @@ public struct Message: Sendable, Equatable {
   /// Native Messages Polls metadata when the row is a Polls extension balloon
   /// or a Polls vote update.
   public let poll: MessagePollEvent?
+  /// Metadata for an Apple URL preview balloon row that was folded into this
+  /// message. The message itself still uses the originating text row's id,
+  /// guid, text, and timestamp.
+  public let urlPreview: URLPreviewMetadata?
 
   // Reaction metadata (populated when message is a reaction event)
   /// Whether this message is a reaction event (tapback add/remove)
@@ -346,6 +350,7 @@ public struct Message: Sendable, Equatable {
     guid: String = "",
     routing: RoutingMetadata = RoutingMetadata(),
     balloonBundleID: String? = nil,
+    urlPreview: URLPreviewMetadata? = nil,
     reaction: ReactionMetadata = ReactionMetadata(),
     poll: MessagePollEvent? = nil
   ) {
@@ -367,6 +372,7 @@ public struct Message: Sendable, Equatable {
     self.destinationCallerID = routing.destinationCallerID
     self.balloonBundleID = balloonBundleID
     self.poll = poll
+    self.urlPreview = urlPreview
     self.isReaction = reaction.isReaction
     self.reactionType = reaction.reactionType
     self.isReactionAdd = reaction.isReactionAdd
@@ -389,6 +395,7 @@ public struct Message: Sendable, Equatable {
     threadOriginatorPart: String? = nil,
     destinationCallerID: String? = nil,
     balloonBundleID: String? = nil,
+    urlPreview: URLPreviewMetadata? = nil,
     replyToText: String? = nil,
     replyToSender: String? = nil,
     isReaction: Bool = false,
@@ -417,6 +424,7 @@ public struct Message: Sendable, Equatable {
         replyToSender: replyToSender
       ),
       balloonBundleID: balloonBundleID,
+      urlPreview: urlPreview,
       reaction: ReactionMetadata(
         isReaction: isReaction,
         reactionType: reactionType,
@@ -426,66 +434,7 @@ public struct Message: Sendable, Equatable {
       poll: poll
     )
   }
-}
 
-public enum MessageSendState: String, Sendable, Equatable {
-  case pending
-  case sent
-  case delivered
-  case failed
-}
-
-public struct MessageSendStatus: Sendable, Equatable {
-  public let rowID: Int64
-  public let guid: String
-  public let service: String
-  public let error: Int
-  public let dateDelivered: Date?
-  public let dateRead: Date?
-  public let isSent: Bool
-  public let isDelivered: Bool
-  public let isFinished: Bool
-  public let isDelayed: Bool
-  public let isPrepared: Bool
-  public let isPendingSatelliteSend: Bool
-  public let wasDowngraded: Bool
-
-  public var state: MessageSendState {
-    if error != 0 { return .failed }
-    if isDelivered || dateDelivered != nil { return .delivered }
-    if isSent { return .sent }
-    return .pending
-  }
-
-  public init(
-    rowID: Int64,
-    guid: String,
-    service: String,
-    error: Int,
-    dateDelivered: Date?,
-    dateRead: Date?,
-    isSent: Bool,
-    isDelivered: Bool,
-    isFinished: Bool,
-    isDelayed: Bool,
-    isPrepared: Bool,
-    isPendingSatelliteSend: Bool,
-    wasDowngraded: Bool
-  ) {
-    self.rowID = rowID
-    self.guid = guid
-    self.service = service
-    self.error = error
-    self.dateDelivered = dateDelivered
-    self.dateRead = dateRead
-    self.isSent = isSent
-    self.isDelivered = isDelivered
-    self.isFinished = isFinished
-    self.isDelayed = isDelayed
-    self.isPrepared = isPrepared
-    self.isPendingSatelliteSend = isPendingSatelliteSend
-    self.wasDowngraded = wasDowngraded
-  }
 }
 
 public struct AttachmentMeta: Sendable, Equatable {

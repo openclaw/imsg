@@ -7,6 +7,7 @@
 
 ### JSON Output
 - feat: expose raw Messages `balloon_bundle_id` in message JSON/RPC payloads so consumers can recognize URL-preview rows without parsing text (#137, thanks @omarshahine).
+- fix: coalesce Apple URL-preview split-send rows into one logical message across history, search, and watch, with `url_preview` metadata when the preview row is folded into the text row (#141, thanks @omarshahine).
 
 ### Advanced IMCore
 - fix: defer injected bridge bootstrap until after Messages startup so macOS 26 dyld constructor ordering cannot touch ObjC/Foundation/IMCore before the process is ready (#138, thanks @omarshahine).

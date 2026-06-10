@@ -50,6 +50,7 @@ Returned by `imsg history`, `imsg watch`, and the JSON-RPC `messages.history` an
 | `reply_to_guid` | string | When set, this message is an inline reply to that GUID. |
 | `destination_caller_id` | string | Outgoing only — which of your numbers Messages routed through. |
 | `balloon_bundle_id` | string | Raw Messages `message.balloon_bundle_id`, when present. URL preview rows use `com.apple.messages.URLBalloonProvider`, which lets consumers recognize link-preview payload rows without inferring from message text. |
+| `url_preview` | object | Present when imsg folds an Apple URL-preview balloon row into its originating text row. The outer message keeps the text row's `id`, `guid`, `text`, and `created_at`. |
 | `sender` | string | Raw handle. Empty for some self-sent messages. |
 | `sender_name` | string | Resolved Contacts name when permission granted. |
 | `is_from_me` | bool | True for outbound. |
@@ -58,6 +59,19 @@ Returned by `imsg history`, `imsg watch`, and the JSON-RPC `messages.history` an
 | `attachments` | array | Present when `--attachments` is set. See below. |
 | `thread_originator_guid` | string | For inline-reply threads. |
 | `poll` | object | Present for native Apple Messages Polls creation and vote rows. See below. |
+
+### URL preview coalescing
+
+Messages may store a link send as two rows: the user's text row and a later `com.apple.messages.URLBalloonProvider` preview row. `history`, `search`, `watch`, `messages.history`, and `watch.subscribe` coalesce those rows into one logical message when the preview immediately follows a same-chat/same-sender text row containing the preview URL. In batch reads the coalesced message includes:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | int | Preview rowid that was folded into the outer text message. |
+| `guid` | string | Preview row GUID. |
+| `balloon_bundle_id` | string | `com.apple.messages.URLBalloonProvider`. |
+| `created_at` | ISO8601 | Preview row timestamp. |
+
+Live watch calls do not delay the text message waiting for a preview. If the preview row arrives in a later poll after the text row was already emitted, imsg suppresses the preview row so consumers still receive one notification.
 
 ### Reaction extensions
 

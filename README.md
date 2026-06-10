@@ -159,6 +159,7 @@ Message objects include:
 - `reply_to_text`, `reply_to_sender` (parent body + handle for threaded
   replies and non-reaction associations, when the parent row is still in
   chat.db)
+- `balloon_bundle_id`, `url_preview`
 - `sender`, `sender_name`, `is_from_me`, `text`, `created_at`
 - `attachments`, `reactions`
 - `poll` for native Apple Messages poll creation and vote rows

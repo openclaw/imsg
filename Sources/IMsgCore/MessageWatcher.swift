@@ -236,13 +236,13 @@ private final class WatchState: @unchecked Sendable {
   private func poll() {
     if stopped { return }
     do {
-      let messages = try store.messagesAfter(
+      let batch = try store.messagesAfterBatch(
         afterRowID: cursor,
         chatID: chatID,
         limit: configuration.batchLimit,
         includeReactions: configuration.includeReactions
       )
-      for message in messages {
+      for message in batch.messages {
         switch yieldDecision(for: message) {
         case .yield:
           break
@@ -255,6 +255,9 @@ private final class WatchState: @unchecked Sendable {
         if message.rowID > cursor {
           cursor = message.rowID
         }
+      }
+      if batch.maxScannedRowID > cursor {
+        cursor = batch.maxScannedRowID
       }
     } catch {
       continuation.finish(throwing: error)

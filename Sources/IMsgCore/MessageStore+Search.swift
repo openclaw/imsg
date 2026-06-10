@@ -46,67 +46,84 @@ extension MessageStore {
   public func searchMessages(query text: String, match: String, limit: Int) throws -> [Message] {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return [] }
+    guard limit > 0 else { return [] }
     let exact = match.lowercased() == "exact"
-    let query = SearchMessagesQuery(
-      store: self,
-      text: trimmed,
-      exact: exact,
-      limit: limit
-    )
+    var physicalLimit = limit
 
     return try withConnection { db in
-      var messages: [Message] = []
-      var parentCache: ReplyParentCache = [:]
-      var pollOptionCache = PollOptionTextCache()
-      let rows = try db.prepareRowIterator(query.sql, bindings: query.bindings)
-      while let row = try rows.failableNext() {
-        let decoded = try decodeMessageRow(
-          row,
-          columns: query.selection.columns,
-          fallbackChatID: query.fallbackChatID
+      while true {
+        let query = SearchMessagesQuery(
+          store: self,
+          text: trimmed,
+          exact: exact,
+          limit: physicalLimit
         )
-        let poll = try enrichedPollEvent(
-          decoded.poll,
-          db: db,
-          cache: &pollOptionCache
-        )
-        let replyToGUID = routedReplyToGUID(decoded)
-        let threadOriginatorGUID =
-          decoded.threadOriginatorGUID.isEmpty ? nil : decoded.threadOriginatorGUID
-        let threadOriginatorPart =
-          decoded.threadOriginatorPart.isEmpty ? nil : decoded.threadOriginatorPart
-        let parent = enrichedReplyContext(
-          db,
-          replyToGUID: replyToGUID,
-          threadOriginatorGUID: threadOriginatorGUID,
-          cache: &parentCache
-        )
-        messages.append(
-          Message(
-            rowID: decoded.rowID,
-            chatID: decoded.chatID,
-            sender: decoded.sender,
-            text: decoded.text,
-            date: decoded.date,
-            isFromMe: decoded.isFromMe,
-            service: decoded.service,
-            handleID: decoded.handleID,
-            attachmentsCount: decoded.attachments,
-            guid: decoded.guid,
-            routing: Message.RoutingMetadata(
-              replyToGUID: replyToGUID,
-              threadOriginatorGUID: threadOriginatorGUID,
-              threadOriginatorPart: threadOriginatorPart,
-              destinationCallerID: decoded.destinationCallerID.isEmpty
-                ? nil : decoded.destinationCallerID,
-              replyToText: parent?.text,
-              replyToSender: parent?.sender
-            ),
-            balloonBundleID: decoded.balloonBundleID.isEmpty ? nil : decoded.balloonBundleID,
-            poll: poll
-          ))
+        var messages: [Message] = []
+        var parentCache: ReplyParentCache = [:]
+        var pollOptionCache = PollOptionTextCache()
+        let rows = try db.prepareRowIterator(query.sql, bindings: query.bindings)
+        while let row = try rows.failableNext() {
+          let decoded = try decodeMessageRow(
+            row,
+            columns: query.selection.columns,
+            fallbackChatID: query.fallbackChatID
+          )
+          messages.append(
+            try message(
+              from: decoded,
+              db,
+              parentCache: &parentCache,
+              pollOptionCache: &pollOptionCache
+            ))
+        }
+        var usedFallbackReplacement = false
+        let coalesced = try coalesceURLPreviewMessages(
+          messages,
+          validateExistingCoalescence: { text, preview in
+            try self.precedingTextMessageForURLPreview(preview, db: db)?.rowID == text.rowID
+          },
+          fallbackForUnmatchedPreview: { preview in
+            guard let previous = try self.precedingTextMessageForURLPreview(preview, db: db) else {
+              return nil
+            }
+            guard self.searchMessage(previous, matches: trimmed, exact: exact) else {
+              return nil
+            }
+            return .replace(previous)
+          },
+          fallbackReplacementUsed: {
+            usedFallbackReplacement = true
+          }
+        ).sorted(by: searchMessagesNewestFirst)
+
+        if messages.count < physicalLimit || (coalesced.count >= limit && !usedFallbackReplacement)
+        {
+          return Array(coalesced.prefix(limit))
+        }
+        guard let nextLimit = nextSearchPhysicalLimit(after: physicalLimit) else {
+          return Array(coalesced.prefix(limit))
+        }
+        physicalLimit = nextLimit
       }
-      return messages
     }
+  }
+
+  private func searchMessage(_ message: Message, matches text: String, exact: Bool) -> Bool {
+    if exact {
+      return message.text.caseInsensitiveCompare(text) == .orderedSame
+    }
+    return message.text.range(of: text, options: [.caseInsensitive]) != nil
+  }
+
+  private func nextSearchPhysicalLimit(after current: Int) -> Int? {
+    guard current > 0, current <= Int.max / 2 else { return nil }
+    return current * 2
+  }
+
+  private func searchMessagesNewestFirst(_ lhs: Message, _ rhs: Message) -> Bool {
+    if lhs.date == rhs.date {
+      return lhs.rowID > rhs.rowID
+    }
+    return lhs.date > rhs.date
   }
 }

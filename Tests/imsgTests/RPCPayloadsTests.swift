@@ -115,6 +115,42 @@ func messagePayloadIncludesChatFields() throws {
 }
 
 @Test
+func messagePayloadIncludesCoalescedURLPreview() throws {
+  let message = Message(
+    rowID: 5,
+    chatID: 10,
+    sender: "+123",
+    text: "Dump https://example.com",
+    date: Date(timeIntervalSince1970: 1),
+    isFromMe: false,
+    service: "iMessage",
+    handleID: nil,
+    attachmentsCount: 0,
+    guid: "text-guid",
+    urlPreview: Message.URLPreviewMetadata(
+      rowID: 6,
+      guid: "preview-guid",
+      balloonBundleID: MessageStore.urlPreviewBalloonBundleID,
+      date: Date(timeIntervalSince1970: 2)
+    )
+  )
+
+  let payload = try messagePayload(
+    message: message,
+    chatInfo: nil,
+    participants: [],
+    attachments: [],
+    reactions: []
+  )
+
+  let preview = payload["url_preview"] as? [String: Any]
+  #expect(preview?["id"] as? Int64 == 6)
+  #expect(preview?["guid"] as? String == "preview-guid")
+  #expect(preview?["balloon_bundle_id"] as? String == MessageStore.urlPreviewBalloonBundleID)
+  #expect(preview?["created_at"] as? String == "1970-01-01T00:00:02.000Z")
+}
+
+@Test
 func messagePayloadIncludesPollObject() throws {
   let poll = MessagePollEvent(
     kind: .created,
