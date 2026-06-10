@@ -10,7 +10,7 @@
 
 ### Advanced IMCore
 - fix: defer injected bridge bootstrap until after Messages startup so macOS 26 dyld constructor ordering cannot touch ObjC/Foundation/IMCore before the process is ready (#138, thanks @omarshahine).
-- fix: let bridge-backed send actions wait longer for slow Messages private-send completions while keeping short timeouts for probe and mutation calls (#139, thanks @omarshahine).
+- fix: let bridge-backed sends and initial chat creation wait longer for slow Messages private-send completions while keeping short timeouts for probe and mutation calls (#139, thanks @omarshahine).
 
 ## 0.11.0 - 2026-05-31
 

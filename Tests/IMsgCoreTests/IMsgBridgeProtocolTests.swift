@@ -95,6 +95,7 @@ struct IMsgBridgeProtocolTests {
       .sendAttachment,
       .sendPoll,
       .sendReaction,
+      .createChat,
     ] {
       #expect(
         IMsgBridgeProtocol.defaultResponseTimeout(for: action)
