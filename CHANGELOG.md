@@ -5,6 +5,12 @@
 ### Read Commands
 - fix: let `chats` and `history` run without prompting for Contacts when permission is still undecided, while preserving Contacts prompts for explicit name-resolution flows (#135, thanks @cemendes).
 
+### JSON Output
+- feat: expose raw Messages `balloon_bundle_id` in message JSON/RPC payloads so consumers can recognize URL-preview rows without parsing text (#137, thanks @omarshahine).
+
+### Advanced IMCore
+- fix: defer injected bridge bootstrap until after Messages startup so macOS 26 dyld constructor ordering cannot touch ObjC/Foundation/IMCore before the process is ready (#138, thanks @omarshahine).
+
 ## 0.11.0 - 2026-05-31
 
 ### Send
@@ -13,9 +19,6 @@
 
 ### Local Lookups
 - feat: add `--local` modes for `account`, `whois`, and `nickname` so common introspection can read local history or Contacts without launching the IMCore bridge (#132, thanks @ranaroussi).
-
-### Advanced IMCore
-- fix: defer injected bridge bootstrap until after Messages startup so macOS 26 dyld constructor ordering cannot touch ObjC/Foundation/IMCore before the process is ready (#138, thanks @omarshahine).
 
 ## 0.10.0 - 2026-05-28
 
