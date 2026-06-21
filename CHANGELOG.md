@@ -2,6 +2,9 @@
 
 ## 0.11.2 - Unreleased
 
+### Send
+- fix: thread attributed-text formatting through the RPC `send` bridge path, not just `send-rich`, so direct/handle sends render **bold**/*italic*/etc. on macOS 15+. `handleSend` now forwards format ranges to the bridge, accepting `formatting` (the key OpenClaw's `message` tool emits) alongside `text_formatting`/`textFormatting`.
+
 ## 0.11.1 - 2026-06-10
 
 ### Read Commands

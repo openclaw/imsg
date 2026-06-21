@@ -41,6 +41,62 @@ func rpcSendUsesBridgeWhenReadyAndExistingDirectChatResolves() async throws {
 }
 
 @Test
+func rpcSendThreadsTextFormattingToBridge() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPCDirectChat()
+  let output = TestRPCOutput()
+  var capturedParams: [String: Any] = [:]
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    sendMessage: { _ in },
+    resolveSentMessage: { _, _, _, _ in nil },
+    invokeBridge: { _, params in
+      capturedParams = params
+      return ["messageGuid": "bridge-guid", "chatGuid": "iMessage;-;+123", "service": "iMessage"]
+    },
+    isBridgeReady: { true }
+  )
+
+  // The OpenClaw gateway emits format ranges under the bare `formatting` key.
+  let line = #"""
+    {"jsonrpc":"2.0","id":"3fmt","method":"send","params":{"to":"+123","text":"hello world","formatting":[{"start":0,"length":5,"styles":["bold"]}]}}
+    """#
+  await server.handleLineForTesting(line)
+
+  let ranges = capturedParams["textFormatting"] as? [[String: Any]]
+  #expect(ranges?.count == 1)
+  #expect(ranges?.first?["start"] as? Int == 0)
+  #expect(ranges?.first?["length"] as? Int == 5)
+  #expect(ranges?.first?["styles"] as? [String] == ["bold"])
+  #expect(capturedParams["message"] as? String == "hello world")
+}
+
+@Test
+func rpcSendWithoutFormattingOmitsTextFormatting() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPCDirectChat()
+  let output = TestRPCOutput()
+  var capturedParams: [String: Any] = [:]
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    sendMessage: { _ in },
+    resolveSentMessage: { _, _, _, _ in nil },
+    invokeBridge: { _, params in
+      capturedParams = params
+      return ["messageGuid": "bridge-guid", "chatGuid": "iMessage;-;+123", "service": "iMessage"]
+    },
+    isBridgeReady: { true }
+  )
+
+  let line = #"{"jsonrpc":"2.0","id":"3nofmt","method":"send","params":{"to":"+123","text":"yo"}}"#
+  await server.handleLineForTesting(line)
+
+  #expect(capturedParams["textFormatting"] == nil)
+}
+
+@Test
 func rpcSendAutoSMSDetectionKeepsAnyPrefixBridgeLookup() async throws {
   let store = try CommandTestDatabase.makeStoreForRPCDirectChat()
   try store.withConnection { db in
