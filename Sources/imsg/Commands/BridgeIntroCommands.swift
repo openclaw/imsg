@@ -325,6 +325,7 @@ enum NicknameCommand {
           "local_contact_name": name ?? "",
           "found": name != nil,
           "source": "local-addressbook",
+          "contacts_unavailable": contacts.contactsUnavailable,
         ])
       } else {
         StdoutWriter.writeLine(
