@@ -814,7 +814,11 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"retractMessagePart": @(gHasRetractMessagePart),
         @"sendMessageReason": @(gHasSendMessageReason),
         @"pollPayloadMessage": @(pollPayloadMessageInitializerAvailable()),
-        @"pollVoteMessage": @(pollVoteMessageInitializerAvailable())
+        @"pollVoteMessage": @(pollVoteMessageInitializerAvailable()),
+        @"deleteChat": @(hasRegistry &&
+            [registryClass instancesRespondToSelector:NSSelectorFromString(@"deleteChat:")]),
+        @"removeChat": @(hasRegistry &&
+            [registryClass instancesRespondToSelector:NSSelectorFromString(@"_chat_remove:")])
     };
 
     return successResponse(requestId, @{
@@ -3995,14 +3999,28 @@ static NSDictionary *handleDeleteChat(NSInteger requestId, NSDictionary *params)
     if (!chat) return errorResponse(requestId, @"Chat not found");
     Class regClass = NSClassFromString(@"IMChatRegistry");
     id reg = regClass ? [regClass performSelector:@selector(sharedInstance)] : nil;
-    SEL sel = @selector(deleteChat:);
-    if (!reg || ![reg respondsToSelector:sel]) {
-        return errorResponse(requestId, @"deleteChat: not available");
+    SEL deleteSelector = NSSelectorFromString(@"deleteChat:");
+    SEL removeSelector = NSSelectorFromString(@"_chat_remove:");
+    SEL selectedSelector = NULL;
+    if ([reg respondsToSelector:deleteSelector]) {
+        selectedSelector = deleteSelector;
+    } else if ([reg respondsToSelector:removeSelector]) {
+        // macOS 26 removed deleteChat:, while Messages still uses the
+        // daemon-aware registry removal path exposed as _chat_remove:.
+        selectedSelector = removeSelector;
+    }
+    if (!reg || selectedSelector == NULL) {
+        return errorResponse(requestId,
+            @"Chat deletion is unavailable (deleteChat: and _chat_remove: missing)");
     }
     @try {
-        [reg performSelector:sel withObject:chat];
+        [reg performSelector:selectedSelector withObject:chat];
     } @catch (NSException *ex) { return errorResponse(requestId, ex.reason ?: @"failed"); }
-    return successResponse(requestId, @{@"chatGuid": chatGuid, @"deleted": @YES});
+    return successResponse(requestId, @{
+        @"chatGuid": chatGuid,
+        @"deleted": @YES,
+        @"method": NSStringFromSelector(selectedSelector)
+    });
 }
 
 /// `create-chat`: vend handles for each address, ask the registry for a chat

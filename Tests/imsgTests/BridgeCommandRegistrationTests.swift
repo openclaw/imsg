@@ -174,6 +174,25 @@ func injectedHelperWiresFailClosedNativePollVote() throws {
 }
 
 @Test
+func injectedHelperFallsBackToMacOS26ChatRemovalSelector() throws {
+  let testFile = URL(fileURLWithPath: #filePath)
+  let repoRoot =
+    testFile
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
+  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
+  let deleteBody = try #require(functionBody(named: "handleDeleteChat", in: source))
+
+  #expect(source.contains(#"@"deleteChat""#))
+  #expect(source.contains(#"@"removeChat""#))
+  #expect(deleteBody.contains(#"NSSelectorFromString(@"deleteChat:")"#))
+  #expect(deleteBody.contains(#"NSSelectorFromString(@"_chat_remove:")"#))
+  #expect(deleteBody.contains("NSStringFromSelector(selectedSelector)"))
+}
+
+@Test
 func injectedHelperConstructorOnlySchedulesDelayedBootstrap() throws {
   let testFile = URL(fileURLWithPath: #filePath)
   let repoRoot =
