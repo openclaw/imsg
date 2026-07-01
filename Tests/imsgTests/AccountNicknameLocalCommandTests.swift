@@ -125,7 +125,7 @@ func nicknameLocalJsonReportsFoundFalseWhenUnknown() async throws {
     flags: ["local", "jsonOutput"]
   )
   let runtime = RuntimeOptions(parsedValues: values)
-  let resolver = MockContactResolver(names: [:])
+  let resolver = MockContactResolver(names: [:], contactsUnavailable: true)
   let (output, _) = try await StdoutCapture.capture {
     try await NicknameCommand.run(
       values: values,
@@ -137,6 +137,7 @@ func nicknameLocalJsonReportsFoundFalseWhenUnknown() async throws {
   #expect(payload["address"] as? String == "+15559998888")
   #expect(payload["found"] as? Bool == false)
   #expect(payload["source"] as? String == "local-addressbook")
+  #expect(payload["contacts_unavailable"] as? Bool == true)
 }
 
 @Test

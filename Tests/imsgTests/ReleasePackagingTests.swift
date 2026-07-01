@@ -25,6 +25,19 @@ func universalBuildScriptDefaultsToBothMacArchitectures() throws {
   #expect(script.contains(#"cp "${DIST_DIR}/${HELPER_NAME}" "$OUTPUT_DIR/$HELPER_NAME""#))
 }
 
+@Test
+func executablePlistDeclaresContactsUsageDescription() throws {
+  let plist = try readRepositoryFile("Sources/imsg/Resources/Info.plist")
+  let generator = try readRepositoryFile("scripts/generate-version.sh")
+  let key = "NSContactsUsageDescription"
+  let description = "Resolve contact names for Messages conversations."
+
+  #expect(plist.contains("<key>\(key)</key>"))
+  #expect(plist.contains("<string>\(description)</string>"))
+  #expect(generator.contains("<key>\(key)</key>"))
+  #expect(generator.contains("<string>\(description)</string>"))
+}
+
 private func readRepositoryFile(_ path: String) throws -> String {
   let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
     .appendingPathComponent(path)
