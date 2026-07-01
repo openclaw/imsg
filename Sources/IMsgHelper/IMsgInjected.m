@@ -208,6 +208,7 @@ static BOOL gHasRetractMessagePart = NO;     // retractMessagePart:
 static BOOL gHasSendMessageReason = NO;      // sendMessage:reason:
 
 static BOOL pollPayloadMessageInitializerAvailable(void);
+static BOOL pollVoteMessageInitializerAvailable(void);
 
 static void probeSelectors(void) {
     Class chatClass = NSClassFromString(@"IMChat");
@@ -812,7 +813,8 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"editMessage": @(gHasEditMessage),
         @"retractMessagePart": @(gHasRetractMessagePart),
         @"sendMessageReason": @(gHasSendMessageReason),
-        @"pollPayloadMessage": @(pollPayloadMessageInitializerAvailable())
+        @"pollPayloadMessage": @(pollPayloadMessageInitializerAvailable()),
+        @"pollVoteMessage": @(pollVoteMessageInitializerAvailable())
     };
 
     return successResponse(requestId, @{

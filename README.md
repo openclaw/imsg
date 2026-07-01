@@ -136,6 +136,10 @@ Advanced IMCore (require `imsg launch` with SIP off — see
   `imsg chat-delete`, `imsg chat-mark`
 - `imsg account`, `imsg whois`, `imsg nickname`
 
+`imsg status --json` reports native bridge selector capabilities. Poll creation
+requires `selectors.pollPayloadMessage`; poll voting requires
+`selectors.pollVoteMessage` plus `poll.vote` in `rpc_methods`.
+
 `react` intentionally sends only the standard tapbacks Messages.app exposes
 reliably through automation. Custom emoji tapbacks can be read from
 history/watch output, but are sent through the bridge `tapback` command.

@@ -164,6 +164,7 @@ func injectedHelperWiresFailClosedNativePollVote() throws {
 
   #expect(source.contains("send-poll-vote"))
   #expect(source.contains("Poll vote payload exceeds 4096 bytes"))
+  #expect(source.contains(#"@"pollVoteMessage": @(pollVoteMessageInitializerAvailable())"#))
   #expect(sendVoteBody.contains("pollVoteMessageInitializerAvailable()"))
   #expect(!sendVoteBody.contains("pollPayloadMessageInitializerAvailable()"))
   #expect(voteBody.contains("associatedMessageType"))
