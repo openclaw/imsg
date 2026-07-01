@@ -121,3 +121,48 @@ actor ChatCache {
     return participants
   }
 }
+
+extension RPCServer {
+  func sendViaBridge(
+    chatGUID: String,
+    text: String,
+    file: String,
+    selectedMessageGuid: String? = nil,
+    textFormatting: Any? = nil
+  ) async throws -> [String: Any] {
+    if !file.isEmpty {
+      let requiresMetadata = !text.isEmpty || selectedMessageGuid != nil || textFormatting != nil
+      if requiresMetadata {
+        let status = try await bridgeInvoker(.status, [:])
+        guard status["attachment_metadata"] as? Bool == true else {
+          throw RPCError.internalError(
+            "running bridge does not support captioned or threaded attachments; "
+              + "restart Messages with the current imsg bridge"
+          )
+        }
+      }
+      let stagedFile = try stageAttachment(file)
+      var params: [String: Any] = [
+        "chatGuid": chatGUID, "filePath": stagedFile, "isAudioMessage": false,
+      ]
+      if !text.isEmpty {
+        params["message"] = text
+      }
+      if let selectedMessageGuid {
+        params["selectedMessageGuid"] = selectedMessageGuid
+      }
+      if let textFormatting {
+        params["textFormatting"] = textFormatting
+      }
+      return try await bridgeInvoker(.sendAttachment, params)
+    }
+    var params: [String: Any] = ["chatGuid": chatGUID, "message": text]
+    if let selectedMessageGuid {
+      params["selectedMessageGuid"] = selectedMessageGuid
+    }
+    if let textFormatting {
+      params["textFormatting"] = textFormatting
+    }
+    return try await bridgeInvoker(.sendMessage, params)
+  }
+}

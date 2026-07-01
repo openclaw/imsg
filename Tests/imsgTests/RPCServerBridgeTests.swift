@@ -78,6 +78,95 @@ func rpcSendForwardsReplyTargetAliasesToBridge() async throws {
 }
 
 @Test
+func rpcSendForwardsCaptionedAttachmentReplyToBridge() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPCDirectChat()
+  let output = TestRPCOutput()
+  var appleScriptCalled = false
+  var capturedActions: [BridgeAction] = []
+  var capturedParams: [String: Any] = [:]
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    sendMessage: { _ in appleScriptCalled = true },
+    resolveSentMessage: { _, _, _, _ in nil },
+    invokeBridge: { action, params in
+      capturedActions.append(action)
+      if action == .status {
+        return ["attachment_metadata": true]
+      }
+      capturedParams = params
+      return ["messageGuid": "bridge-guid"]
+    },
+    stageAttachment: { _ in "/tmp/staged-photo.jpg" },
+    isBridgeReady: { true }
+  )
+
+  let line = #"""
+    {
+      "jsonrpc": "2.0",
+      "id": "captioned-reply",
+      "method": "send",
+      "params": {
+        "to": "+123",
+        "text": "caption",
+        "file": "photo.jpg",
+        "reply_to": "parent-guid",
+        "formatting": [{"start": 0, "length": 7, "styles": ["italic"]}]
+      }
+    }
+    """#
+  await server.handleLineForTesting(line)
+
+  #expect(appleScriptCalled == false)
+  #expect(capturedActions == [.status, .sendAttachment])
+  #expect(capturedParams["chatGuid"] as? String == "iMessage;-;+123")
+  #expect(capturedParams["filePath"] as? String == "/tmp/staged-photo.jpg")
+  #expect(capturedParams["message"] as? String == "caption")
+  #expect(capturedParams["selectedMessageGuid"] as? String == "parent-guid")
+  let ranges = capturedParams["textFormatting"] as? [[String: Any]]
+  #expect(ranges?.first?["styles"] as? [String] == ["italic"])
+  let result = output.responses.first?["result"] as? [String: Any]
+  #expect(result?["transport"] as? String == "bridge")
+  #expect(result?["guid"] as? String == "bridge-guid")
+}
+
+@Test
+func rpcSendReplyAttachmentRejectsStaleBridge() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPCDirectChat()
+  let output = TestRPCOutput()
+  var appleScriptCalled = false
+  var capturedActions: [BridgeAction] = []
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    sendMessage: { _ in appleScriptCalled = true },
+    resolveSentMessage: { _, _, _, _ in nil },
+    invokeBridge: { action, _ in
+      capturedActions.append(action)
+      return action == .status ? ["bridge_version": 2] : ["messageGuid": "bridge-guid"]
+    },
+    stageAttachment: { _ in "/tmp/staged-photo.jpg" },
+    isBridgeReady: { true }
+  )
+
+  let line = #"""
+    {"jsonrpc":"2.0","id":"stale-reply","method":"send","params":{"to":"+123","file":"photo.jpg","reply_to":"parent-guid"}}
+    """#
+  await server.handleLineForTesting(line)
+
+  #expect(appleScriptCalled == false)
+  #expect(capturedActions == [.status])
+  #expect(output.responses.isEmpty)
+  let error = output.errors.first?["error"] as? [String: Any]
+  #expect(
+    error?["data"] as? String
+      == "running bridge does not support captioned or threaded attachments; restart Messages with the current imsg bridge"
+  )
+}
+
+@Test
 func rpcSendThreadsTextFormattingToBridge() async throws {
   let store = try CommandTestDatabase.makeStoreForRPCDirectChat()
   let output = TestRPCOutput()

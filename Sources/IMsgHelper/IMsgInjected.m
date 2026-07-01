@@ -825,6 +825,7 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"read_available": @(hasRegistry),
         @"bridge_version": @2,
         @"v2_ready": @(rpcInboxTimer != nil),
+        @"attachment_metadata": @YES,
         @"selectors": selectors
     });
 }

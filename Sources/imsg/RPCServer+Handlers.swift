@@ -533,35 +533,6 @@ extension RPCServer {
     return nil
   }
 
-  private func sendViaBridge(
-    chatGUID: String,
-    text: String,
-    file: String,
-    selectedMessageGuid: String? = nil,
-    textFormatting: Any? = nil
-  ) async throws -> [String: Any] {
-    if !file.isEmpty {
-      guard text.isEmpty else {
-        throw RPCError.invalidParams("bridge transport does not support text and file together")
-      }
-      let stagedFile = try stageAttachment(file)
-      var params: [String: Any] = [
-        "chatGuid": chatGUID, "filePath": stagedFile, "isAudioMessage": false,
-      ]
-      if let selectedMessageGuid {
-        params["selectedMessageGuid"] = selectedMessageGuid
-      }
-      return try await bridgeInvoker(.sendAttachment, params)
-    }
-    var params: [String: Any] = ["chatGuid": chatGUID, "message": text]
-    if let selectedMessageGuid {
-      params["selectedMessageGuid"] = selectedMessageGuid
-    }
-    if let textFormatting {
-      params["textFormatting"] = textFormatting
-    }
-    return try await bridgeInvoker(.sendMessage, params)
-  }
 }
 
 func buildMessagePayload(
