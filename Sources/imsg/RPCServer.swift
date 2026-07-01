@@ -39,6 +39,8 @@ let kSupportedRPCMethods: [String] = [
   "send.attachment",
   "poll.send",
   "messages.poll.send",
+  "poll.vote",
+  "messages.poll.vote",
   "tapback",
   "typing",
   "read",
@@ -154,6 +156,8 @@ final class RPCServer {
         try await handleSendAttachment(params: params, id: id)
       case "poll.send", "messages.poll.send":
         try await handlePollSend(params: params, id: id)
+      case "poll.vote", "messages.poll.vote":
+        try await handlePollVote(params: params, id: id)
       case "tapback":
         try await handleTapback(params: params, id: id)
       case "typing":

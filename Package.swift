@@ -9,9 +9,9 @@ let package = Package(
     .executable(name: "imsg", targets: ["imsg"]),
   ],
   dependencies: [
-    .package(url: "https://github.com/steipete/Commander.git", from: "0.2.1"),
-    .package(url: "https://github.com/stephencelis/SQLite.swift.git", from: "0.15.5"),
-    .package(url: "https://github.com/marmelroy/PhoneNumberKit.git", from: "4.2.5"),
+    .package(url: "https://github.com/steipete/Commander.git", from: "0.2.2"),
+    .package(url: "https://github.com/stephencelis/SQLite.swift.git", from: "0.16.0"),
+    .package(url: "https://github.com/marmelroy/PhoneNumberKit.git", from: "4.3.0"),
   ],
   targets: {
     var targets: [Target] = [

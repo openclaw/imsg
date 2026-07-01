@@ -167,6 +167,12 @@ extension RPCServer {
   func handleSend(params: [String: Any], id: Any?) async throws {
     let text = stringParam(params["text"]) ?? ""
     let file = stringParam(params["file"]) ?? ""
+    // Optional attributed-text formatting (bold/italic/…, macOS 15+). Only the
+    // IMCore bridge transport can render it; AppleScript sends stay plain.
+    // Accept `text_formatting`/`textFormatting` (matching `send-rich`) plus the
+    // bare `formatting` key that the OpenClaw gateway emits on its `send` calls.
+    let textFormatting =
+      params["text_formatting"] ?? params["textFormatting"] ?? params["formatting"]
     let serviceRaw = stringParam(params["service"]) ?? "auto"
     guard let service = MessageService(rawValue: serviceRaw) else {
       throw RPCError.invalidParams("invalid service")
@@ -266,7 +272,8 @@ extension RPCServer {
           chatGUID: bridgeChatGUID,
           text: text,
           file: file,
-          selectedMessageGuid: selectedMessageGuid
+          selectedMessageGuid: selectedMessageGuid,
+          textFormatting: textFormatting
         )
         var result: [String: Any] = ["ok": true, "transport": "bridge"]
         if let guid = data["messageGuid"] as? String, !guid.isEmpty {
@@ -530,7 +537,8 @@ extension RPCServer {
     chatGUID: String,
     text: String,
     file: String,
-    selectedMessageGuid: String? = nil
+    selectedMessageGuid: String? = nil,
+    textFormatting: Any? = nil
   ) async throws -> [String: Any] {
     if !file.isEmpty {
       guard text.isEmpty else {
@@ -548,6 +556,9 @@ extension RPCServer {
     var params: [String: Any] = ["chatGuid": chatGUID, "message": text]
     if let selectedMessageGuid {
       params["selectedMessageGuid"] = selectedMessageGuid
+    }
+    if let textFormatting {
+      params["textFormatting"] = textFormatting
     }
     return try await bridgeInvoker(.sendMessage, params)
   }

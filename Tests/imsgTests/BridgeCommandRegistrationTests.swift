@@ -127,6 +127,7 @@ func injectedHelperWiresNativePollSend() throws {
   #expect(source.contains("pollPreviewImageData"))
   #expect(sendPollBody.contains("buildPollCreationPayloadData"))
   #expect(sendPollBody.contains("buildPollIMMessage"))
+  #expect(sendPollBody.contains("pollPayloadMessageInitializerAvailable()"))
   #expect(!sendPollBody.contains(#"selectedMessageGuid.length ? @"" : question"#))
   #expect(sendPollBody.contains("buildPollCreationPayloadData(question,"))
   #expect(sendPollBody.contains(#"@{ @"enc": @YES, @"ust": @YES }"#))
@@ -146,6 +147,30 @@ func injectedHelperWiresNativePollSend() throws {
     source.contains(
       "initWithSender:time:text:messageSubject:fileTransferGUIDs:flags:error:guid:subject:balloonBundleID:payloadData:expressiveSendStyleID:threadIdentifier:scheduleType:scheduleState:messageSummaryInfo:"
     ))
+}
+
+@Test
+func injectedHelperWiresFailClosedNativePollVote() throws {
+  let testFile = URL(fileURLWithPath: #filePath)
+  let repoRoot =
+    testFile
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
+  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
+  let voteBody = try #require(functionBody(named: "buildPollVoteIMMessage", in: source))
+  let sendVoteBody = try #require(functionBody(named: "handleSendPollVote", in: source))
+
+  #expect(source.contains("send-poll-vote"))
+  #expect(source.contains("Poll vote payload exceeds 4096 bytes"))
+  #expect(source.contains(#"@"pollVoteMessage": @(pollVoteMessageInitializerAvailable())"#))
+  #expect(sendVoteBody.contains("pollVoteMessageInitializerAvailable()"))
+  #expect(!sendVoteBody.contains("pollPayloadMessageInitializerAvailable()"))
+  #expect(voteBody.contains("associatedMessageType"))
+  #expect(voteBody.contains("setBalloonBundleID:"))
+  #expect(voteBody.contains("setPayloadData:"))
+  #expect(voteBody.contains("return nil;"))
 }
 
 @Test

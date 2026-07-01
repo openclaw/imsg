@@ -9,9 +9,9 @@ jobs:
   macos:
     runs-on: macos-15
     env:
-      SWIFTLINT_VERSION: 0.64.0
+      SWIFTLINT_VERSION: 0.64.1
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Swift version
         run: swift --version
       - name: Install SwiftLint
@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     container: swift:6.2.4-noble
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Swift version
         run: swift --version
       - name: Install Python

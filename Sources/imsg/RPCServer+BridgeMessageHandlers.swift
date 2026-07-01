@@ -121,6 +121,58 @@ extension RPCServer {
     respond(id: id, result: result)
   }
 
+  func handlePollVote(params: [String: Any], id: Any?) async throws {
+    let chatGUID = try await resolveChatGUIDParam(params)
+    guard
+      let pollGUID = stringParam(
+        params["poll_guid"] ?? params["pollGuid"] ?? params["poll_message_guid"]
+          ?? params["message_guid"] ?? params["message_id"]), !pollGUID.isEmpty
+    else {
+      throw RPCError.invalidParams("poll_guid is required")
+    }
+    guard
+      let optionID = stringParam(
+        params["option_id"] ?? params["optionId"] ?? params["optionIdentifier"]),
+      !optionID.isEmpty
+    else {
+      throw RPCError.invalidParams("option_id is required")
+    }
+    // Validate the poll exists and the option belongs to it (mirrors the CLI),
+    // so an API caller can't cast a vote against an arbitrary non-poll GUID.
+    let pollOptions = try store.pollOptions(guid: pollGUID)
+    guard !pollOptions.isEmpty else {
+      throw RPCError.invalidParams("poll \(pollGUID) not found or not decodable")
+    }
+    guard let matchedOption = pollOptions.first(where: { $0.id == optionID }) else {
+      throw RPCError.invalidParams("option_id \(optionID) is not an option of poll \(pollGUID)")
+    }
+    var bridgeParams: [String: Any] = [
+      "chatGuid": chatGUID,
+      // Native votes associate to the bare poll GUID (strip a leading p:<part>/).
+      "pollMessageGuid": barePollGuid(pollGUID),
+      "optionIdentifier": optionID,
+    ]
+    if !matchedOption.text.isEmpty {
+      bridgeParams["optionText"] = matchedOption.text
+    }
+
+    let data = try await invokeBridge(action: .sendPollVote, params: bridgeParams)
+    var result: [String: Any] = [
+      "ok": true,
+      "event": "imessage.poll.voted",
+      // Callers use the resolved option to suppress a redundant text reply that
+      // just restates the vote, so return it alongside the poll linkage.
+      "poll_guid": barePollGuid(pollGUID),
+      "option_id": matchedOption.id,
+      "option_text": matchedOption.text,
+    ]
+    if let guid = data["messageGuid"] as? String, !guid.isEmpty {
+      result["guid"] = guid
+      result["message_id"] = guid
+    }
+    respond(id: id, result: result)
+  }
+
   func handleTapback(params: [String: Any], id: Any?) async throws {
     let chatGUID = try await resolveChatGUIDParam(params)
     guard let messageGUID = rpcMessageGUIDParam(params) else {
