@@ -31,18 +31,7 @@ extension MessageStore {
     let target = normalized.isEmpty ? guid : normalized
     guard !target.isEmpty else { return [] }
     return try withConnection { db in
-      let selection = MessageRowSelection(store: self, includeChatID: false)
-      let sql = """
-        SELECT \(selection.selectList)
-        FROM message m
-        LEFT JOIN handle h ON m.handle_id = h.ROWID
-        WHERE m.guid = ?
-        LIMIT 1
-        """
-      let rows = try db.prepareRowIterator(sql, bindings: [target])
-      guard let row = try rows.failableNext() else { return [] }
-      let decoded = try decodeMessageRow(row, columns: selection.columns, fallbackChatID: nil)
-      return decoded.poll?.options ?? []
+      try decodedPollOptions(guid: target, db: db)
     }
   }
 
@@ -58,25 +47,8 @@ extension MessageStore {
       return [:]
     }
 
-    let selection = MessageRowSelection(store: self, includeChatID: false)
-    let sql = """
-      SELECT \(selection.selectList)
-      FROM message m
-      LEFT JOIN handle h ON m.handle_id = h.ROWID
-      WHERE m.guid = ?
-      LIMIT 1
-      """
-    let rows = try db.prepareRowIterator(sql, bindings: [pollGUID])
-    guard let row = try rows.failableNext() else {
-      cache.missingPollGUIDs.insert(pollGUID)
-      return [:]
-    }
-    let decoded = try decodeMessageRow(
-      row,
-      columns: selection.columns,
-      fallbackChatID: nil
-    )
-    guard let options = decoded.poll?.options, !options.isEmpty else {
+    let options = try decodedPollOptions(guid: pollGUID, db: db)
+    guard !options.isEmpty else {
       cache.missingPollGUIDs.insert(pollGUID)
       return [:]
     }
@@ -87,5 +59,24 @@ extension MessageStore {
     }
     cache.optionsByPollGUID[pollGUID] = optionTexts
     return optionTexts
+  }
+
+  private func decodedPollOptions(guid: String, db: Connection) throws -> [MessagePollOption] {
+    let selection = MessageRowSelection(store: self, includeChatID: false)
+    let sql = """
+      SELECT \(selection.selectList)
+      FROM message m
+      LEFT JOIN handle h ON m.handle_id = h.ROWID
+      WHERE m.guid = ?
+      LIMIT 1
+      """
+    let rows = try db.prepareRowIterator(sql, bindings: [guid])
+    guard let row = try rows.failableNext() else { return [] }
+    let decoded = try decodeMessageRow(
+      row,
+      columns: selection.columns,
+      fallbackChatID: nil
+    )
+    return decoded.poll?.options ?? []
   }
 }

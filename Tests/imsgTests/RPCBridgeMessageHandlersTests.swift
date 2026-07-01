@@ -13,6 +13,8 @@ func rpcStatusAdvertisesBridgeMessageMethods() {
     "send.attachment",
     "poll.send",
     "messages.poll.send",
+    "poll.vote",
+    "messages.poll.vote",
     "tapback",
     "message.edit",
     "message.unsend",
@@ -22,6 +24,56 @@ func rpcStatusAdvertisesBridgeMessageMethods() {
   ] {
     #expect(methods.contains(method))
   }
+}
+
+@Test
+func rpcPollVoteValidatesAndResolvesOption() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPCWithPollVote()
+  let output = TestRPCOutput()
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, params in
+      capturedAction = action
+      capturedParams = params
+      return ["messageGuid": "vote-guid"]
+    }
+  )
+
+  let request =
+    #"{"jsonrpc":"2.0","id":"vote","method":"poll.vote","params":{"chat_id":1,"#
+    + #""poll_guid":"p:0/poll-guid-6","option_id":"choice-no","option_text":"spoofed","#
+    + #""voter_handle":"spoofed"}}"#
+  await server.handleLineForTesting(request)
+
+  #expect(capturedAction == .sendPollVote)
+  #expect(capturedParams["chatGuid"] as? String == "iMessage;+;chat123")
+  #expect(capturedParams["pollMessageGuid"] as? String == "poll-guid-6")
+  #expect(capturedParams["optionIdentifier"] as? String == "choice-no")
+  #expect(capturedParams["optionText"] as? String == "No")
+  #expect(capturedParams["voterHandle"] == nil)
+  let result = output.responses.first?["result"] as? [String: Any]
+  #expect(result?["event"] as? String == "imessage.poll.voted")
+  #expect(result?["option_text"] as? String == "No")
+  #expect(result?["message_id"] as? String == "vote-guid")
+}
+
+@Test
+func rpcPollVoteRejectsOptionOutsidePoll() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPCWithPollVote()
+  let output = TestRPCOutput()
+  let server = RPCServer(store: store, verbose: false, output: output)
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"vote","method":"poll.vote","params":{"chat_id":1,"poll_guid":"poll-guid-6","option_id":"not-an-option"}}"#
+  )
+
+  let error = output.errors.first?["error"] as? [String: Any]
+  #expect((error?["code"] as? Int) == -32602)
+  #expect((error?["data"] as? String)?.contains("not an option") == true)
 }
 
 @Test

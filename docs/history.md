@@ -85,6 +85,13 @@ imsg poll send --chat 'iMessage;-;+15551234567' \
 
 You can also use `--chat-id <id>` from `imsg chats`.
 
+Cast a vote using one selector. The index is 1-based; `imsg` resolves it to the
+poll's stable option identifier before sending:
+
+```bash
+imsg poll vote --chat-id <id> --poll <poll-guid> --option-index 2
+```
+
 ### Manual native poll test plan
 
 1. Create a native poll in Messages from an iPhone or Mac.
@@ -92,7 +99,8 @@ You can also use `--chat-id <id>` from `imsg chats`.
 3. Vote on the poll from another participant/device.
 4. Run `imsg watch --chat-id <chat-id> --json | jq -c 'select(.poll != null)'` while the vote happens, or re-run history, and verify the vote row has `poll.kind == "vote"`, `poll.original_guid` set to the original poll GUID, and `poll.vote.option_id` set.
 5. Send a poll with `imsg poll send --chat-id <id> --question "..." --option "A" --option "B"` and verify it renders as a native Messages poll on iOS/macOS.
-6. If Apple changes the private Polls payload shape, verify the row still emits `poll.kind == "unknown"` with metadata and no raw payload bytes.
+6. Vote with `imsg poll vote --chat-id <id> --poll <poll-guid> --option-index 2`, then verify the new row has `poll.kind == "vote"`, the original GUID, and the selected option.
+7. If Apple changes the private Polls payload shape, verify the row still emits `poll.kind == "unknown"` with metadata and no raw payload bytes.
 
 ## Performance
 

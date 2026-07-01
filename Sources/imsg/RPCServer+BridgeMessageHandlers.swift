@@ -152,12 +152,8 @@ extension RPCServer {
       "pollMessageGuid": barePollGuid(pollGUID),
       "optionIdentifier": optionID,
     ]
-    let optionText = stringParam(params["option_text"] ?? params["optionText"]) ?? matchedOption.text
-    if !optionText.isEmpty {
-      bridgeParams["optionText"] = optionText
-    }
-    if let voter = stringParam(params["voter_handle"] ?? params["voterHandle"]), !voter.isEmpty {
-      bridgeParams["voterHandle"] = voter
+    if !matchedOption.text.isEmpty {
+      bridgeParams["optionText"] = matchedOption.text
     }
 
     let data = try await invokeBridge(action: .sendPollVote, params: bridgeParams)

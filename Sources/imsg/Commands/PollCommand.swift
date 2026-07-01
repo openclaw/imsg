@@ -153,9 +153,7 @@ enum PollCommand {
     }
   }
 
-  /// Resolve the option to vote for. A direct `--option-id` UUID wins; otherwise
-  /// decode the poll's options and map a 1-based `--option-index` or an
-  /// `--option` text (case-insensitive) onto the stable optionIdentifier.
+  /// Resolve exactly one option selector against the poll's stable options.
   private static func resolveOptionID(
     values: ParsedValues,
     pollGuid: String,
@@ -164,8 +162,13 @@ enum PollCommand {
     let directID = values.option("optionID")?.trimmingCharacters(in: .whitespacesAndNewlines)
     let indexValue = values.optionInt64("optionIndex")
     let textValue = values.option("option")?.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard (directID?.isEmpty == false) || indexValue != nil || (textValue?.isEmpty == false) else {
+    let selectors = [directID?.isEmpty == false, indexValue != nil, textValue?.isEmpty == false]
+    guard selectors.contains(true) else {
       throw ParsedValuesError.missingOption("option-id")
+    }
+    guard selectors.filter({ $0 }).count == 1 else {
+      throw ParsedValuesError.invalidOption(
+        "choose exactly one of --option-id, --option-index, or --option")
     }
     let dbPath = values.option("db") ?? MessageStore.defaultPath
     let store = try storeFactory(dbPath)

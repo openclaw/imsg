@@ -201,3 +201,64 @@ func pollCommandSendResolvesChatID() async throws {
 
   #expect(capturedParams["chatGuid"] as? String == "iMessage;+;chat123")
 }
+
+@Test
+func pollCommandVoteResolvesOptionIndex() async throws {
+  let values = ParsedValues(
+    positional: ["vote"],
+    options: [
+      "chatID": ["1"],
+      "poll": ["p:0/poll-guid-6"],
+      "optionIndex": ["2"],
+    ],
+    flags: ["jsonOutput"]
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+  let store = try CommandTestDatabase.makeStoreForRPCWithPollVote()
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
+
+  let (output, _) = try await StdoutCapture.capture {
+    try await PollCommand.run(
+      values: values,
+      runtime: runtime,
+      storeFactory: { _ in store },
+      invokeBridge: { action, params in
+        capturedAction = action
+        capturedParams = params
+        return ["messageGuid": "vote-guid"]
+      }
+    )
+  }
+
+  #expect(capturedAction == .sendPollVote)
+  #expect(capturedParams["chatGuid"] as? String == "iMessage;+;chat123")
+  #expect(capturedParams["pollMessageGuid"] as? String == "poll-guid-6")
+  #expect(capturedParams["optionIdentifier"] as? String == "choice-no")
+  #expect(capturedParams["optionText"] as? String == "No")
+  let data = try #require(output.data(using: .utf8))
+  let result = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+  #expect(result["optionText"] as? String == "No")
+}
+
+@Test
+func pollCommandVoteRejectsConflictingSelectors() async throws {
+  let values = ParsedValues(
+    positional: ["vote"],
+    options: [
+      "chat": ["iMessage;-;+15551234567"],
+      "poll": ["poll-guid-6"],
+      "optionID": ["choice-yes"],
+      "optionIndex": ["1"],
+    ],
+    flags: []
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+
+  do {
+    try await PollCommand.run(values: values, runtime: runtime)
+    #expect(Bool(false))
+  } catch let error as ParsedValuesError {
+    #expect(error.description.contains("choose exactly one"))
+  }
+}
