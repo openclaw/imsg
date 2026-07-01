@@ -2745,6 +2745,191 @@ static NSDictionary *handleSendPoll(NSInteger requestId, NSDictionary *params) {
     }
 }
 
+/// Build the vote payload: a data URL carrying the vote JSON, wrapped in the
+/// same archived envelope as poll creation. Mirrors Apple's native vote shape
+/// (verified against a real received vote): {"version":1,"item":{"votes":
+/// [{"voteOptionIdentifier":...,"participantHandle":...}]}}. Unlike poll
+/// creation the data URL carries no `?src=p&c=` suffix.
+static NSData *buildPollVotePayloadData(NSString *optionIdentifier,
+                                        NSString *voterHandle,
+                                        NSString **outError) {
+    NSDictionary *vote = @{
+        @"voteOptionIdentifier": optionIdentifier,
+        @"participantHandle": voterHandle ?: @""
+    };
+    NSDictionary *root = @{
+        @"version": @1,
+        @"item": @{ @"votes": @[vote] }
+    };
+    NSError *jsonError = nil;
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:root options:0 error:&jsonError];
+    if (!jsonData) {
+        if (outError) *outError = jsonError.localizedDescription ?: @"Could not encode vote payload";
+        return nil;
+    }
+    NSString *encoded = [jsonData base64EncodedStringWithOptions:0];
+    NSString *urlString = [NSString stringWithFormat:@"data:,%@", encoded];
+    NSURL *url = [NSURL URLWithString:urlString];
+    if (!url) {
+        if (outError) *outError = @"Could not create vote URL";
+        return nil;
+    }
+    NSUUID *sessionIdentifier = [NSUUID UUID];
+    NSError *archiveError = nil;
+    NSData *payload = archivePollPayloadEnvelope(url, sessionIdentifier, &archiveError);
+    if (!payload && outError) {
+        *outError = archiveError.localizedDescription ?: @"Could not archive vote payload";
+    }
+    return payload;
+}
+
+/// Construct a poll-vote IMMessage: a Polls balloon carrying the vote payload,
+/// associated to the original poll via a bare poll GUID + associatedMessageType
+/// 4000. Native votes (verified against chat.db) use a bare poll GUID, not the
+/// `p:<part>/<guid>` form tapbacks use.
+///
+/// A vote is the one message that needs balloon + payload AND an associated
+/// message atomically. The IMMessageItem-first path can't persist associated
+/// fields through the IMMessage wrap (see buildIMMessage), and the macOS 26
+/// 13-arg reaction initializer has no balloonBundleID/payloadData slots. The
+/// legacy `initIMMessageWith…` 17-arg initializer is the only one exposing
+/// balloon, payload, and association together, so votes use it directly — the
+/// same family as the working poll-send balloon path.
+static id buildPollVoteIMMessage(NSAttributedString *body,
+                                 NSData *payloadData,
+                                 NSDictionary *summaryInfo,
+                                 NSString *pollMessageGuid) {
+    Class messageClass = NSClassFromString(@"IMMessage");
+    if (!messageClass) return nil;
+
+    // No macOS 26 IMMessage initializer carries balloon + payload AND
+    // association together (verified by selector probe). Reactions prove the
+    // associated-message initializer persists association atomically, and
+    // balloon/payload set on the backing IMMessageItem persist (verified: an
+    // earlier item-first vote landed with the balloon intact, only the
+    // association — set via the wrap — was lost). So: init with association
+    // atomically, then stamp balloonBundleID + payloadData onto the message's
+    // own backing item (a real item from a direct init, not the transient one
+    // the messageFromIMMessageItem: wrap returns).
+    SEL sel = @selector(initWithSender:time:text:messageSubject:fileTransferGUIDs:flags:error:guid:subject:associatedMessageGUID:associatedMessageType:associatedMessageRange:messageSummaryInfo:);
+    if (![messageClass instancesRespondToSelector:sel]) return nil;
+
+    id msg = [messageClass alloc];
+    NSMethodSignature *sig = [messageClass instanceMethodSignatureForSelector:sel];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    [inv setSelector:sel];
+    [inv setTarget:msg];
+
+    id nilObj = nil;
+    NSDate *now = [NSDate date];
+    NSArray *fileTransferGuids = @[];
+    unsigned long long flags = flagsForAssociatedMessagePayload(nil, fileTransferGuids, NO);
+    long long associatedType = 4000;
+    NSRange associatedRange = NSMakeRange(0, 1);
+
+    [inv setArgument:&nilObj atIndex:2];            // sender
+    [inv setArgument:&now atIndex:3];               // time
+    [inv setArgument:&body atIndex:4];              // text
+    [inv setArgument:&nilObj atIndex:5];            // messageSubject
+    [inv setArgument:&fileTransferGuids atIndex:6];
+    [inv setArgument:&flags atIndex:7];
+    [inv setArgument:&nilObj atIndex:8];            // error
+    [inv setArgument:&nilObj atIndex:9];            // guid
+    [inv setArgument:&nilObj atIndex:10];           // subject (string)
+    [inv setArgument:&pollMessageGuid atIndex:11];
+    [inv setArgument:&associatedType atIndex:12];
+    [inv setArgument:&associatedRange atIndex:13];
+    [inv setArgument:&summaryInfo atIndex:14];
+    [inv retainArguments];
+    id result = invokeReturningObject(inv);
+    if (!result) return nil;
+
+    // Stamp the balloon payload onto the message's backing item. Try the
+    // message directly first (some IMMessage builds forward these), then the
+    // underlying item.
+    NSString *balloonID = pollsBalloonBundleIdentifier();
+    NSArray<id> *targets = @[result];
+    SEL itemSel = NSSelectorFromString(@"_imMessageItem");
+    if ([result respondsToSelector:itemSel]) {
+        @try {
+            id item = [result performSelector:itemSel];
+            if (item) targets = @[item, result];
+        } @catch (__unused NSException *e) {}
+    }
+    for (id target in targets) {
+        if ([target respondsToSelector:@selector(setBalloonBundleID:)]) {
+            [target performSelector:@selector(setBalloonBundleID:) withObject:balloonID];
+        }
+        if ([target respondsToSelector:@selector(setPayloadData:)]) {
+            [target performSelector:@selector(setPayloadData:) withObject:payloadData];
+        }
+    }
+    return result;
+}
+
+/// `send-poll-vote`: cast a vote on an existing poll. Builds a Polls balloon
+/// carrying the vote payload, associated to the poll message via type 4000.
+/// The caller passes the original poll message GUID and the chosen option's
+/// UUID (resolved CLI-side from the poll's decoded options).
+static NSDictionary *handleSendPollVote(NSInteger requestId, NSDictionary *params) {
+    NSString *chatGuid = params[@"chatGuid"];
+    NSString *pollMessageGuid = trimmedPollString(params[@"pollMessageGuid"]);
+    NSString *optionIdentifier = trimmedPollString(params[@"optionIdentifier"]);
+    NSString *optionText = trimmedPollString(params[@"optionText"]);
+    NSString *voterHandle = trimmedPollString(params[@"voterHandle"]);
+
+    if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
+    if (!pollMessageGuid.length) return errorResponse(requestId, @"Missing pollMessageGuid");
+    if (!optionIdentifier.length) return errorResponse(requestId, @"Missing optionIdentifier");
+    if (!pollPayloadMessageInitializerAvailable()) {
+        return errorResponse(requestId, @"Poll IMMessage initializer unavailable on this macOS");
+    }
+
+    IMChat *chat = resolveChatByGuid(chatGuid);
+    if (!chat) {
+        return errorResponse(requestId,
+            [NSString stringWithFormat:@"Chat not found: %@", chatGuid]);
+    }
+
+    if (!voterHandle.length) {
+        voterHandle = activeIMessageSenderHandle();
+    }
+    if (!voterHandle.length) {
+        return errorResponse(requestId,
+            @"Could not resolve active iMessage sender handle for vote payload");
+    }
+
+    NSString *payloadError = nil;
+    NSData *payloadData = buildPollVotePayloadData(optionIdentifier, voterHandle, &payloadError);
+    if (!payloadData) {
+        return errorResponse(requestId, payloadError ?: @"Could not build vote payload");
+    }
+
+    NSDictionary *summary = @{ @"amc": @0, @"ust": @YES };
+    NSAttributedString *body = buildPollBreadcrumbAttributed();
+
+    @try {
+        clearThreadContextForChat(chat, nil);
+        id imMessage = buildPollVoteIMMessage(body, payloadData, summary, pollMessageGuid);
+        if (!imMessage) {
+            return errorResponse(requestId, @"Could not construct vote IMMessage");
+        }
+        [chat performSelector:@selector(sendMessage:) withObject:imMessage];
+        NSString *guid = lastSentMessageGuid(chat);
+        return successResponse(requestId, @{
+            @"chatGuid": chatGuid,
+            @"messageGuid": guid ?: @"",
+            @"pollMessageGuid": pollMessageGuid,
+            @"optionIdentifier": optionIdentifier,
+            @"optionText": optionText ?: @"",
+            @"balloonBundleID": pollsBalloonBundleIdentifier()
+        });
+    } @catch (NSException *exception) {
+        return errorResponse(requestId,
+            [NSString stringWithFormat:@"send-poll-vote failed: %@", exception.reason]);
+    }
+}
+
 /// `send-multipart`: at minimum, sends an attributedBody composed of multiple
 /// text parts. v1 supports text-only multipart; mention/file parts can land in
 /// a follow-up.
@@ -4061,6 +4246,7 @@ static NSDictionary* dispatchAction(NSInteger legacyId, NSString *action,
     if ([action isEqualToString:@"send-multipart"]) return handleSendMultipart(legacyId, params);
     if ([action isEqualToString:@"send-attachment"]) return handleSendAttachment(legacyId, params);
     if ([action isEqualToString:@"send-poll"]) return handleSendPoll(legacyId, params);
+    if ([action isEqualToString:@"send-poll-vote"]) return handleSendPollVote(legacyId, params);
     if ([action isEqualToString:@"send-reaction"]) return handleSendReaction(legacyId, params);
     if ([action isEqualToString:@"notify-anyways"]) return handleNotifyAnyways(legacyId, params);
     if ([action isEqualToString:@"edit-message"]) return handleEditMessage(legacyId, params);

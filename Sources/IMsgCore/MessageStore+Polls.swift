@@ -23,6 +23,29 @@ extension MessageStore {
     return poll.resolvingVoteOptionTexts(optionTexts)
   }
 
+  /// Ordered options of the poll identified by `guid`, decoded from its
+  /// creation message. Used by `poll vote` to resolve a 1-based option index
+  /// or option text into the stable optionIdentifier the bridge needs.
+  public func pollOptions(guid: String) throws -> [MessagePollOption] {
+    let normalized = normalizeAssociatedGUID(guid)
+    let target = normalized.isEmpty ? guid : normalized
+    guard !target.isEmpty else { return [] }
+    return try withConnection { db in
+      let selection = MessageRowSelection(store: self, includeChatID: false)
+      let sql = """
+        SELECT \(selection.selectList)
+        FROM message m
+        LEFT JOIN handle h ON m.handle_id = h.ROWID
+        WHERE m.guid = ?
+        LIMIT 1
+        """
+      let rows = try db.prepareRowIterator(sql, bindings: [target])
+      guard let row = try rows.failableNext() else { return [] }
+      let decoded = try decodeMessageRow(row, columns: selection.columns, fallbackChatID: nil)
+      return decoded.poll?.options ?? []
+    }
+  }
+
   private func pollOptionTextsByID(
     pollGUID: String,
     db: Connection,
