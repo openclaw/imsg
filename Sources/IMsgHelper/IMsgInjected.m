@@ -2815,15 +2815,9 @@ static id buildPollVoteIMMessage(NSAttributedString *body,
     Class messageClass = NSClassFromString(@"IMMessage");
     if (!messageClass) return nil;
 
-    // No macOS 26 IMMessage initializer carries balloon + payload AND
-    // association together (verified by selector probe). Reactions prove the
-    // associated-message initializer persists association atomically, and
-    // balloon/payload set on the backing IMMessageItem persist (verified: an
-    // earlier item-first vote landed with the balloon intact, only the
-    // association — set via the wrap — was lost). So: init with association
-    // atomically, then stamp balloonBundleID + payloadData onto the message's
-    // own backing item (a real item from a direct init, not the transient one
-    // the messageFromIMMessageItem: wrap returns).
+    // No macOS 26 initializer carries the payload and association together.
+    // Build the association atomically, then stamp payload metadata across the
+    // message and backing item; macOS 26.4 splits the setters between them.
     SEL sel = @selector(initWithSender:time:text:messageSubject:fileTransferGUIDs:flags:error:guid:subject:associatedMessageGUID:associatedMessageType:associatedMessageRange:messageSummaryInfo:);
     if (![messageClass instancesRespondToSelector:sel]) return nil;
 
@@ -2857,8 +2851,6 @@ static id buildPollVoteIMMessage(NSAttributedString *body,
     id result = invokeReturningObject(inv);
     if (!result) return nil;
 
-    // Both values must land on one object. A partial stamp can emit an
-    // associated message that Messages cannot decode as a poll vote.
     NSString *balloonID = pollsBalloonBundleIdentifier();
     NSArray<id> *targets = @[result];
     SEL itemSel = NSSelectorFromString(@"_imMessageItem");
@@ -2868,14 +2860,19 @@ static id buildPollVoteIMMessage(NSAttributedString *body,
             if (item) targets = @[item, result];
         } @catch (__unused NSException *e) {}
     }
+    BOOL balloonStamped = NO;
+    BOOL payloadStamped = NO;
     for (id target in targets) {
-        if (![target respondsToSelector:@selector(setBalloonBundleID:)]
-            || ![target respondsToSelector:@selector(setPayloadData:)]) continue;
-        [target performSelector:@selector(setBalloonBundleID:) withObject:balloonID];
-        [target performSelector:@selector(setPayloadData:) withObject:payloadData];
-        return result;
+        if ([target respondsToSelector:@selector(setBalloonBundleID:)]) {
+            [target performSelector:@selector(setBalloonBundleID:) withObject:balloonID];
+            balloonStamped = YES;
+        }
+        if ([target respondsToSelector:@selector(setPayloadData:)]) {
+            [target performSelector:@selector(setPayloadData:) withObject:payloadData];
+            payloadStamped = YES;
+        }
     }
-    return nil;
+    return (balloonStamped && payloadStamped) ? result : nil;
 }
 
 /// `send-poll-vote`: cast a vote on an existing poll. Builds a Polls balloon

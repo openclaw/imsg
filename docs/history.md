@@ -92,6 +92,9 @@ poll's stable option identifier before sending:
 imsg poll vote --chat-id <id> --poll <poll-guid> --option-index 2
 ```
 
+On macOS 26.4, use imsg 0.12.2 or later. Earlier builds could create a local
+vote row without the Polls payload, so the recipient's poll did not update.
+
 ### Manual native poll test plan
 
 1. Create a native poll in Messages from an iPhone or Mac.

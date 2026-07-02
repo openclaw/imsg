@@ -150,7 +150,7 @@ func injectedHelperWiresNativePollSend() throws {
 }
 
 @Test
-func injectedHelperWiresFailClosedNativePollVote() throws {
+func injectedHelperBroadcastsFailClosedNativePollVoteMetadata() throws {
   let testFile = URL(fileURLWithPath: #filePath)
   let repoRoot =
     testFile
@@ -168,9 +168,17 @@ func injectedHelperWiresFailClosedNativePollVote() throws {
   #expect(sendVoteBody.contains("pollVoteMessageInitializerAvailable()"))
   #expect(!sendVoteBody.contains("pollPayloadMessageInitializerAvailable()"))
   #expect(voteBody.contains("associatedMessageType"))
-  #expect(voteBody.contains("setBalloonBundleID:"))
-  #expect(voteBody.contains("setPayloadData:"))
-  #expect(voteBody.contains("return nil;"))
+  #expect(voteBody.contains("BOOL balloonStamped = NO;"))
+  #expect(voteBody.contains("BOOL payloadStamped = NO;"))
+  #expect(
+    voteBody.contains("if ([target respondsToSelector:@selector(setBalloonBundleID:)])")
+  )
+  #expect(voteBody.contains("if ([target respondsToSelector:@selector(setPayloadData:)])"))
+  #expect(voteBody.contains("return (balloonStamped && payloadStamped) ? result : nil;"))
+  #expect(
+    !voteBody.contains(
+      "|| ![target respondsToSelector:@selector(setPayloadData:)]"
+    ))
 }
 
 @Test

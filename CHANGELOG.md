@@ -2,6 +2,9 @@
 
 ## 0.12.2 - Unreleased
 
+### Native Polls
+- fix: restore native poll vote delivery on macOS 26.4 by persisting the Polls balloon and payload across the responding message objects (#150, thanks @omarshahine).
+
 ## 0.12.1 - 2026-07-02
 
 ### Packaging
