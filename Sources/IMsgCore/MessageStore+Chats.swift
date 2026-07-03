@@ -19,8 +19,10 @@ private struct ListChatsQuery {
   let sql: String
   let bindings: [Binding?]
 
-  init(limit: Int, schema: MessageStoreSchema) {
+  init(limit: Int, unreadOnly: Bool, schema: MessageStoreSchema) {
     let routing = ChatRoutingSelection(schema: schema)
+    let unreadCountColumn = Self.unreadCountColumn(schema: schema)
+    let havingClause = unreadOnly ? "HAVING unread_count > 0" : ""
     if schema.hasChatMessageJoinMessageDateColumn {
       self.sql = """
         SELECT c.ROWID AS chat_rowid, IFNULL(c.display_name, c.chat_identifier) AS name,
@@ -28,10 +30,12 @@ private struct ListChatsQuery {
                MAX(cmj.message_date) AS last_date,
                \(routing.accountIDColumn) AS account_id,
                \(routing.accountLoginColumn) AS account_login,
-               \(routing.lastAddressedHandleColumn) AS last_addressed_handle
+               \(routing.lastAddressedHandleColumn) AS last_addressed_handle,
+               \(unreadCountColumn)
         FROM chat c
         JOIN chat_message_join cmj ON c.ROWID = cmj.chat_id
         GROUP BY c.ROWID
+        \(havingClause)
         ORDER BY last_date DESC
         LIMIT ?
         """
@@ -42,16 +46,31 @@ private struct ListChatsQuery {
                MAX(m.date) AS last_date,
                \(routing.accountIDColumn) AS account_id,
                \(routing.accountLoginColumn) AS account_login,
-               \(routing.lastAddressedHandleColumn) AS last_addressed_handle
+               \(routing.lastAddressedHandleColumn) AS last_addressed_handle,
+               \(unreadCountColumn)
         FROM chat c
         JOIN chat_message_join cmj ON c.ROWID = cmj.chat_id
         JOIN message m ON m.ROWID = cmj.message_id
         GROUP BY c.ROWID
+        \(havingClause)
         ORDER BY last_date DESC
         LIMIT ?
         """
     }
     self.bindings = [limit]
+  }
+
+  private static func unreadCountColumn(schema: MessageStoreSchema) -> String {
+    guard schema.hasIsReadColumn else {
+      return "0 AS unread_count"
+    }
+    return """
+      (SELECT COUNT(*) FROM chat_message_join cmj_unread
+       JOIN message m_unread ON m_unread.ROWID = cmj_unread.message_id
+       WHERE cmj_unread.chat_id = c.ROWID
+         AND m_unread.is_from_me = 0
+         AND m_unread.is_read = 0) AS unread_count
+      """
   }
 }
 
@@ -91,8 +110,8 @@ private struct ParticipantsQuery {
 }
 
 extension MessageStore {
-  public func listChats(limit: Int) throws -> [Chat] {
-    let query = ListChatsQuery(limit: limit, schema: schema)
+  public func listChats(limit: Int, unreadOnly: Bool = false) throws -> [Chat] {
+    let query = ListChatsQuery(limit: limit, unreadOnly: unreadOnly, schema: schema)
     return try withConnection { db in
       var chats: [Chat] = []
       let rows = try db.prepareRowIterator(query.sql, bindings: query.bindings)
@@ -106,7 +125,8 @@ extension MessageStore {
             lastMessageAt: try appleDate(from: int64Value(row, "last_date")),
             accountID: try stringValue(row, "account_id").nilIfEmpty,
             accountLogin: try stringValue(row, "account_login").nilIfEmpty,
-            lastAddressedHandle: try stringValue(row, "last_addressed_handle").nilIfEmpty
+            lastAddressedHandle: try stringValue(row, "last_addressed_handle").nilIfEmpty,
+            unreadCount: Int(try int64Value(row, "unread_count") ?? 0)
           ))
       }
       return chats

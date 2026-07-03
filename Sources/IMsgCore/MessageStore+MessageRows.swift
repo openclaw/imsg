@@ -26,6 +26,8 @@ struct MessageRowColumns {
   let balloonBundleID: String
   let payloadData: String
   let messageSummaryInfo: String
+  let isRead: String?
+  let dateRead: String?
 
   static func message(chatID: String?) -> MessageRowColumns {
     MessageRowColumns(
@@ -49,7 +51,9 @@ struct MessageRowColumns {
       replyToGUID: "reply_to_guid",
       balloonBundleID: MessageRowColumns.balloonBundleID,
       payloadData: MessageRowColumns.payloadData,
-      messageSummaryInfo: MessageRowColumns.messageSummaryInfo
+      messageSummaryInfo: MessageRowColumns.messageSummaryInfo,
+      isRead: nil,
+      dateRead: nil
     )
   }
 }
@@ -73,6 +77,8 @@ struct DecodedMessageRow {
   let databaseReplyToGUID: String
   let balloonBundleID: String
   let poll: MessagePollEvent?
+  let isRead: Bool?
+  let dateRead: Date?
 }
 
 struct PollOptionTextCache {
@@ -112,6 +118,10 @@ struct MessageRowSelection {
     let summaryInfoColumn =
       schema.hasMessageSummaryInfoColumn
       ? "CASE WHEN \(pollCandidatePredicate) THEN m.message_summary_info ELSE NULL END" : "NULL"
+    let isReadColumn = schema.hasIsReadColumn ? "m.is_read AS is_read" : ""
+    let dateReadColumn = schema.hasDateReadColumn ? "m.date_read AS date_read" : ""
+    let readStateColumns = [isReadColumn, dateReadColumn].filter { !$0.isEmpty }.joined(separator: ", ")
+    let readStateSuffix = readStateColumns.isEmpty ? "" : ", \(readStateColumns)"
     let chatColumn = includeChatID ? ", cmj.chat_id AS \(columns.chatID!)" : ""
 
     let selectList = """
@@ -130,10 +140,34 @@ struct MessageRowSelection {
              \(replyToColumn) AS \(columns.replyToGUID),
              \(balloonColumn) AS \(columns.balloonBundleID),
              \(payloadDataColumn) AS \(columns.payloadData),
-             \(summaryInfoColumn) AS \(columns.messageSummaryInfo)
+             \(summaryInfoColumn) AS \(columns.messageSummaryInfo)\(readStateSuffix)
       """
     self.selectList = selectList
-    self.columns = columns
+    self.columns = MessageRowColumns(
+      rowID: columns.rowID,
+      chatID: columns.chatID,
+      handleID: columns.handleID,
+      sender: columns.sender,
+      text: columns.text,
+      date: columns.date,
+      isFromMe: columns.isFromMe,
+      service: columns.service,
+      isAudioMessage: columns.isAudioMessage,
+      destinationCallerID: columns.destinationCallerID,
+      guid: columns.guid,
+      associatedGUID: columns.associatedGUID,
+      associatedType: columns.associatedType,
+      attachments: columns.attachments,
+      body: columns.body,
+      threadOriginatorGUID: columns.threadOriginatorGUID,
+      threadOriginatorPart: columns.threadOriginatorPart,
+      replyToGUID: columns.replyToGUID,
+      balloonBundleID: columns.balloonBundleID,
+      payloadData: columns.payloadData,
+      messageSummaryInfo: columns.messageSummaryInfo,
+      isRead: schema.hasIsReadColumn ? "is_read" : nil,
+      dateRead: schema.hasDateReadColumn ? "date_read" : nil
+    )
   }
 
   private static func pollCandidatePredicate(schema: MessageStoreSchema) -> String {

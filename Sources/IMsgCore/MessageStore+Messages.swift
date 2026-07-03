@@ -341,6 +341,16 @@ extension MessageStore {
       poll = nil
     }
 
+    var isRead: Bool?
+    var dateRead: Date?
+    if !isFromMe, let isReadColumn = columns.isRead {
+      isRead = (try intValue(row, isReadColumn) ?? 0) != 0
+      if isRead == true, let dateReadColumn = columns.dateRead {
+        let readRaw = try int64Value(row, dateReadColumn)
+        dateRead = readRaw.flatMap { $0 > 0 ? appleDate(from: $0) : nil }
+      }
+    }
+
     return DecodedMessageRow(
       rowID: rowID,
       chatID: resolvedChatID,
@@ -359,7 +369,9 @@ extension MessageStore {
       threadOriginatorPart: threadOriginatorPart,
       databaseReplyToGUID: databaseReplyToGUID,
       balloonBundleID: balloonBundleID,
-      poll: poll
+      poll: poll,
+      isRead: isRead,
+      dateRead: dateRead
     )
   }
 

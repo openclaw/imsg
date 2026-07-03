@@ -29,6 +29,7 @@ The pattern intentionally mirrors language servers and the way `imsg`'s parent g
 Params:
 
 - `limit` (int, default 20)
+- `unread_only` (bool, default `false`) — when true, return only chats with `unread_count > 0`
 
 Result:
 

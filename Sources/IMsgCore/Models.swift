@@ -193,6 +193,7 @@ public struct Chat: Sendable, Equatable {
   public let accountID: String?
   public let accountLogin: String?
   public let lastAddressedHandle: String?
+  public let unreadCount: Int
 
   public init(
     id: Int64,
@@ -202,7 +203,8 @@ public struct Chat: Sendable, Equatable {
     lastMessageAt: Date,
     accountID: String? = nil,
     accountLogin: String? = nil,
-    lastAddressedHandle: String? = nil
+    lastAddressedHandle: String? = nil,
+    unreadCount: Int = 0
   ) {
     self.id = id
     self.identifier = identifier
@@ -212,6 +214,7 @@ public struct Chat: Sendable, Equatable {
     self.accountID = accountID
     self.accountLogin = accountLogin
     self.lastAddressedHandle = lastAddressedHandle
+    self.unreadCount = unreadCount
   }
 }
 
@@ -336,6 +339,10 @@ public struct Message: Sendable, Equatable {
   public let isReactionAdd: Bool?
   /// The GUID of the message being reacted to (only set when isReaction is true)
   public let reactedToGUID: String?
+  /// Read state for inbound messages when `is_read` is present in chat.db.
+  public let isRead: Bool?
+  /// When the inbound message was marked read locally.
+  public let dateRead: Date?
 
   public init(
     rowID: Int64,
@@ -352,7 +359,9 @@ public struct Message: Sendable, Equatable {
     balloonBundleID: String? = nil,
     urlPreview: URLPreviewMetadata? = nil,
     reaction: ReactionMetadata = ReactionMetadata(),
-    poll: MessagePollEvent? = nil
+    poll: MessagePollEvent? = nil,
+    isRead: Bool? = nil,
+    dateRead: Date? = nil
   ) {
     self.rowID = rowID
     self.chatID = chatID
@@ -377,6 +386,8 @@ public struct Message: Sendable, Equatable {
     self.reactionType = reaction.reactionType
     self.isReactionAdd = reaction.isReactionAdd
     self.reactedToGUID = reaction.reactedToGUID
+    self.isRead = isRead
+    self.dateRead = dateRead
   }
 
   public init(
@@ -402,7 +413,9 @@ public struct Message: Sendable, Equatable {
     reactionType: ReactionType? = nil,
     isReactionAdd: Bool? = nil,
     reactedToGUID: String? = nil,
-    poll: MessagePollEvent? = nil
+    poll: MessagePollEvent? = nil,
+    isRead: Bool? = nil,
+    dateRead: Date? = nil
   ) {
     self.init(
       rowID: rowID,
@@ -431,7 +444,9 @@ public struct Message: Sendable, Equatable {
         isReactionAdd: isReactionAdd,
         reactedToGUID: reactedToGUID
       ),
-      poll: poll
+      poll: poll,
+      isRead: isRead,
+      dateRead: dateRead
     )
   }
 

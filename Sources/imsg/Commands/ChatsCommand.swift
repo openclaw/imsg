@@ -10,7 +10,10 @@ enum ChatsCommand {
     signature: CommandSignatures.withRuntimeFlags(
       CommandSignature(
         options: CommandSignatures.baseOptions() + [
-          .make(label: "limit", names: [.long("limit")], help: "Number of chats to list")
+          .make(label: "limit", names: [.long("limit")], help: "Number of chats to list"),
+          .make(
+            label: "unread-only", names: [.long("unread-only")],
+            help: "Return only chats with unread inbound messages"),
         ]
       )
     ),
@@ -31,8 +34,9 @@ enum ChatsCommand {
   ) async throws {
     let dbPath = values.option("db") ?? MessageStore.defaultPath
     let limit = values.optionInt("limit") ?? 20
+    let unreadOnly = values.flag("unread-only")
     let store = try MessageStore(path: dbPath)
-    let chats = try store.listChats(limit: limit)
+    let chats = try store.listChats(limit: limit, unreadOnly: unreadOnly)
     let contacts = await contactResolverFactory()
 
     if runtime.jsonOutput {
