@@ -24,8 +24,9 @@ extension MessageStore {
   }
 
   /// Ordered options of the poll identified by `guid`, decoded from its
-  /// creation message. Used by `poll vote` to resolve a 1-based option index
-  /// or option text into the stable optionIdentifier the bridge needs.
+  /// creation message and any native option update rows. Used by `poll vote`
+  /// to resolve a 1-based option index or option text into the stable
+  /// optionIdentifier the bridge needs.
   public func pollOptions(guid: String) throws -> [MessagePollOption] {
     let normalized = normalizeAssociatedGUID(guid)
     let target = normalized.isEmpty ? guid : normalized
@@ -63,20 +64,49 @@ extension MessageStore {
 
   private func decodedPollOptions(guid: String, db: Connection) throws -> [MessagePollOption] {
     let selection = MessageRowSelection(store: self, includeChatID: false)
-    let sql = """
-      SELECT \(selection.selectList)
-      FROM message m
-      LEFT JOIN handle h ON m.handle_id = h.ROWID
-      WHERE m.guid = ?
-      LIMIT 1
-      """
-    let rows = try db.prepareRowIterator(sql, bindings: [guid])
-    guard let row = try rows.failableNext() else { return [] }
-    let decoded = try decodeMessageRow(
-      row,
-      columns: selection.columns,
-      fallbackChatID: nil
-    )
-    return decoded.poll?.options ?? []
+    let sql: String
+    let bindings: [Binding?]
+    if schema.hasReactionColumns {
+      sql = """
+        SELECT \(selection.selectList)
+        FROM message m
+        LEFT JOIN handle h ON m.handle_id = h.ROWID
+        WHERE m.guid = ?
+           OR (
+             m.associated_message_type = ?
+             AND (
+               m.associated_message_guid = ?
+               OR m.associated_message_guid LIKE '%/' || ?
+             )
+           )
+        ORDER BY m.date ASC, m.ROWID ASC
+        """
+      bindings = [guid, MessagePollDecoder.updateAssociatedMessageType, guid, guid]
+    } else {
+      sql = """
+        SELECT \(selection.selectList)
+        FROM message m
+        LEFT JOIN handle h ON m.handle_id = h.ROWID
+        WHERE m.guid = ?
+        ORDER BY m.date ASC, m.ROWID ASC
+        """
+      bindings = [guid]
+    }
+    let rows = try db.prepareRowIterator(
+      sql,
+      bindings: bindings)
+    var options: [MessagePollOption] = []
+    var seenIDs = Set<String>()
+    while let row = try rows.failableNext() {
+      let decoded = try decodeMessageRow(
+        row,
+        columns: selection.columns,
+        fallbackChatID: nil
+      )
+      for option in decoded.poll?.options ?? [] where seenIDs.insert(option.id).inserted {
+        options.append(option)
+      }
+    }
+    return options
   }
 }
