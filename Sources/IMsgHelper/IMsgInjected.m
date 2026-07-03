@@ -272,6 +272,8 @@ static void probeSelectors(void) {
 - (NSString *)displayNameForChat;
 - (void)sendMessage:(id)message;
 - (void)_sendMessage:(id)message adjustingSender:(BOOL)adjust shouldQueue:(BOOL)queue;
+- (id)sendProgressDelegate;
+- (void)setSendProgressDelegate:(id)delegate;
 - (void)leaveChat;
 - (void)_setDisplayName:(NSString *)name;
 - (BOOL)hasUnreadMessages;
@@ -1591,38 +1593,96 @@ static void scheduleThreadContextClear(IMChat *chat, NSString *threadIdentifier)
     });
 }
 
+#pragma mark - Synchronous Send (SendProgress Delegate)
+
+/// Delegate object that receives IMSendProgressDelegate callbacks.
+/// Used to make `[chat sendMessage:]` synchronous by waiting for the
+/// `finished:YES` callback before returning.
+@interface IMsgSendProgressDelegate : NSObject
+@property (nonatomic, strong) dispatch_semaphore_t semaphore;
+@property (nonatomic, assign) BOOL finished;
+@end
+
+@implementation IMsgSendProgressDelegate
+- (void)sendProgress:(id)progress
+   progressDidChange:(BOOL)changed
+      sendingMessages:(id)sendingMessages
+             sendCount:(unsigned long long)sendCount
+            totalCount:(unsigned long long)totalCount
+              finished:(BOOL)finished {
+    if (finished) {
+        self.finished = YES;
+        dispatch_semaphore_signal(self.semaphore);
+    }
+}
+@end
+
 static void dispatchIMMessageInChat(IMChat *chat,
                                     id message,
                                     NSString *threadIdentifier,
                                     id threadOriginator) {
+    // Set up send-progress delegate for synchronous confirmation.
+    // IMCore fires sendProgress:...finished:YES when the send is committed,
+    // which ensures chat.db has is_from_me=1 before we return — preventing
+    // the iCloud sync race where a message arrives on other devices as
+    // is_from_me=0 (received) without a corresponding sent copy.
+    IMsgSendProgressDelegate *sendDelegate = [IMsgSendProgressDelegate new];
+    sendDelegate.semaphore = dispatch_semaphore_create(0);
+    sendDelegate.finished = NO;
+    id oldDelegate = nil;
+    if ([chat respondsToSelector:@selector(sendProgressDelegate)]) {
+        oldDelegate = [chat performSelector:@selector(sendProgressDelegate)];
+    }
+    if ([chat respondsToSelector:@selector(setSendProgressDelegate:)]) {
+        [chat performSelector:@selector(setSendProgressDelegate:) withObject:sendDelegate];
+    }
+
     if (!threadIdentifier.length) {
         clearThreadContextForChat(chat, nil);
         clearReplyMetadataOnMessage(message);
-        [chat performSelector:@selector(sendMessage:) withObject:message];
-        return;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [chat performSelector:@selector(sendMessage:) withObject:message];
+        });
+    } else {
+        prepareThreadContextForSend(chat, threadIdentifier, threadOriginator);
+        id registry = nil;
+        if ([chat respondsToSelector:@selector(chatRegistry)]) {
+            registry = [chat performSelector:@selector(chatRegistry)];
+        }
+        SEL registrySendSel = NSSelectorFromString(@"_chat:sendMessage:");
+        if (registry && [registry respondsToSelector:registrySendSel]) {
+            NSMethodSignature *sig = [registry methodSignatureForSelector:registrySendSel];
+            NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+            [inv setSelector:registrySendSel];
+            [inv setTarget:registry];
+            __unsafe_unretained id chatArg = chat;
+            __unsafe_unretained id messageArg = message;
+            [inv setArgument:&chatArg atIndex:2];
+            [inv setArgument:&messageArg atIndex:3];
+            [inv invoke];
+        } else {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [chat performSelector:@selector(sendMessage:) withObject:message];
+            });
+        }
+        scheduleThreadContextClear(chat, threadIdentifier);
     }
 
-    prepareThreadContextForSend(chat, threadIdentifier, threadOriginator);
-    id registry = nil;
-    if ([chat respondsToSelector:@selector(chatRegistry)]) {
-        registry = [chat performSelector:@selector(chatRegistry)];
+    // Wait for IMCore to confirm the send completed (10s timeout)
+    long waitResult = dispatch_semaphore_wait(sendDelegate.semaphore,
+                                              dispatch_time(DISPATCH_TIME_NOW,
+                                                            (int64_t)(10.0 * NSEC_PER_SEC)));
+
+    // Restore the old delegate
+    if ([chat respondsToSelector:@selector(setSendProgressDelegate:)]) {
+        [chat performSelector:@selector(setSendProgressDelegate:) withObject:oldDelegate];
     }
-    SEL registrySendSel = NSSelectorFromString(@"_chat:sendMessage:");
-    if (registry && [registry respondsToSelector:registrySendSel]) {
-        NSMethodSignature *sig = [registry methodSignatureForSelector:registrySendSel];
-        NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
-        [inv setSelector:registrySendSel];
-        [inv setTarget:registry];
-        __unsafe_unretained id chatArg = chat;
-        __unsafe_unretained id messageArg = message;
-        [inv setArgument:&chatArg atIndex:2];
-        [inv setArgument:&messageArg atIndex:3];
-        [inv invoke];
-        scheduleThreadContextClear(chat, threadIdentifier);
-        return;
+
+    if (waitResult != 0) {
+        debugLog(@"dispatchIMMessageInChat: send timed out after 10s");
+    } else {
+        debugLog(@"dispatchIMMessageInChat: send confirmed");
     }
-    [chat performSelector:@selector(sendMessage:) withObject:message];
-    scheduleThreadContextClear(chat, threadIdentifier);
 }
 
 static unsigned long long flagsForMessagePayload(NSAttributedString *subject,
