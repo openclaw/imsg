@@ -1,5 +1,4 @@
 import Foundation
-import SQLite
 import Testing
 
 @testable import IMsgCore
@@ -86,41 +85,7 @@ func messagePayloadIncludesInboundReadState() throws {
 
 @Test
 func rpcChatsListSupportsUnreadOnlyAndUnreadCount() async throws {
-  let db = try Connection(.inMemory)
-  try MessageDatabaseFixture.createSchema(
-    db,
-    options: MessageDatabaseFixture.SchemaOptions(
-      includeChatRouting: true,
-      includeChatHandleJoin: true,
-      includeReadState: true
-    )
-  )
-
-  let now = Date()
-  try db.run(
-    """
-    INSERT INTO chat(
-      ROWID, chat_identifier, guid, display_name, service_name,
-      account_id, account_login, last_addressed_handle
-    )
-    VALUES (
-      1, 'iMessage;+;chat123', 'iMessage;+;chat123', 'Group Chat', 'iMessage',
-      'iMessage;+;me@icloud.com', 'me@icloud.com', 'me@icloud.com'
-    )
-    """
-  )
-  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123'), (2, 'me@icloud.com')")
-  try db.run("INSERT INTO chat_handle_join(chat_id, handle_id) VALUES (1, 1), (1, 2)")
-  try db.run(
-    """
-    INSERT INTO message(ROWID, handle_id, text, date, is_from_me, service, is_read, date_read)
-    VALUES (5, 1, 'hello', ?, 0, 'iMessage', 0, 0)
-    """,
-    CommandTestDatabase.appleEpoch(now)
-  )
-  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 5)")
-
-  let store = try MessageStore(connection: db, path: ":memory:")
+  let store = try CommandTestDatabase.makeStoreForRPCWithReadState()
   let output = TestRPCOutput()
   let server = RPCServer(store: store, verbose: false, output: output)
 
@@ -136,46 +101,7 @@ func rpcChatsListSupportsUnreadOnlyAndUnreadCount() async throws {
 
 @Test
 func rpcMessagesHistoryIncludesInboundReadState() async throws {
-  let db = try Connection(.inMemory)
-  try MessageDatabaseFixture.createSchema(
-    db,
-    options: MessageDatabaseFixture.SchemaOptions(
-      includeChatRouting: true,
-      includeChatHandleJoin: true,
-      includeReadState: true
-    )
-  )
-
-  let now = Date()
-  let readAt = Date(timeIntervalSince1970: 1_700_000_000)
-  try db.run(
-    """
-    INSERT INTO chat(
-      ROWID, chat_identifier, guid, display_name, service_name,
-      account_id, account_login, last_addressed_handle
-    )
-    VALUES (
-      1, 'iMessage;+;chat123', 'iMessage;+;chat123', 'Group Chat', 'iMessage',
-      'iMessage;+;me@icloud.com', 'me@icloud.com', 'me@icloud.com'
-    )
-    """
-  )
-  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123'), (2, 'me@icloud.com')")
-  try db.run("INSERT INTO chat_handle_join(chat_id, handle_id) VALUES (1, 1), (1, 2)")
-  try db.run(
-    """
-    INSERT INTO message(ROWID, handle_id, text, date, is_from_me, service, is_read, date_read)
-    VALUES
-      (5, 1, 'unread', ?, 0, 'iMessage', 0, 0),
-      (6, 1, 'read', ?, 0, 'iMessage', 1, ?)
-    """,
-    CommandTestDatabase.appleEpoch(now),
-    CommandTestDatabase.appleEpoch(now),
-    CommandTestDatabase.appleEpoch(readAt)
-  )
-  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 5), (1, 6)")
-
-  let store = try MessageStore(connection: db, path: ":memory:")
+  let store = try CommandTestDatabase.makeStoreForRPCWithReadState()
   let output = TestRPCOutput()
   let server = RPCServer(store: store, verbose: false, output: output)
 

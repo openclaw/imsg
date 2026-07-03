@@ -111,6 +111,13 @@ enum CommandTestDatabase {
     )
   }
 
+  static func makeStoreForRPCWithReadState() throws -> MessageStore {
+    let db = try Connection(.inMemory)
+    try createSchema(db, includeChatHandleJoin: true, includeReadState: true)
+    try seedRPCChatWithReadState(db)
+    return try MessageStore(connection: db, path: ":memory:")
+  }
+
   static func makeStoreForRPCWithReaction() throws -> MessageStore {
     let db = try Connection(.inMemory)
     try createSchema(db, includeChatHandleJoin: true, includeReactionColumns: true)
@@ -196,7 +203,8 @@ enum CommandTestDatabase {
     _ db: Connection,
     includeChatHandleJoin: Bool,
     includeReactionColumns: Bool = false,
-    includePollColumns: Bool = false
+    includePollColumns: Bool = false,
+    includeReadState: Bool = false
   ) throws {
     let reactionColumns =
       includeReactionColumns
@@ -214,6 +222,13 @@ enum CommandTestDatabase {
         "message_summary_info BLOB",
       ].joined(separator: ",\n") + ","
       : ""
+    let readStateColumns =
+      includeReadState
+      ? [
+        "is_read INTEGER",
+        "date_read INTEGER",
+      ].joined(separator: ",\n") + ","
+      : ""
     try db.execute(
       """
       CREATE TABLE message (
@@ -222,6 +237,7 @@ enum CommandTestDatabase {
         text TEXT,
         \(reactionColumns)
         \(pollColumns)
+        \(readStateColumns)
         date INTEGER,
         is_from_me INTEGER,
         service TEXT
@@ -314,6 +330,37 @@ enum CommandTestDatabase {
       appleEpoch(now)
     )
     try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 5)")
+  }
+
+  private static func seedRPCChatWithReadState(_ db: Connection) throws {
+    let now = Date()
+    let readAt = Date(timeIntervalSince1970: 1_700_000_000)
+    try db.run(
+      """
+      INSERT INTO chat(
+        ROWID, chat_identifier, guid, display_name, service_name,
+        account_id, account_login, last_addressed_handle
+      )
+      VALUES (
+        1, 'iMessage;+;chat123', 'iMessage;+;chat123', 'Group Chat', 'iMessage',
+        'iMessage;+;me@icloud.com', 'me@icloud.com', 'me@icloud.com'
+      )
+      """
+    )
+    try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123'), (2, 'me@icloud.com')")
+    try db.run("INSERT INTO chat_handle_join(chat_id, handle_id) VALUES (1, 1), (1, 2)")
+    try db.run(
+      """
+      INSERT INTO message(ROWID, handle_id, text, date, is_from_me, service, is_read, date_read)
+      VALUES
+        (5, 1, 'unread', ?, 0, 'iMessage', 0, 0),
+        (6, 1, 'read', ?, 0, 'iMessage', 1, ?)
+      """,
+      appleEpoch(now),
+      appleEpoch(now),
+      appleEpoch(readAt)
+    )
+    try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 5), (1, 6)")
   }
 
   private static func pollPayload(jsonObject: [String: Any]) throws -> Data {
