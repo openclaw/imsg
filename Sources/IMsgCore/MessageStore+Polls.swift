@@ -15,12 +15,17 @@ extension MessageStore {
       }
     guard let pollGUID = candidateGUIDs.first else { return poll }
 
+    let sourcePollGUID = try sourcePollGUID(forAny: candidateGUIDs, db: db) ?? pollGUID
     let optionTexts = try pollOptionTextsByID(
-      pollGUID: pollGUID,
+      pollGUID: sourcePollGUID,
       db: db,
       cache: &cache
     )
-    return poll.resolvingVoteOptionTexts(optionTexts)
+    let resolvedPoll = poll.resolvingVoteOptionTexts(optionTexts)
+    return resolvedPoll.resolvingPollReference(
+      pollGUID: sourcePollGUID,
+      originalGUID: sourcePollGUID
+    )
   }
 
   /// Ordered options of the poll identified by `guid`, decoded from its
@@ -108,5 +113,38 @@ extension MessageStore {
       }
     }
     return options
+  }
+
+  private func sourcePollGUID(forAny candidates: [String], db: Connection) throws -> String? {
+    guard schema.hasReactionColumns else { return nil }
+    for candidate in candidates {
+      if let source = try sourcePollGUID(forUpdateRow: candidate, db: db) {
+        return source
+      }
+    }
+    return candidates.first
+  }
+
+  private func sourcePollGUID(forUpdateRow guid: String, db: Connection) throws -> String? {
+    let rows = try db.prepareRowIterator(
+      """
+      SELECT associated_message_guid
+      FROM message
+      WHERE guid = ?
+        AND associated_message_type = ?
+        AND IFNULL(associated_message_guid, '') != ''
+      LIMIT 1
+      """,
+      bindings: [guid, MessagePollDecoder.updateAssociatedMessageType]
+    )
+    guard
+      let row = try rows.failableNext(),
+      let associatedGUID = try row.get(Expression<String?>("associated_message_guid"))
+    else {
+      return nil
+    }
+
+    let normalized = normalizeAssociatedGUID(associatedGUID)
+    return normalized.isEmpty ? nil : normalized
   }
 }

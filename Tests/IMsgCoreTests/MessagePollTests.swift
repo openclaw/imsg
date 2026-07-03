@@ -549,7 +549,8 @@ func messageStoreResolvesVoteOptionTextFromPollUpdateRows() throws {
   #expect(updateMessage.poll?.originalGUID == "original-poll-guid")
   #expect(updateMessage.poll?.options?.map(\.text) == ["A", "Custom choice"])
   #expect(voteMessage.poll?.kind == .vote)
-  #expect(voteMessage.poll?.originalGUID == "updated-poll-guid")
+  #expect(voteMessage.poll?.pollGUID == "original-poll-guid")
+  #expect(voteMessage.poll?.originalGUID == "original-poll-guid")
   #expect(voteMessage.poll?.vote?.optionID == "choice-custom")
   #expect(voteMessage.poll?.vote?.optionText == "Custom choice")
 }

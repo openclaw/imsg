@@ -309,6 +309,24 @@ extension MessagePollEvent {
       metadata: metadata
     )
   }
+
+  func resolvingPollReference(pollGUID: String?, originalGUID: String?) -> MessagePollEvent {
+    if self.pollGUID == pollGUID, self.originalGUID == originalGUID {
+      return self
+    }
+    return MessagePollEvent(
+      kind: kind,
+      pollGUID: pollGUID,
+      question: question,
+      options: options,
+      vote: vote,
+      votes: votes,
+      originalGUID: originalGUID,
+      creator: creator,
+      participants: participants,
+      metadata: metadata
+    )
+  }
 }
 
 private struct PollFacts {
