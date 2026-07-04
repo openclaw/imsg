@@ -652,6 +652,11 @@ private func assertOriginalPollVoteOptionTextResolvesFromUpdateRow(
   try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 3)")
 
   let store = try MessageStore(connection: db, path: ":memory:")
+  #expect(
+    try store.pollOptions(guid: "original-poll-guid").map(\.text) == [
+      "A", "B", "Custom choice",
+    ])
+
   let messages = try store.messagesAfter(afterRowID: 0, chatID: 1, limit: 10)
   let voteMessage = try #require(messages.first { $0.guid == "vote-row-guid" })
 
