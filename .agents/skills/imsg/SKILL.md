@@ -11,8 +11,8 @@ description: "iMessage/SMS via the imsg CLI: read local Messages history, search
 
 - Every read command supports `--json` and emits **NDJSON** (one object per line). Pipe to `jq -s` to get an array. Stdout carries only JSON; progress and warnings go to stderr.
 - Two capability tiers:
-  - **Standard** (normal permissions): `chats`, `group`, `history`, `watch`, `search`, `send`, `react`, `nickname`, `account --local`, `whois --local`.
-  - **Bridge** (SIP disabled + `imsg launch` dylib injection): `send-rich`, `send-multipart`, `send-attachment`, `tapback`, `poll`, `edit`, `unsend`, `delete-message`, `read`, `typing`, `notify-anyways`, `chat-*`, and default-mode `account`/`whois`.
+  - **Standard** (normal permissions): `chats`, `group`, `history`, `watch`, `search`, `send`, `react`, `nickname --local`, `account --local`, `whois --local`.
+  - **Bridge** (SIP disabled + `imsg launch` dylib injection): `send-rich`, `send-multipart`, `send-attachment`, `tapback`, `poll`, `edit`, `unsend`, `delete-message`, `read`, `typing`, `notify-anyways`, `chat-*`, and default-mode `account`/`whois`/`nickname`.
 - Check availability with `imsg status --json` before using bridge commands. If the bridge is down, fall back to the standard equivalent (`send` for `send-rich`, `react` for `tapback`, `--local` flags) — never suggest disabling SIP unprompted.
 - Full command and flag reference: `imsg completions llm`.
 
@@ -43,7 +43,7 @@ imsg history --chat-id ID --start 2025-01-01T00:00:00Z --end 2025-02-01T00:00:00
 - `--start` is inclusive, `--end` exclusive; both take ISO8601. Use absolute timestamps for date-scoped questions.
 - `--attachments` adds attachment metadata; `--convert-attachments` converts CAF→M4A / GIF→PNG for model consumption.
 - `imsg search --query "pizza tonight" --json` searches message bodies only (`--match contains` default, `exact` available).
-- SIP-free lookups: `imsg whois --address "+15551234567" --type phone --local`, `imsg nickname --address "+15551234567" --json`, `imsg account --local --json`.
+- SIP-free lookups: `imsg whois --address "+15551234567" --type phone --local`, `imsg nickname --address "+15551234567" --local --json`, `imsg account --local --json`. Note `nickname --local` returns *your* AddressBook label for the handle; the iMessage-shared nickname needs default-mode `nickname` via the bridge.
 - Direct `sqlite3` queries are a last resort; the `handle` table lacks the resolved names `imsg chats` provides.
 
 ## Streaming
