@@ -1671,7 +1671,7 @@ static void dispatchIMMessageInChat(IMChat *chat,
     // Wait for IMCore to confirm the send completed (10s timeout)
     long waitResult = dispatch_semaphore_wait(sendDelegate.semaphore,
                                               dispatch_time(DISPATCH_TIME_NOW,
-                                                            (int64_t)(10.0 * NSEC_PER_SEC)));
+                                                            (int64_t)(20.0 * NSEC_PER_SEC)));
 
     // Restore the old delegate
     if ([chat respondsToSelector:@selector(setSendProgressDelegate:)]) {
@@ -1679,7 +1679,7 @@ static void dispatchIMMessageInChat(IMChat *chat,
     }
 
     if (waitResult != 0) {
-        debugLog(@"dispatchIMMessageInChat: send timed out after 10s");
+        debugLog(@"dispatchIMMessageInChat: send timed out after 20s");
     } else {
         debugLog(@"dispatchIMMessageInChat: send confirmed");
     }

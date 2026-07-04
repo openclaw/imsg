@@ -1,0 +1,48 @@
+name: Build Dylib
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "Sources/IMsgHelper/IMsgInjected.m"
+  pull_request:
+    paths:
+      - "Sources/IMsgHelper/IMsgInjected.m"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build arm64e dylib
+        run: |
+          mkdir -p .build/release
+          clang -dynamiclib -arch arm64e -fobjc-arc \
+            -Wno-arc-performSelector-leaks \
+            -framework Foundation \
+            -framework AppKit \
+            -o .build/release/imsg-bridge-helper.dylib \
+            Sources/IMsgHelper/IMsgInjected.m
+
+      - name: Codesign dylib
+        run: |
+          codesign --force --sign - \
+            --identifier com.steipete.imsg.bridge-helper \
+            .build/release/imsg-bridge-helper.dylib
+
+      - name: Verify arch
+        run: |
+          file .build/release/imsg-bridge-helper.dylib
+          lipo -info .build/release/imsg-bridge-helper.dylib
+
+      - name: Upload dylib artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: imsg-bridge-helper.dylib
+          path: .build/release/imsg-bridge-helper.dylib
+          retention-days: 90
