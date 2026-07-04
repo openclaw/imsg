@@ -1,62 +1,83 @@
 ---
 name: imsg
-description: "iMessage/SMS: local archive, contacts, chat history, watch, requested sends."
+description: "iMessage/SMS via the imsg CLI: read local Messages history, search, stream live, resolve contacts, and send (sends only when explicitly requested). Use for any Messages.app / chat.db task."
 ---
 
 # imsg
 
-Use this for Messages.app history, chat lookup, streaming, visible UI contact lookup, and sends. Reading is local DB access; sending uses Messages automation and must be explicitly requested.
+`imsg` reads `~/Library/Messages/chat.db` directly and sends through Messages.app automation. Reading is local and safe. **Sending, reacting, marking read, typing indicators, and any chat mutation require an explicit user request** — confirm recipient, service, and content in your final summary.
 
-## Sources
+## Ground rules
 
-- DB: `~/Library/Messages/chat.db`
-- Repo: `~/Projects/imsg`
-- CLI: `imsg`
-- JSON output is NDJSON; pipe to `jq -s` for arrays.
+- Every read command supports `--json` and emits **NDJSON** (one object per line). Pipe to `jq -s` to get an array. Stdout carries only JSON; progress and warnings go to stderr.
+- Two capability tiers:
+  - **Standard** (normal permissions): `chats`, `group`, `history`, `watch`, `search`, `send`, `react`, `nickname`, `account --local`, `whois --local`.
+  - **Bridge** (SIP disabled + `imsg launch` dylib injection): `send-rich`, `send-multipart`, `send-attachment`, `tapback`, `poll`, `edit`, `unsend`, `delete-message`, `read`, `typing`, `notify-anyways`, `chat-*`, and default-mode `account`/`whois`.
+- Check availability with `imsg status --json` before using bridge commands. If the bridge is down, fall back to the standard equivalent (`send` for `send-rich`, `react` for `tapback`, `--local` flags) — never suggest disabling SIP unprompted.
+- Full command and flag reference: `imsg completions llm`.
 
-## Read Workflow
-
-Check DB access:
+## Preconditions
 
 ```bash
-sqlite3 ~/Library/Messages/chat.db 'pragma quick_check;'
+imsg status --json                                        # feature availability + setup hints
+sqlite3 ~/Library/Messages/chat.db 'pragma quick_check;'  # fails => terminal lacks Full Disk Access
 ```
 
-For a visible Messages.app person/name, start with chats. The UI-resolved name usually appears as `contact_name`; it may not appear in `imsg search`, raw `message.text`, or the `handle` table.
+## Reading
+
+Resolve a person visible in the Messages.app UI from `chats`, not `search`. The UI name usually surfaces as `contact_name` (Contacts permission); it does not appear in `imsg search` results, raw `message.text`, or the DB `handle` table. **No search hits is not proof the contact doesn't exist.**
 
 ```bash
 imsg chats --limit 200 --json | jq -s '.[] | select((.contact_name // .display_name // .name // .identifier // "" | ascii_downcase) | contains("beatrix"))'
 ```
 
-Then read the chat by id:
+Then inspect and read the chat by rowid:
 
 ```bash
-imsg history --chat-id ID --json | jq -s
+imsg group --chat-id ID --json                 # identity + participants; check before automating
+imsg history --chat-id ID --limit 50 --json | jq -s
+imsg history --chat-id ID --start 2025-01-01T00:00:00Z --end 2025-02-01T00:00:00Z --json
 ```
 
-Use `imsg search --query ... --json` for message-body search only; do not treat no search hits as proof that a visible UI contact does not exist. Use `--attachments` when attachment metadata matters. Use `--start`/`--end` with absolute timestamps for date-scoped questions.
+- Chat `id` is the `chat.db` rowid: stable on one machine, the preferred `--chat-id` handle. `identifier` and `guid` are portable across machines.
+- `--start` is inclusive, `--end` exclusive; both take ISO8601. Use absolute timestamps for date-scoped questions.
+- `--attachments` adds attachment metadata; `--convert-attachments` converts CAF→M4A / GIF→PNG for model consumption.
+- `imsg search --query "pizza tonight" --json` searches message bodies only (`--match contains` default, `exact` available).
+- SIP-free lookups: `imsg whois --address "+15551234567" --type phone --local`, `imsg nickname --address "+15551234567" --json`, `imsg account --local --json`.
+- Direct `sqlite3` queries are a last resort; the `handle` table lacks the resolved names `imsg chats` provides.
 
-Useful current commands:
+## Streaming
 
 ```bash
-imsg search --query "pizza tonight" --match contains --json | jq -s
-imsg status --json
-imsg account --json
-imsg whois --address "+15551234567" --type phone --json
-imsg nickname --address "+15551234567" --json
+imsg watch --chat-id ID --json                 # filesystem events with polling fallback
+imsg watch --since-rowid N --json              # resume from a message id cursor
 ```
 
-Direct DB checks are only a fallback. The `handle` table is keyed by phone/email and often lacks the contact display name that `imsg chats` resolves.
+Message `id` doubles as the watch cursor: persist the last-seen id and pass it back via `--since-rowid`. Add `--reactions` for tapback add/remove events and `--attachments` for attachment metadata.
 
-## Sends
-
-Only send, react, mark read, or show typing when the user explicitly asks. Prefer dry wording in the final confirmation: recipient, service, and what was sent.
-
-Common send command:
+## Sending (explicit request only)
 
 ```bash
 imsg send --to "+15551234567" --text "message" --service auto
+imsg send --chat-id ID --text "message"        # prefer for groups: no address ambiguity
+imsg send --to "+15551234567" --file ~/Desktop/pic.jpg
 ```
+
+- `--service auto` prefers iMessage and falls back to SMS for text-only phone sends; `--no-sms-fallback` disables that.
+- `imsg react --chat-id ID --reaction like` (AppleScript) only targets the **most recent incoming message** and needs Accessibility permission. To react to a specific message by GUID, use bridge `tapback`.
+
+## Bridge extras
+
+Only after `imsg status` confirms the bridge is loaded (`imsg launch` injects it; refuses when SIP is on; macOS 26 entitlement gates can block features even with SIP off):
+
+```bash
+imsg send-rich --chat 'iMessage;-;+15551234567' --text 'hi' --reply-to MSG_GUID   # replies, effects, subjects
+imsg poll send --chat GUID --question 'Dinner?' --option 'Pizza' --option 'Sushi'
+imsg edit --chat GUID --message MSG_GUID --new-text 'updated'                     # macOS 13+
+imsg chat-create --addresses '+15551234567,+15559876543' --name 'Crew'
+```
+
+Destructive bridge commands — `unsend`, `delete-message`, `chat-delete`, `chat-leave`, `chat-remove-member` — need per-action user confirmation.
 
 ## Verification
 
@@ -65,10 +86,5 @@ For repo edits:
 ```bash
 make test
 make build
-```
-
-For live read proof:
-
-```bash
-imsg chats --limit 3 --json | jq -s
+./bin/imsg chats --limit 3 --json | jq -s      # live read proof against the local DB
 ```
