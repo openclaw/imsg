@@ -38,6 +38,30 @@ extension MessageStore {
     return (text: decoded.text, sender: decoded.sender)
   }
 
+  /// The caption text of a native poll: the earliest message whose
+  /// `reply_to_guid` targets the poll. Native poll comments (the "comment or
+  /// Send" field) carry the question in a separate reply message because the
+  /// poll balloon has no title, so this is how the question reaches us when the
+  /// poll's own `item.title` is empty. Decoded via `decodeMessageRow` for the
+  /// same attributedBody fallback as everywhere else.
+  func pollCommentText(_ db: Connection, pollGUID: String) throws -> String? {
+    guard !pollGUID.isEmpty else { return nil }
+    let selection = MessageRowSelection(store: self, includeChatID: false)
+    let sql = """
+      SELECT \(selection.selectList)
+      FROM message m
+      LEFT JOIN handle h ON m.handle_id = h.ROWID
+      WHERE m.reply_to_guid = ?
+      ORDER BY m.date ASC
+      LIMIT 1
+      """
+    let rows = try db.prepareRowIterator(sql, bindings: [pollGUID])
+    guard let row = try rows.failableNext() else { return nil }
+    let decoded = try decodeMessageRow(row, columns: selection.columns, fallbackChatID: nil)
+    let text = decoded.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    return text.isEmpty ? nil : text
+  }
+
   /// Walks `threadOriginatorGUID` then `replyToGUID` and returns the first
   /// successful parent resolution, consulting `cache` to amortize repeated
   /// lookups within one query loop. Lookup failures (absent parent, SQLite

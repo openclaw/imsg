@@ -6,7 +6,25 @@ extension MessageStore {
     db: Connection,
     cache: inout PollOptionTextCache
   ) throws -> MessagePollEvent? {
-    guard let poll, poll.kind == .vote else { return poll }
+    guard let poll else { return nil }
+
+    // Native poll balloons carry no title (item.title is empty); a created
+    // poll's question is sent as a separate caption message that replies to the
+    // poll (the "comment or Send" field). Backfill an empty created-poll question
+    // from that caption so the poll is self-describing to consumers — e.g.
+    // openclaw renders "📊 Poll: <question>" only when the question is present.
+    if poll.kind == .created,
+      poll.question?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true,
+      let raw = poll.pollGUID
+    {
+      let pollGUID = normalizeAssociatedGUID(raw)
+      if !pollGUID.isEmpty, let caption = try pollCommentText(db, pollGUID: pollGUID) {
+        return poll.withQuestion(caption)
+      }
+      return poll
+    }
+
+    guard poll.kind == .vote else { return poll }
     let candidateGUIDs = [poll.originalGUID, poll.pollGUID]
       .compactMap { value -> String? in
         guard let value else { return nil }

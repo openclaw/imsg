@@ -327,6 +327,24 @@ extension MessagePollEvent {
       metadata: metadata
     )
   }
+
+  /// Returns a copy with `question` filled in. Used to backfill a native poll's
+  /// empty title (item.title) from its caption message so the poll is
+  /// self-describing to consumers.
+  func withQuestion(_ newQuestion: String) -> MessagePollEvent {
+    MessagePollEvent(
+      kind: kind,
+      pollGUID: pollGUID,
+      question: newQuestion,
+      options: options,
+      vote: vote,
+      votes: votes,
+      originalGUID: originalGUID,
+      creator: creator,
+      participants: participants,
+      metadata: metadata
+    )
+  }
 }
 
 private struct PollFacts {
