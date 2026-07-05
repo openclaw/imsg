@@ -77,7 +77,7 @@ imsg edit --chat GUID --message MSG_GUID --new-text 'updated'                   
 imsg chat-create --addresses '+15551234567,+15559876543' --name 'Crew'
 ```
 
-`poll send` echoes `--question` as a reply comment on the poll (the visible caption) — Messages never renders the poll title on the balloon, so this is what recipients actually see. `--comment` overrides the echoed text.
+Native poll balloons show no title, so `poll send` sends `--question` as a plain caption message right after the poll — what recipients actually see (`--comment` overrides). The reverse holds on read: `imsg history`/`watch` backfill an inbound native poll's `question` from its caption, so a received poll surfaces its real question instead of an empty one.
 
 Destructive bridge commands — `unsend`, `delete-message`, `chat-delete`, `chat-leave`, `chat-remove-member` — need per-action user confirmation.
 
