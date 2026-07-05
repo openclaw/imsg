@@ -13,16 +13,32 @@ func releaseWorkflowPackagesUniversalBuildOutput() throws {
 }
 
 @Test
-func universalBuildScriptDefaultsToBothMacArchitectures() throws {
+func universalBuildScriptShipsArm64eHelperSlice() throws {
   let script = try readRepositoryFile("scripts/build-universal.sh")
 
   #expect(script.contains(#"ARCHES_VALUE=${ARCHES:-"arm64 x86_64"}"#))
-  #expect(script.contains(#"HELPER_ARCHES_VALUE=${HELPER_ARCHES:-"$ARCHES_VALUE"}"#))
+  // The injected helper must default to arm64e — macOS 26 Messages refuses to
+  // load an arm64-only dylib, which silently kills the bridge.
+  #expect(script.contains(#"HELPER_ARCHES_VALUE=${HELPER_ARCHES:-"arm64e arm64 x86_64"}"#))
   #expect(script.contains("lipo -create"))
   #expect(script.contains("imsg-bridge-helper.dylib"))
+  // release.yml ships via this script only, so it must guard every helper slice.
+  #expect(script.contains(#"if ! lipo -archs "${DIST_DIR}/${HELPER_NAME}" | tr ' ' '\n' | grep -Fxq "$ARCH"; then"#))
+  #expect(script.contains("Helper missing required architecture slice"))
   #expect(script.contains(#"codesign --force --sign -"#))
   #expect(script.contains(#"cp "${DIST_DIR}/${APP_NAME}" "$OUTPUT_DIR/$APP_NAME""#))
   #expect(script.contains(#"cp "${DIST_DIR}/${HELPER_NAME}" "$OUTPUT_DIR/$HELPER_NAME""#))
+}
+
+@Test
+func signAndNotarizeScriptDefaultsHelperToArm64e() throws {
+  let script = try readRepositoryFile("scripts/sign-and-notarize.sh")
+
+  // The notarize path defaults the helper to arm64e as well, and validates the
+  // shipped slices against the HELPER arch list (not the CLI ARCH_LIST).
+  #expect(script.contains(#"HELPER_ARCHES_VALUE=${HELPER_ARCHES:-"arm64e arm64 x86_64"}"#))
+  #expect(script.contains(#"for ARCH in "${HELPER_ARCH_LIST[@]}"; do"#))
+  #expect(script.contains("Helper missing required architecture slice"))
 }
 
 @Test

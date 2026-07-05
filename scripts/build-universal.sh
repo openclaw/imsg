@@ -8,7 +8,10 @@ ENTITLEMENTS="${ROOT}/Resources/imsg.entitlements"
 OUTPUT_DIR="${OUTPUT_DIR:-${ROOT}/bin}"
 ARCHES_VALUE=${ARCHES:-"arm64 x86_64"}
 ARCH_LIST=( ${ARCHES_VALUE} )
-HELPER_ARCHES_VALUE=${HELPER_ARCHES:-"$ARCHES_VALUE"}
+# The injected helper must include arm64e: macOS 26 Messages refuses to load an
+# arm64-only dylib, which silently kills the bridge. Keep this ahead of the CLI
+# arches so a release never ships an arm64-only helper.
+HELPER_ARCHES_VALUE=${HELPER_ARCHES:-"arm64e arm64 x86_64"}
 HELPER_ARCH_LIST=( ${HELPER_ARCHES_VALUE} )
 BUILD_MODE=${BUILD_MODE:-release}
 CODESIGN_IDENTITY=${CODESIGN_IDENTITY:-"-"}
@@ -38,6 +41,16 @@ clang -dynamiclib "${HELPER_CLANG_ARCH_ARGS[@]}" -fobjc-arc \
   -framework AppKit \
   -o "${DIST_DIR}/${HELPER_NAME}" \
   "${ROOT}/Sources/IMsgHelper/IMsgInjected.m"
+
+# This is the shipping path (release.yml runs only this script), so fail the
+# build if any required helper slice is missing — a dropped arm64e slice
+# silently kills the bridge on macOS 26 Messages.
+for ARCH in "${HELPER_ARCH_LIST[@]}"; do
+  if ! lipo -archs "${DIST_DIR}/${HELPER_NAME}" | tr ' ' '\n' | grep -Fxq "$ARCH"; then
+    echo "Helper missing required architecture slice: $ARCH" >&2
+    exit 1
+  fi
+done
 
 if [[ "$CODESIGN_IDENTITY" == "-" ]]; then
   codesign --force --sign - \
