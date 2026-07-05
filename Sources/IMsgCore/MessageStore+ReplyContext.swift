@@ -50,11 +50,23 @@ extension MessageStore {
     // comment cannot be located, so skip the query rather than fail the pull.
     guard schema.hasReplyToGUIDColumn else { return nil }
     let selection = MessageRowSelection(store: self, includeChatID: false)
+    // The question caption is a plain message (associated_message_type 0) with no
+    // thread metadata. A threaded inline reply to the poll (type 100, thread
+    // originator set) is NOT the question — exclude it so a reply is never
+    // mistaken for the caption. Both columns are schema-optional, so only add the
+    // filter when the column exists.
+    var conditions = ["m.reply_to_guid = ?"]
+    if schema.hasReactionColumns {
+      conditions.append("m.associated_message_type = 0")
+    }
+    if schema.hasThreadOriginatorGUIDColumn {
+      conditions.append("m.thread_originator_guid IS NULL")
+    }
     let sql = """
       SELECT \(selection.selectList)
       FROM message m
       LEFT JOIN handle h ON m.handle_id = h.ROWID
-      WHERE m.reply_to_guid = ?
+      WHERE \(conditions.joined(separator: " AND "))
       ORDER BY m.date ASC
       LIMIT 1
       """
