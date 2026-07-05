@@ -118,6 +118,28 @@ extension RPCServer {
     if let poll = data["poll"] as? [String: Any] {
       result["poll"] = poll
     }
+
+    // Messages never renders the poll title on the balloon, so echo the question
+    // (or an explicit `comment` override) as a reply comment on the poll — the
+    // same text-with-reply_to that the native "comment or Send" field produces.
+    // Callers pass only `question`; the visible caption appears for free and the
+    // agent needs no knowledge of this. Best-effort: the poll already succeeded,
+    // so a comment failure must not fail the RPC.
+    let comment = stringParam(params["comment"]).flatMap { $0.isEmpty ? nil : $0 } ?? question
+    if let pollGuid = data["messageGuid"] as? String, !pollGuid.isEmpty, !comment.isEmpty {
+      do {
+        _ = try await invokeBridge(
+          action: .sendMessage,
+          params: [
+            "chatGuid": chatGUID,
+            "message": comment,
+            "selectedMessageGuid": pollGuid,
+          ])
+      } catch {
+        FileHandle.standardError.write(
+          Data("[imsg] poll.send: comment echo failed for poll \(pollGuid): \(error)\n".utf8))
+      }
+    }
     respond(id: id, result: result)
   }
 
