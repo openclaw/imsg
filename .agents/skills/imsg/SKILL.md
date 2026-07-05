@@ -72,12 +72,10 @@ Only after `imsg status` confirms the bridge is loaded (`imsg launch` injects it
 
 ```bash
 imsg send-rich --chat 'iMessage;-;+15551234567' --text 'hi' --reply-to MSG_GUID   # replies, effects, subjects
-imsg poll send --chat GUID --question 'Dinner?' --option 'Pizza' --option 'Sushi'  # --question auto-shows as a poll comment
+imsg poll send --chat GUID --question 'Dinner?' --option 'Pizza' --option 'Sushi'  # native Messages poll; --question + 2+ --option
 imsg edit --chat GUID --message MSG_GUID --new-text 'updated'                     # macOS 13+
 imsg chat-create --addresses '+15551234567,+15559876543' --name 'Crew'
 ```
-
-Native poll balloons show no title, so `poll send` sends `--question` as a plain caption message right after the poll — what recipients actually see (`--comment` overrides). The reverse holds on read: `imsg history`/`watch` backfill an inbound native poll's `question` from its caption, so a received poll surfaces its real question instead of an empty one.
 
 Destructive bridge commands — `unsend`, `delete-message`, `chat-delete`, `chat-leave`, `chat-remove-member` — need per-action user confirmation.
 
