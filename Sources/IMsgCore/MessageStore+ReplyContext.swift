@@ -46,6 +46,9 @@ extension MessageStore {
   /// same attributedBody fallback as everywhere else.
   func pollCommentText(_ db: Connection, pollGUID: String) throws -> String? {
     guard !pollGUID.isEmpty else { return nil }
+    // Older/synthetic message tables may lack reply_to_guid; without it a poll
+    // comment cannot be located, so skip the query rather than fail the pull.
+    guard schema.hasReplyToGUIDColumn else { return nil }
     let selection = MessageRowSelection(store: self, includeChatID: false)
     let sql = """
       SELECT \(selection.selectList)

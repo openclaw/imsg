@@ -80,15 +80,13 @@ func rpcPollVoteRejectsOptionOutsidePoll() async throws {
 func rpcPollSendInvokesBridgeWithResolvedChat() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()
-  var capturedAction: BridgeAction?
-  var capturedParams: [String: Any] = [:]
+  var calls: [(action: BridgeAction, params: [String: Any])] = []
   let server = RPCServer(
     store: store,
     verbose: false,
     output: output,
     invokeBridge: { action, params in
-      capturedAction = action
-      capturedParams = params
+      calls.append((action, params))
       return [
         "messageGuid": "poll-guid",
         "poll": [
@@ -104,11 +102,17 @@ func rpcPollSendInvokesBridgeWithResolvedChat() async throws {
     #"{"jsonrpc":"2.0","id":"poll","method":"poll.send","params":{"chat_id":1,"question":"Dinner?","options":["Pizza","Sushi"],"reply_to":"parent-guid"}}"#
   )
 
-  #expect(capturedAction == .sendPoll)
-  #expect(capturedParams["chatGuid"] as? String == "iMessage;+;chat123")
-  #expect(capturedParams["question"] as? String == "Dinner?")
-  #expect(capturedParams["options"] as? [String] == ["Pizza", "Sushi"])
-  #expect(capturedParams["selectedMessageGuid"] as? String == "parent-guid")
+  // First call sends the poll…
+  #expect(calls.first?.action == .sendPoll)
+  #expect(calls.first?.params["chatGuid"] as? String == "iMessage;+;chat123")
+  #expect(calls.first?.params["question"] as? String == "Dinner?")
+  #expect(calls.first?.params["options"] as? [String] == ["Pizza", "Sushi"])
+  #expect(calls.first?.params["selectedMessageGuid"] as? String == "parent-guid")
+  // …then echoes the question as a plain caption so it is visible on the balloon.
+  #expect(calls.count == 2)
+  #expect(calls.last?.action == .sendMessage)
+  #expect(calls.last?.params["chatGuid"] as? String == "iMessage;+;chat123")
+  #expect(calls.last?.params["message"] as? String == "Dinner?")
   let result = output.responses.first?["result"] as? [String: Any]
   #expect(result?["event"] as? String == "imessage.poll.created")
   #expect(result?["guid"] as? String == "poll-guid")

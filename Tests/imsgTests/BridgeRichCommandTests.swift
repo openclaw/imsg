@@ -149,26 +149,30 @@ func pollCommandSendInvokesPollBridge() async throws {
     flags: []
   )
   let runtime = RuntimeOptions(parsedValues: values)
-  var capturedAction: BridgeAction?
-  var capturedParams: [String: Any] = [:]
+  var calls: [(action: BridgeAction, params: [String: Any])] = []
 
   let (output, _) = try await StdoutCapture.capture {
     try await PollCommand.run(
       values: values,
       runtime: runtime,
       invokeBridge: { action, params in
-        capturedAction = action
-        capturedParams = params
+        calls.append((action, params))
         return ["messageGuid": "poll-guid"]
       }
     )
   }
 
-  #expect(capturedAction == .sendPoll)
-  #expect(capturedParams["chatGuid"] as? String == "iMessage;-;+15551234567")
-  #expect(capturedParams["question"] as? String == "Dinner?")
-  #expect(capturedParams["options"] as? [String] == ["Pizza", "Sushi"])
-  #expect(capturedParams["selectedMessageGuid"] as? String == "parent-guid")
+  // First call sends the poll…
+  #expect(calls.first?.action == .sendPoll)
+  #expect(calls.first?.params["chatGuid"] as? String == "iMessage;-;+15551234567")
+  #expect(calls.first?.params["question"] as? String == "Dinner?")
+  #expect(calls.first?.params["options"] as? [String] == ["Pizza", "Sushi"])
+  #expect(calls.first?.params["selectedMessageGuid"] as? String == "parent-guid")
+  // …then echoes the question as a plain caption so it is visible on the balloon.
+  #expect(calls.count == 2)
+  #expect(calls.last?.action == .sendMessage)
+  #expect(calls.last?.params["chatGuid"] as? String == "iMessage;-;+15551234567")
+  #expect(calls.last?.params["message"] as? String == "Dinner?")
   #expect(output.contains("poll: sent (guid=poll-guid)"))
 }
 
