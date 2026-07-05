@@ -133,12 +133,20 @@ enum PollCommand {
     let comment = values.option("comment").flatMap { $0.isEmpty ? nil : $0 } ?? question
     let pollGuid = (data["messageGuid"] as? String) ?? ""
     if !comment.isEmpty, !pollGuid.isEmpty {
-      _ = try await invokeBridge(
-        .sendMessage,
-        [
-          "chatGuid": chat,
-          "message": comment,
-        ])
+      // Best-effort, mirroring the RPC path: the poll already delivered, so a
+      // caption failure must not exit nonzero — a retry would send a duplicate
+      // poll. Report the failure on stderr and leave the poll success intact.
+      do {
+        _ = try await invokeBridge(
+          .sendMessage,
+          [
+            "chatGuid": chat,
+            "message": comment,
+          ])
+      } catch {
+        FileHandle.standardError.write(
+          Data("[imsg] poll send: comment echo failed for poll \(pollGuid): \(error)\n".utf8))
+      }
     }
   }
 
