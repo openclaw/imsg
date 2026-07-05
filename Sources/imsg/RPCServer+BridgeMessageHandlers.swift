@@ -119,12 +119,15 @@ extension RPCServer {
       result["poll"] = poll
     }
 
-    // Messages never renders the poll title on the balloon, so echo the question
-    // (or an explicit `comment` override) as a reply comment on the poll — the
-    // same text-with-reply_to that the native "comment or Send" field produces.
-    // Callers pass only `question`; the visible caption appears for free and the
-    // agent needs no knowledge of this. Best-effort: the poll already succeeded,
-    // so a comment failure must not fail the RPC.
+    // Messages never renders the poll title on the balloon, so send the question
+    // (or an explicit `comment` override) as a PLAIN caption message right after
+    // the poll — matching how the native "comment or Send" field renders. Not a
+    // threaded reply: native poll comments carry no thread metadata, so a reply
+    // would decorate the balloon with a connector line. Outbound (from_me) rows
+    // are cached and never re-processed, so no poll<->comment link is needed.
+    // Callers pass only `question`; the caption appears for free and the agent
+    // needs no knowledge of this. Best-effort: the poll already succeeded, so a
+    // comment failure must not fail the RPC.
     let comment = stringParam(params["comment"]).flatMap { $0.isEmpty ? nil : $0 } ?? question
     if let pollGuid = data["messageGuid"] as? String, !pollGuid.isEmpty, !comment.isEmpty {
       do {
@@ -133,7 +136,6 @@ extension RPCServer {
           params: [
             "chatGuid": chatGUID,
             "message": comment,
-            "selectedMessageGuid": pollGuid,
           ])
       } catch {
         FileHandle.standardError.write(

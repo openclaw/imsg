@@ -12,11 +12,12 @@ enum PollCommand {
       action to cast a vote on an existing poll.
 
       Messages renders only the options on a poll balloon — the poll title is
-      never shown to recipients. So `send` automatically echoes `--question` as a
-      reply comment on the poll (a text whose reply_to is the poll guid), which
-      is exactly what the native "comment or Send" field produces. Callers pass
-      only `--question` and the visible caption appears for free; `--comment`
-      overrides the echoed text when the caption should differ from the title.
+      never shown to recipients. So `send` automatically sends `--question` as a
+      plain caption message right after the poll (matching how the native
+      "comment or Send" field renders — a message with no thread metadata, not a
+      threaded reply). Callers pass only `--question` and the visible caption
+      appears for free; `--comment` overrides the caption text when it should
+      differ from the title.
       """,
     signature: CommandSignatures.withRuntimeFlags(
       CommandSignature(
@@ -29,12 +30,12 @@ enum PollCommand {
           .make(
             label: "question", names: [.long("question")],
             help:
-              "poll question. Messages does not render the poll title on the balloon, so imsg echoes this as a reply comment on the poll (the visible caption) and also stores it as the payload title for agent readback"
+              "poll question. Messages does not render the poll title on the balloon, so imsg sends this as a plain caption message right after the poll (the visible text) and also stores it as the payload title for agent readback"
           ),
           .make(
             label: "comment", names: [.long("comment")],
             help:
-              "optional override for the visible comment text; defaults to --question. Sent as a reply to the poll, matching Messages' native 'comment or Send' field"
+              "optional override for the caption text; defaults to --question. Sent as a plain message right after the poll, matching Messages' native 'comment or Send' field"
           ),
           .make(label: "replyTo", names: [.long("reply-to")], help: "guid of message to reply to"),
           .make(
@@ -121,11 +122,14 @@ enum PollCommand {
 
     // Messages renders only the poll options on the balloon — the poll title
     // (payload item.title) is never shown to recipients. To make the poll's
-    // question visible we echo it as a reply comment on the poll, which is
-    // exactly what the native "comment or Send" field produces (a text message
-    // whose reply_to is the poll guid). Callers set only --question; the visible
-    // caption comes for free, so agents need no knowledge of this. --comment
-    // overrides the echoed text when the visible caption should differ.
+    // question visible we send it as a PLAIN caption message right after the
+    // poll, matching how the native "comment or Send" field renders. It is NOT
+    // a threaded reply: native poll comments carry no thread metadata, so a
+    // reply (which sets thread_originator) would decorate the poll balloon with
+    // a reply connector. Outbound (from_me) rows are cached and never
+    // re-processed downstream, so no poll<->comment link is needed on our sends.
+    // Callers set only --question; the caption comes for free, so agents need no
+    // knowledge of this. --comment overrides the echoed text.
     let comment = values.option("comment").flatMap { $0.isEmpty ? nil : $0 } ?? question
     let pollGuid = (data["messageGuid"] as? String) ?? ""
     if !comment.isEmpty, !pollGuid.isEmpty {
@@ -134,7 +138,6 @@ enum PollCommand {
         [
           "chatGuid": chat,
           "message": comment,
-          "selectedMessageGuid": pollGuid,
         ])
     }
   }
