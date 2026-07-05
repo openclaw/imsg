@@ -34,11 +34,18 @@ func universalBuildScriptShipsArm64eHelperSlice() throws {
 func signAndNotarizeScriptDefaultsHelperToArm64e() throws {
   let script = try readRepositoryFile("scripts/sign-and-notarize.sh")
 
-  // The notarize path defaults the helper to arm64e as well, and validates the
-  // shipped slices against the HELPER arch list (not the CLI ARCH_LIST).
+  // The notarize path defaults the helper to arm64e as well, and its lipo guard
+  // must validate the HELPER arch list — not the CLI ARCH_LIST, which omits
+  // arm64e. Assert the loop and its lipo check as one contiguous block so this
+  // can't pass by matching the separate clang-args HELPER_ARCH_LIST loop.
   #expect(script.contains(#"HELPER_ARCHES_VALUE=${HELPER_ARCHES:-"arm64e arm64 x86_64"}"#))
-  #expect(script.contains(#"for ARCH in "${HELPER_ARCH_LIST[@]}"; do"#))
-  #expect(script.contains("Helper missing required architecture slice"))
+  #expect(
+    script.contains(
+      """
+      for ARCH in "${HELPER_ARCH_LIST[@]}"; do
+        if ! lipo -archs "$DIST_DIR/$HELPER_NAME" | tr ' ' '\\n' | grep -Fxq "$ARCH"; then
+          echo "Helper missing required architecture slice: $ARCH" >&2
+      """))
 }
 
 @Test
