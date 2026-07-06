@@ -30,12 +30,15 @@ enum PollCommand {
           .make(
             label: "question", names: [.long("question")],
             help:
-              "poll question. Messages does not render the poll title on the balloon, so imsg sends this as a plain caption message right after the poll (the visible text) and also stores it as the payload title for agent readback"
+              "poll question. Messages does not render the poll title on the balloon, so imsg "
+              + "sends this as a plain caption message right after the poll (the visible text) "
+              + "and also stores it as the payload title for agent readback"
           ),
           .make(
             label: "comment", names: [.long("comment")],
             help:
-              "optional override for the caption text; defaults to --question. Sent as a plain message right after the poll, matching Messages' native 'comment or Send' field"
+              "optional override for the caption text; defaults to --question. Sent as a plain "
+              + "message right after the poll, matching Messages' native 'comment or Send' field"
           ),
           .make(label: "replyTo", names: [.long("reply-to")], help: "guid of message to reply to"),
           .make(
