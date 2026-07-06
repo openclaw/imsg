@@ -50,14 +50,15 @@ extension MessageStore {
     // comment cannot be located, so skip the query rather than fail the pull.
     guard schema.hasReplyToGUIDColumn else { return nil }
     let selection = MessageRowSelection(store: self, includeChatID: false)
-    // The question caption is a plain message (associated_message_type 0) with no
-    // thread metadata. A threaded inline reply to the poll (type 100, thread
-    // originator set) is NOT the question — exclude it so a reply is never
-    // mistaken for the caption. Both columns are schema-optional, so only add the
-    // filter when the column exists.
-    var conditions = ["m.reply_to_guid = ?"]
+    // The question caption is a plain message (associated_message_type 0 or NULL)
+    // with no thread metadata. A threaded inline reply to the poll (type 100,
+    // thread originator set) is NOT the question — exclude it so a reply is never
+    // mistaken for the caption. Reply references may use Apple's `p:<part>/GUID`
+    // form, so match both the bare and prefixed values. Both association columns
+    // are schema-optional, so only add their filters when they exist.
+    var conditions = ["(m.reply_to_guid = ? OR m.reply_to_guid LIKE '%/' || ?)"]
     if schema.hasReactionColumns {
-      conditions.append("m.associated_message_type = 0")
+      conditions.append("(m.associated_message_type IS NULL OR m.associated_message_type = 0)")
     }
     if schema.hasThreadOriginatorGUIDColumn {
       conditions.append("m.thread_originator_guid IS NULL")
@@ -67,10 +68,10 @@ extension MessageStore {
       FROM message m
       LEFT JOIN handle h ON m.handle_id = h.ROWID
       WHERE \(conditions.joined(separator: " AND "))
-      ORDER BY m.date ASC
+      ORDER BY m.date ASC, m.ROWID ASC
       LIMIT 1
       """
-    let rows = try db.prepareRowIterator(sql, bindings: [pollGUID])
+    let rows = try db.prepareRowIterator(sql, bindings: [pollGUID, pollGUID])
     guard let row = try rows.failableNext() else { return nil }
     let decoded = try decodeMessageRow(row, columns: selection.columns, fallbackChatID: nil)
     let text = decoded.text.trimmingCharacters(in: .whitespacesAndNewlines)

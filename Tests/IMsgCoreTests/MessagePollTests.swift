@@ -406,8 +406,9 @@ func messageStoreAttachesDecodedPollMetadata() throws {
 /// ignores a threaded reply.
 private func backfilledPollQuestion(
   replyText: String,
-  replyAssociatedType: Int,
-  replyThreadOriginator: String?
+  replyAssociatedType: Int?,
+  replyThreadOriginator: String?,
+  replyToGUID: String = "poll-row-guid"
 ) throws -> String? {
   let db = try Connection(.inMemory)
   var options = MessageDatabaseFixture.SchemaOptions()
@@ -465,10 +466,11 @@ private func backfilledPollQuestion(
       balloon_bundle_id, payload_data, message_summary_info, reply_to_guid,
       thread_originator_guid, date, is_from_me, service
     )
-    VALUES (2, 1, ?, 'reply-row-guid', NULL, ?, NULL, NULL, NULL, 'poll-row-guid', ?, ?, 0, 'iMessage')
+    VALUES (2, 1, ?, 'reply-row-guid', NULL, ?, NULL, NULL, NULL, ?, ?, ?, 0, 'iMessage')
     """,
     replyText,
-    replyAssociatedType,
+    replyAssociatedType.map { Int64($0) },
+    replyToGUID,
     replyThreadOriginator,
     TestDatabase.appleEpoch(now.addingTimeInterval(1))
   )
@@ -489,6 +491,27 @@ func messageStorePollBackfillsQuestionFromCleanCaption() throws {
   let question = try backfilledPollQuestion(
     replyText: "What is for dinner?",
     replyAssociatedType: 0,
+    replyThreadOriginator: nil
+  )
+  #expect(question == "What is for dinner?")
+}
+
+@Test
+func messageStorePollBackfillsQuestionFromPrefixedCaptionReference() throws {
+  let question = try backfilledPollQuestion(
+    replyText: "What is for dinner?",
+    replyAssociatedType: 0,
+    replyThreadOriginator: nil,
+    replyToGUID: "p:0/poll-row-guid"
+  )
+  #expect(question == "What is for dinner?")
+}
+
+@Test
+func messageStorePollBackfillsQuestionFromNullAssociationType() throws {
+  let question = try backfilledPollQuestion(
+    replyText: "What is for dinner?",
+    replyAssociatedType: nil,
     replyThreadOriginator: nil
   )
   #expect(question == "What is for dinner?")
