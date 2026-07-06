@@ -2,6 +2,9 @@
 
 ## 0.12.3 - Unreleased
 
+### Packaging
+- fix: include and validate an arm64e slice in the injected bridge helper for macOS 26 Messages compatibility (#156, thanks @omarshahine).
+
 ## 0.12.2 - 2026-07-04
 
 ### Native Polls

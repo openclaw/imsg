@@ -23,7 +23,9 @@ func universalBuildScriptShipsArm64eHelperSlice() throws {
   #expect(script.contains("lipo -create"))
   #expect(script.contains("imsg-bridge-helper.dylib"))
   // release.yml ships via this script only, so it must guard every helper slice.
-  #expect(script.contains(#"if ! lipo -archs "${DIST_DIR}/${HELPER_NAME}" | tr ' ' '\n' | grep -Fxq "$ARCH"; then"#))
+  #expect(
+    script.contains(
+      #"if ! lipo -archs "${DIST_DIR}/${HELPER_NAME}" | tr ' ' '\n' | grep -Fxq "$ARCH"; then"#))
   #expect(script.contains("Helper missing required architecture slice"))
   #expect(script.contains(#"codesign --force --sign -"#))
   #expect(script.contains(#"cp "${DIST_DIR}/${APP_NAME}" "$OUTPUT_DIR/$APP_NAME""#))
