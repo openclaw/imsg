@@ -2,6 +2,9 @@
 
 ## 0.12.3 - Unreleased
 
+### Native Polls
+- fix: show native poll questions by sending a plain caption after created polls and backfilling empty inbound questions from clean native caption rows (#155, thanks @omarshahine).
+
 ### Packaging
 - fix: include and validate an arm64e slice in the injected bridge helper for macOS 26 Messages compatibility (#156, thanks @omarshahine).
 
