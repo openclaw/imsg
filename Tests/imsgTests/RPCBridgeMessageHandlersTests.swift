@@ -122,7 +122,7 @@ func rpcPollSendInvokesBridgeWithResolvedChat() async throws {
 }
 
 @Test
-func rpcPollSendUsesCommentOverrideForVisibleCaption() async throws {
+func rpcPollSendUsesCommentOverrideWithoutPollGuid() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()
   var calls: [(action: BridgeAction, params: [String: Any])] = []
@@ -132,7 +132,7 @@ func rpcPollSendUsesCommentOverrideForVisibleCaption() async throws {
     output: output,
     invokeBridge: { action, params in
       calls.append((action, params))
-      return ["messageGuid": "poll-guid"]
+      return [:]
     }
   )
 

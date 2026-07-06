@@ -177,7 +177,7 @@ func pollCommandSendInvokesPollBridge() async throws {
 }
 
 @Test
-func pollCommandSendUsesCommentOverrideForVisibleCaption() async throws {
+func pollCommandSendUsesCommentOverrideWithoutPollGuid() async throws {
   let values = ParsedValues(
     positional: ["send"],
     options: [
@@ -197,7 +197,7 @@ func pollCommandSendUsesCommentOverrideForVisibleCaption() async throws {
       runtime: runtime,
       invokeBridge: { action, params in
         calls.append((action, params))
-        return ["messageGuid": "poll-guid"]
+        return [:]
       }
     )
   }

@@ -129,7 +129,7 @@ extension RPCServer {
     // needs no knowledge of this. Best-effort: the poll already succeeded, so a
     // comment failure must not fail the RPC.
     let comment = stringParam(params["comment"]).flatMap { $0.isEmpty ? nil : $0 } ?? question
-    if let pollGuid = data["messageGuid"] as? String, !pollGuid.isEmpty, !comment.isEmpty {
+    if !comment.isEmpty {
       do {
         _ = try await invokeBridge(
           action: .sendMessage,
@@ -138,8 +138,10 @@ extension RPCServer {
             "message": comment,
           ])
       } catch {
+        let pollGuid = (data["messageGuid"] as? String) ?? ""
+        let pollDescription = pollGuid.isEmpty ? "queued poll" : "poll \(pollGuid)"
         FileHandle.standardError.write(
-          Data("[imsg] poll.send: comment echo failed for poll \(pollGuid): \(error)\n".utf8))
+          Data("[imsg] poll.send: comment echo failed for \(pollDescription): \(error)\n".utf8))
       }
     }
     respond(id: id, result: result)
