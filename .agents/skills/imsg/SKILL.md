@@ -1,6 +1,6 @@
 ---
 name: imsg
-description: "iMessage/SMS via the imsg CLI: read local Messages history, search, stream live, resolve contacts, and send (sends only when explicitly requested). Use for any Messages.app / chat.db task."
+description: "iMessage/SMS: local history, contacts, live watch, and requested sends."
 ---
 
 # imsg
@@ -72,10 +72,12 @@ Only after `imsg status` confirms the bridge is loaded (`imsg launch` injects it
 
 ```bash
 imsg send-rich --chat 'iMessage;-;+15551234567' --text 'hi' --reply-to MSG_GUID   # replies, effects, subjects
-imsg poll send --chat GUID --question 'Dinner?' --option 'Pizza' --option 'Sushi'  # native Messages poll; --question + 2+ --option
+imsg poll send --chat GUID --question 'Dinner?' --option 'Pizza' --option 'Sushi' --comment 'Vote by 5pm'
 imsg edit --chat GUID --message MSG_GUID --new-text 'updated'                     # macOS 13+
 imsg chat-create --addresses '+15551234567,+15559876543' --name 'Crew'
 ```
+
+`poll send` echoes `--question` as a best-effort plain caption after the Polls balloon; `--comment` overrides that caption. Do not retry automatically when only the caption fails: the poll may already be delivered. `history` and `watch` backfill a title-less inbound native poll's `poll.question` from its clean caption row.
 
 Destructive bridge commands — `unsend`, `delete-message`, `chat-delete`, `chat-leave`, `chat-remove-member` — need per-action user confirmation.
 
