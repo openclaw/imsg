@@ -13,7 +13,7 @@ description: "iMessage/SMS: local history, contacts, live watch, and requested s
 - Two capability tiers:
   - **Standard** (normal permissions): `chats`, `group`, `history`, `watch`, `search`, `send`, `react`, `nickname --local`, `account --local`, `whois --local`.
   - **Bridge** (SIP disabled + `imsg launch` dylib injection): `send-rich`, `send-multipart`, `send-attachment`, `tapback`, `poll`, `edit`, `unsend`, `delete-message`, `read`, `typing`, `notify-anyways`, `chat-*`, and default-mode `account`/`whois`/`nickname`.
-- Check availability with `imsg status --json` before using bridge commands. If the bridge is down, fall back to the standard equivalent (`send` for `send-rich`, `react` for `tapback`, `--local` flags) — never suggest disabling SIP unprompted.
+- Check availability with `imsg status --json` before using bridge commands. If the bridge is down, use a standard command only when it preserves the requested semantics; otherwise stop and explain. Never turn a reply/effect/subject into a plain send or a GUID-targeted tapback into `react`, and never suggest disabling SIP unprompted.
 - Full command and flag reference: `imsg completions llm`.
 
 ## Preconditions
