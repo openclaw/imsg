@@ -204,12 +204,18 @@ Result:
 
 ### Native polls
 
-`poll.send` creates a native Apple Messages Polls extension balloon through the IMCore bridge. The bridge must be injected with `imsg launch`; the AppleScript transport cannot send native extension payloads.
+`poll.send` creates a native Apple Messages Polls extension balloon through the IMCore bridge. The bridge must be injected with `imsg launch`; the AppleScript transport cannot send native extension payloads. Messages does not render the poll payload title on the balloon, so `poll.send` also sends a best-effort plain caption message right after the poll. The caption defaults to `question`; pass `comment` when the visible caption should differ from the stored poll question.
 
 Request:
 
 ```json
 {"jsonrpc":"2.0","id":"poll","method":"poll.send","params":{"chat_id":42,"question":"Dinner?","options":["Pizza","Sushi"]}}
+```
+
+With a caption override:
+
+```json
+{"jsonrpc":"2.0","id":"poll","method":"poll.send","params":{"chat_id":42,"question":"Dinner?","comment":"Vote by 5pm","options":["Pizza","Sushi"]}}
 ```
 
 Response:
@@ -218,7 +224,7 @@ Response:
 {"ok":true,"event":"imessage.poll.created","guid":"...","message_id":"...","poll":{"kind":"created","event":"imessage.poll.created","question":"Dinner?","options":[{"id":"...","text":"Pizza"},{"id":"...","text":"Sushi"}]}}
 ```
 
-`messages.poll.send` is accepted as an alias for `poll.send`.
+`messages.poll.send` is accepted as an alias for `poll.send`. The caption echo is deliberately best-effort: if the poll is created but the follow-up caption send fails, the RPC still returns the poll result to avoid retrying and creating a duplicate poll.
 
 ## Objects
 
@@ -230,7 +236,7 @@ See [JSON output → Chat](json.md#chat). Every field documented there appears i
 
 See [JSON output → Message](json.md#message). When `include_reactions: true`, message notifications also include the reaction extension fields (`is_reaction`, `reaction_type`, `reaction_emoji`, `is_reaction_add`, `reacted_to_guid`).
 
-Native Apple Messages polls are emitted by `messages.history` and `watch.subscribe` with the same `poll` object documented in [JSON output → Native poll extension](json.md#native-poll-extension).
+Native Apple Messages polls are emitted by `messages.history` and `watch.subscribe` with the same `poll` object documented in [JSON output → Native poll extension](json.md#native-poll-extension). For inbound native polls whose payload title is empty, imsg backfills `poll.question` from the earliest clean caption row that replies to the poll.
 
 `account_id`, `account_login`, `last_addressed_handle`, and outgoing `destination_caller_id` are read-only routing diagnostics; the AppleScript send API does not expose a `from` selector.
 

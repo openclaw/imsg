@@ -128,7 +128,7 @@ Advanced IMCore (require `imsg launch` with SIP off — see
 - `imsg send-rich [--reply-to <guid>] [--file <path>]`,
   `imsg send-multipart`, `imsg send-attachment [--reply-to <guid>]`,
   `imsg tapback`
-- `imsg poll send (--chat <guid> | --chat-id <id>) --question <text> --option <text> --option <text> [--reply-to <guid>]`
+- `imsg poll send (--chat <guid> | --chat-id <id>) --question <text> [--comment <text>] --option <text> --option <text> [--reply-to <guid>]`
 - `imsg poll vote (--chat <guid> | --chat-id <id>) --poll <guid> (--option-id <id> | --option-index <n> | --option <text>)`
 - `imsg edit`, `imsg unsend`, `imsg delete-message`, `imsg notify-anyways`
 - `imsg chat-create`, `imsg chat-name`, `imsg chat-photo`,
@@ -139,6 +139,10 @@ Advanced IMCore (require `imsg launch` with SIP off — see
 `imsg status --json` reports native bridge selector capabilities. Poll creation
 requires `selectors.pollPayloadMessage`; poll voting requires
 `selectors.pollVoteMessage` plus `poll.vote` in `rpc_methods`.
+Messages does not render the poll payload title on the balloon, so `poll send`
+also sends a best-effort plain caption message right after the poll. The
+caption defaults to `--question`; use `--comment` when the visible text should
+be different from the stored question.
 
 `react` intentionally sends only the standard tapbacks Messages.app exposes
 reliably through automation. Custom emoji tapbacks can be read from

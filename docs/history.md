@@ -65,7 +65,7 @@ Tapback rows (`Liked "..."`, `Loved "..."`, etc.) are hidden from `history` outp
 
 ## Native polls
 
-Native Apple Messages polls are decoded when Messages stores them as the Polls extension balloon (`com.apple.messages.Polls`). Creation rows include `poll.kind == "created"` with the question and options when available. Vote update rows include `poll.kind == "vote"` and `poll.original_guid` pointing back to the poll message.
+Native Apple Messages polls are decoded when Messages stores them as the Polls extension balloon (`com.apple.messages.Polls`). Creation rows include `poll.kind == "created"` with the question and options when available. Native poll payload titles are often empty because Messages shows the question as a separate caption row; imsg backfills an empty created-poll `question` from the earliest clean caption that replies to the poll. Vote update rows include `poll.kind == "vote"` and `poll.original_guid` pointing back to the poll message.
 
 ```bash
 imsg history --chat-id 42 --json \
@@ -83,7 +83,10 @@ imsg poll send --chat 'iMessage;-;+15551234567' \
   --option 'Sushi'
 ```
 
-You can also use `--chat-id <id>` from `imsg chats`.
+You can also use `--chat-id <id>` from `imsg chats`. Because Messages does not
+render the poll title on the balloon, `poll send` sends `--question` as a
+best-effort plain caption message right after the poll. Use `--comment` to show
+different visible text while keeping `--question` as the poll payload title.
 
 Cast a vote using one selector. The index is 1-based; `imsg` resolves it to the
 poll's stable option identifier before sending:
@@ -101,7 +104,7 @@ vote row without the Polls payload, so the recipient's poll did not update.
 2. Run `imsg history --chat-id <chat-id> --json | jq -c 'select(.poll != null) | {id, guid, poll}'` and verify the creation row has `poll.kind == "created"` with decoded question/options.
 3. Vote on the poll from another participant/device.
 4. Run `imsg watch --chat-id <chat-id> --json | jq -c 'select(.poll != null)'` while the vote happens, or re-run history, and verify the vote row has `poll.kind == "vote"`, `poll.original_guid` set to the original poll GUID, and `poll.vote.option_id` set.
-5. Send a poll with `imsg poll send --chat-id <id> --question "..." --option "A" --option "B"` and verify it renders as a native Messages poll on iOS/macOS.
+5. Send a poll with `imsg poll send --chat-id <id> --question "..." --option "A" --option "B"` and verify it renders as a native Messages poll on iOS/macOS with the question visible as the plain caption below it.
 6. Vote with `imsg poll vote --chat-id <id> --poll <poll-guid> --option-index 2`, then verify the new row has `poll.kind == "vote"`, the original GUID, and the selected option.
 7. If Apple changes the private Polls payload shape, verify the row still emits `poll.kind == "unknown"` with metadata and no raw payload bytes.
 

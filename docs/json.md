@@ -89,14 +89,14 @@ Present on `imsg watch --reactions` events:
 
 ### Native poll extension
 
-Native Apple Messages polls are emitted as normal messages with a `poll` object. Existing message fields stay present and unchanged; poll rows often have an empty `text` field because the useful data is stored in the Messages extension payload.
+Native Apple Messages polls are emitted as normal messages with a `poll` object. Existing message fields stay present and unchanged; poll rows often have an empty `text` field because the useful data is stored in the Messages extension payload. When a native created-poll payload has no title, imsg may backfill `poll.question` from the earliest clean caption row that replies to the poll.
 
 | Field | Type | Notes |
 |-------|------|-------|
 | `kind` | string | `created`, `vote`, or `unknown`. |
 | `event` | string | Route-friendly value: `imessage.poll.created`, `imessage.poll.voted`, or `imessage.poll.unknown`. |
 | `poll_guid` | string | The poll's source message GUID when known. |
-| `question` | string | Poll title or question when decoded. |
+| `question` | string | Poll title or question when decoded. For native created polls with an empty payload title, this may be backfilled from the poll's plain caption row. |
 | `options` | array | Poll options, each with `id` and `text`. |
 | `vote` | object | First decoded vote update, with `option_id`, `participant`, and `event_type` when present. |
 | `votes` | array | All decoded vote entries when the payload carries more than one. |

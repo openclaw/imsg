@@ -60,7 +60,7 @@ Attachment metadata is reported the same way as [`history`](history.md). `--conv
 
 ## Native polls
 
-Native Apple Messages poll creation and vote updates are emitted without a separate flag. Poll vote rows are not tapbacks, so they do not require `--reactions`.
+Native Apple Messages poll creation and vote updates are emitted without a separate flag. Poll vote rows are not tapbacks, so they do not require `--reactions`. When a native created poll has no payload title, watch output uses the same caption backfill as history so `poll.question` can still contain the visible poll question.
 
 ```bash
 imsg watch --chat-id 42 --json \

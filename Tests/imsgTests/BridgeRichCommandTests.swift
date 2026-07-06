@@ -177,6 +177,39 @@ func pollCommandSendInvokesPollBridge() async throws {
 }
 
 @Test
+func pollCommandSendUsesCommentOverrideForVisibleCaption() async throws {
+  let values = ParsedValues(
+    positional: ["send"],
+    options: [
+      "chat": ["iMessage;-;+15551234567"],
+      "question": ["Dinner?"],
+      "comment": ["Vote by 5pm"],
+      "option": ["Pizza", "Sushi"],
+    ],
+    flags: []
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+  var calls: [(action: BridgeAction, params: [String: Any])] = []
+
+  _ = try await StdoutCapture.capture {
+    try await PollCommand.run(
+      values: values,
+      runtime: runtime,
+      invokeBridge: { action, params in
+        calls.append((action, params))
+        return ["messageGuid": "poll-guid"]
+      }
+    )
+  }
+
+  #expect(calls.count == 2)
+  #expect(calls.first?.action == .sendPoll)
+  #expect(calls.first?.params["question"] as? String == "Dinner?")
+  #expect(calls.last?.action == .sendMessage)
+  #expect(calls.last?.params["message"] as? String == "Vote by 5pm")
+}
+
+@Test
 func pollCommandSendResolvesChatID() async throws {
   let values = ParsedValues(
     positional: ["send"],

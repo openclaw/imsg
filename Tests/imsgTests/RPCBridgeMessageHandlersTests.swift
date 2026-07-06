@@ -99,7 +99,9 @@ func rpcPollSendInvokesBridgeWithResolvedChat() async throws {
   )
 
   await server.handleLineForTesting(
-    #"{"jsonrpc":"2.0","id":"poll","method":"poll.send","params":{"chat_id":1,"question":"Dinner?","options":["Pizza","Sushi"],"reply_to":"parent-guid"}}"#
+    #"{"jsonrpc":"2.0","id":"poll","method":"poll.send","params":{"#
+      + #""chat_id":1,"question":"Dinner?","options":["Pizza","Sushi"],"#
+      + #""reply_to":"parent-guid"}}"#
   )
 
   // First call sends the poll…
@@ -117,6 +119,34 @@ func rpcPollSendInvokesBridgeWithResolvedChat() async throws {
   #expect(result?["event"] as? String == "imessage.poll.created")
   #expect(result?["guid"] as? String == "poll-guid")
   #expect((result?["poll"] as? [String: Any])?["kind"] as? String == "created")
+}
+
+@Test
+func rpcPollSendUsesCommentOverrideForVisibleCaption() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  var calls: [(action: BridgeAction, params: [String: Any])] = []
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, params in
+      calls.append((action, params))
+      return ["messageGuid": "poll-guid"]
+    }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"poll","method":"poll.send","params":{"#
+      + #""chat_id":1,"question":"Dinner?","comment":"Vote by 5pm","#
+      + #""options":["Pizza","Sushi"]}}"#
+  )
+
+  #expect(calls.count == 2)
+  #expect(calls.first?.action == .sendPoll)
+  #expect(calls.first?.params["question"] as? String == "Dinner?")
+  #expect(calls.last?.action == .sendMessage)
+  #expect(calls.last?.params["message"] as? String == "Vote by 5pm")
 }
 
 @Test
