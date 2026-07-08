@@ -17,6 +17,14 @@ enum CommandTestDatabase {
     return path
   }
 
+  static func makePathWithReadState() throws -> String {
+    let path = try makeDatabasePath()
+    let db = try Connection(path)
+    try createSchema(db, includeChatHandleJoin: true, includeReadState: true)
+    try seedChatsWithReadState(db)
+    return path
+  }
+
   static func makePathDirectChat() throws -> String {
     let path = try makePath()
     let db = try Connection(path)
@@ -361,6 +369,38 @@ enum CommandTestDatabase {
       appleEpoch(readAt)
     )
     try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 5), (1, 6)")
+  }
+
+  private static func seedChatsWithReadState(_ db: Connection) throws {
+    let now = Date()
+    try db.run(
+      """
+      INSERT INTO chat(
+        ROWID, chat_identifier, guid, display_name, service_name,
+        account_id, account_login, last_addressed_handle
+      )
+      VALUES
+        (1, 'iMessage;-;+123', 'iMessage;-;+123', '', 'iMessage',
+         'iMessage;-;me@icloud.com', 'me@icloud.com', 'me@icloud.com'),
+        (2, 'iMessage;-;+456', 'iMessage;-;+456', '', 'iMessage',
+         'iMessage;-;me@icloud.com', 'me@icloud.com', 'me@icloud.com')
+      """
+    )
+    try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123'), (2, '+456')")
+    try db.run(
+      "INSERT INTO chat_handle_join(chat_id, handle_id) VALUES (1, 1), (2, 2)")
+    try db.run(
+      """
+      INSERT INTO message(ROWID, handle_id, text, date, is_from_me, service, is_read, date_read)
+      VALUES
+        (5, 1, 'unread', ?, 0, 'iMessage', 0, 0),
+        (6, 2, 'read', ?, 0, 'iMessage', 1, ?)
+      """,
+      appleEpoch(now),
+      appleEpoch(now),
+      appleEpoch(now)
+    )
+    try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 5), (2, 6)")
   }
 
   private static func pollPayload(jsonObject: [String: Any]) throws -> Data {

@@ -10,16 +10,19 @@ enum ChatsCommand {
     signature: CommandSignatures.withRuntimeFlags(
       CommandSignature(
         options: CommandSignatures.baseOptions() + [
-          .make(label: "limit", names: [.long("limit")], help: "Number of chats to list"),
+          .make(label: "limit", names: [.long("limit")], help: "Number of chats to list")
+        ],
+        flags: [
           .make(
             label: "unread-only", names: [.long("unread-only")],
-            help: "Return only chats with unread inbound messages"),
+            help: "Return only chats with unread inbound messages")
         ]
       )
     ),
     usageExamples: [
       "imsg chats --limit 5",
       "imsg chats --limit 5 --json",
+      "imsg chats --unread-only --json",
     ]
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
