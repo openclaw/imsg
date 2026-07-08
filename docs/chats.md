@@ -46,6 +46,7 @@ Every chat object — from `chats`, `group`, or any nested chat metadata in `his
 | `account_id` | string | Routing diagnostic. Read-only. |
 | `account_login` | string | Routing diagnostic. Read-only. |
 | `last_addressed_handle` | string | Routing diagnostic. Read-only. |
+| `unread_count` | int | Count of unread inbound messages in the chat. |
 
 ## Routing identifiers — which one to use
 
@@ -70,7 +71,13 @@ To distinguish your own messages from others':
 
 ## Filtering tips
 
-`imsg chats` does not take filter flags — it's designed to be cheap. Pipe through `jq` or `grep` for ad-hoc filtering:
+`imsg chats` takes one filter flag, `--unread-only`, which returns only chats with unread inbound messages:
+
+```bash
+imsg chats --unread-only --json
+```
+
+For anything else, pipe through `jq` or `grep` for ad-hoc filtering:
 
 ```bash
 imsg chats --json | jq -s 'map(select(.is_group == true))'

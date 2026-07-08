@@ -32,6 +32,7 @@ Returned by `imsg chats`, `imsg group`, and embedded in nested chat references i
 | `account_id` | string | Routing diagnostic. Read-only. |
 | `account_login` | string | Routing diagnostic. Read-only. |
 | `last_addressed_handle` | string | Routing diagnostic. Read-only. |
+| `unread_count` | int | Count of unread inbound messages in the chat. |
 
 ## Message
 
@@ -59,6 +60,8 @@ Returned by `imsg history`, `imsg watch`, and the JSON-RPC `messages.history` an
 | `attachments` | array | Present when `--attachments` is set. See below. |
 | `thread_originator_guid` | string | For inline-reply threads. |
 | `poll` | object | Present for native Apple Messages Polls creation and vote rows. See below. |
+| `is_read` | bool | Inbound only — omitted when `is_from_me` is true. |
+| `date_read` | ISO8601 | Inbound only — present when `is_read` is true. |
 
 ### URL preview coalescing
 
