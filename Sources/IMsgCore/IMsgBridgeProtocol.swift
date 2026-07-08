@@ -87,6 +87,8 @@ public enum BridgeAction: String, Sendable, CaseIterable {
   case searchMessages = "search-messages"
   case getAccountInfo = "get-account-info"
   case getNicknameInfo = "get-nickname-info"
+  case shareContactCard = "share-contact-card"
+  case contactCardSharingStatus = "contact-card-sharing-status"
   case checkImessageAvailability = "check-imessage-availability"
   case downloadPurgedAttachment = "download-purged-attachment"
 }

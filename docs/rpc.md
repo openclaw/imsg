@@ -169,6 +169,8 @@ These methods require the IMCore bridge and target an existing chat with `chat_i
 - `tapback` sends or removes a reaction. Params: `message_id` or `message_guid`, plus `reaction` / `kind` / `emoji`, optional `remove`.
 - `message.edit` edits `message_id` / `message_guid` with `text`.
 - `message.unsend`, `message.delete`, and `message.notifyAnyways` target `message_id` / `message_guid`.
+- `contacts.shouldShareContact` reports contact-card sharing selector availability/status.
+- `contacts.shareContactCard` requests contact-card sharing for the chat and fails closed when no known selector is available.
 
 Result:
 

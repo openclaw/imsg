@@ -265,6 +265,19 @@ extension RPCServer {
     try await invokeMessageGUIDBridgeAction(action: .notifyAnyways, params: params, id: id)
   }
 
+  func handleContactCardShare(params: [String: Any], id: Any?) async throws {
+    let chatGUID = try await resolveChatGUIDParam(params)
+    let data = try await invokeBridge(action: .shareContactCard, params: ["chatGuid": chatGUID])
+    respond(id: id, result: ["ok": true, "data": data])
+  }
+
+  func handleContactCardStatus(params: [String: Any], id: Any?) async throws {
+    let chatGUID = try await resolveChatGUIDParam(params)
+    let data = try await invokeBridge(
+      action: .contactCardSharingStatus, params: ["chatGuid": chatGUID])
+    respond(id: id, result: data.merging(["ok": true]) { current, _ in current })
+  }
+
   private func invokeMessageGUIDBridgeAction(
     action: BridgeAction,
     params: [String: Any],

@@ -305,3 +305,28 @@ func rpcBridgeMessageMethodsResolveDirectChatIdentifierToGUID() async throws {
 
   #expect(capturedParams["chatGuid"] as? String == "iMessage;-;+123")
 }
+
+@Test
+func rpcContactCardMethodsResolveChatAndInvokeBridge() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  var capturedActions: [BridgeAction] = []
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, _ in
+      capturedActions.append(action)
+      return ["available": true, "should_share": false]
+    }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"status","method":"contacts.shouldShareContact","params":{"chat_id":1}}"#
+  )
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"share","method":"contacts.shareContactCard","params":{"chat_id":1}}"#
+  )
+
+  #expect(capturedActions == [.contactCardSharingStatus, .shareContactCard])
+}

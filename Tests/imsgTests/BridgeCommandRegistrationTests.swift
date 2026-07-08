@@ -17,7 +17,7 @@ func commandRouterIncludesAllBridgeCommands() {
     "chat-create", "chat-name", "chat-photo",
     "chat-add-member", "chat-remove-member",
     "chat-leave", "chat-delete", "chat-mark",
-    "account", "whois", "nickname",
+    "account", "whois", "nickname", "contact-card",
   ]
   let registered = Set(router.specs.map { $0.name })
   for name in expected {
@@ -40,6 +40,7 @@ func bridgeMessagingCommandsExposeChatRequirement() async {
     ("unsend", ["--message", "message-guid"]),
     ("delete-message", ["--message", "message-guid"]),
     ("tapback", ["--message", "message-guid", "--kind", "love"]),
+    ("contact-card", ["status"]),
   ]
   for testCase in cases {
     let (output, status) = await StdoutCapture.capture {
@@ -48,6 +49,67 @@ func bridgeMessagingCommandsExposeChatRequirement() async {
     #expect(status == 1, "\(testCase.name) should require --chat")
     #expect(output.contains("Missing required option: --chat"))
   }
+}
+
+@Test
+func contactCardCommandForwardsShareAndStatusActions() async throws {
+  let statusValues = ParsedValues(
+    positional: ["status"],
+    options: ["chat": ["iMessage;-;+15551234567"]],
+    flags: []
+  )
+  let runtime = RuntimeOptions(parsedValues: statusValues)
+  var calls: [(BridgeAction, [String: Any])] = []
+
+  _ = try await StdoutCapture.capture {
+    try await ContactCardCommand.run(
+      values: statusValues,
+      runtime: runtime,
+      invokeBridge: { action, params in
+        calls.append((action, params))
+        return ["available": true, "should_share": false]
+      }
+    )
+  }
+
+  let shareValues = ParsedValues(
+    positional: ["share"],
+    options: ["chat": ["iMessage;-;+15551234567"]],
+    flags: []
+  )
+  _ = try await StdoutCapture.capture {
+    try await ContactCardCommand.run(
+      values: shareValues,
+      runtime: RuntimeOptions(parsedValues: shareValues),
+      invokeBridge: { action, params in
+        calls.append((action, params))
+        return ["shared": true]
+      }
+    )
+  }
+
+  #expect(calls.map(\.0) == [.contactCardSharingStatus, .shareContactCard])
+  #expect(calls.allSatisfy { $0.1["chatGuid"] as? String == "iMessage;-;+15551234567" })
+}
+
+@Test
+func injectedHelperWiresContactCardSharingActions() throws {
+  let testFile = URL(fileURLWithPath: #filePath)
+  let repoRoot =
+    testFile
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
+  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
+
+  #expect(source.contains("share-contact-card"))
+  #expect(source.contains("contact-card-sharing-status"))
+  #expect(source.contains("IMNicknameController"))
+  #expect(source.contains("contactCardShareSelectors"))
+  #expect(source.contains("contactCardStatusSelectors"))
+  #expect(source.contains("class_getInstanceMethod(nnClass, sel)"))
+  #expect(source.contains(#""status_probe_invoked""#))
 }
 
 @Test

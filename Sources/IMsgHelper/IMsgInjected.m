@@ -209,6 +209,7 @@ static BOOL gHasSendMessageReason = NO;      // sendMessage:reason:
 
 static BOOL pollPayloadMessageInitializerAvailable(void);
 static BOOL pollVoteMessageInitializerAvailable(void);
+static NSDictionary *contactCardSelectorStatus(void);
 
 static void probeSelectors(void) {
     Class chatClass = NSClassFromString(@"IMChat");
@@ -815,6 +816,7 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"sendMessageReason": @(gHasSendMessageReason),
         @"pollPayloadMessage": @(pollPayloadMessageInitializerAvailable()),
         @"pollVoteMessage": @(pollVoteMessageInitializerAvailable()),
+        @"contactCardSharing": @([contactCardSelectorStatus()[@"available"] boolValue]),
         @"deleteChat": @(hasRegistry &&
             [registryClass instancesRespondToSelector:NSSelectorFromString(@"deleteChat:")]),
         @"removeChat": @(hasRegistry &&
@@ -4210,6 +4212,76 @@ static NSDictionary *handleGetNicknameInfo(NSInteger requestId, NSDictionary *pa
     return successResponse(requestId, info);
 }
 
+static NSArray<NSString *> *contactCardStatusSelectors(void) {
+    return @[
+        @"shouldShareMyNameAndPhotoWithChat:",
+        @"shouldShareNicknameWithChat:",
+        @"shouldShareNameAndPhotoForChat:",
+        @"sharingStateForChat:",
+        @"sharingStateForChatGUID:"
+    ];
+}
+
+static NSArray<NSString *> *contactCardShareSelectors(void) {
+    return @[
+        @"shareMyNameAndPhotoWithChat:",
+        @"shareNicknameWithChat:",
+        @"shareNameAndPhotoWithChat:",
+        @"setShouldShareMyNameAndPhoto:forChat:",
+        @"setShouldShareNickname:forChat:"
+    ];
+}
+
+static NSDictionary *contactCardSelectorStatus(void) {
+    Class nnClass = NSClassFromString(@"IMNicknameController");
+    NSMutableDictionary *selectors = [NSMutableDictionary dictionary];
+    BOOL available = NO;
+    for (NSString *name in [contactCardStatusSelectors()
+            arrayByAddingObjectsFromArray:contactCardShareSelectors()]) {
+        SEL sel = NSSelectorFromString(name);
+        BOOL responds = nnClass && class_getInstanceMethod(nnClass, sel) != NULL;
+        selectors[name] = @(responds);
+        if (responds) available = YES;
+    }
+    return @{
+        @"controller_class_available": @(nnClass != nil),
+        @"controller_available": @NO,
+        @"available": @(available),
+        @"probe_reason": @"IMNicknameController.sharedController probing is disabled because it can block Messages.app",
+        @"selectors": selectors
+    };
+}
+
+static NSDictionary *handleContactCardSharingStatus(NSInteger requestId, NSDictionary *params) {
+    NSString *chatGuid = params[@"chatGuid"];
+    if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
+    IMChat *chat = resolveChatByGuid(chatGuid);
+    if (!chat) {
+        return errorResponse(requestId,
+            [NSString stringWithFormat:@"Chat not found: %@", chatGuid]);
+    }
+    NSMutableDictionary *info = [contactCardSelectorStatus() mutableCopy];
+    info[@"chatGuid"] = chatGuid;
+    info[@"should_share"] = [NSNull null];
+    info[@"status_probe_invoked"] = @NO;
+    info[@"status_probe_reason"] =
+        @"selector availability only; private status selectors are not invoked";
+    return successResponse(requestId, info);
+}
+
+static NSDictionary *handleShareContactCard(NSInteger requestId, NSDictionary *params) {
+    NSString *chatGuid = params[@"chatGuid"];
+    if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
+    IMChat *chat = resolveChatByGuid(chatGuid);
+    if (!chat) {
+        return errorResponse(requestId,
+            [NSString stringWithFormat:@"Chat not found: %@", chatGuid]);
+    }
+    (void)chat;
+    return errorResponse(requestId,
+        @"Contact-card sharing unavailable: private controller probing is disabled because it can block Messages.app");
+}
+
 static NSDictionary *handleCheckIMessageAvailability(NSInteger requestId, NSDictionary *params) {
     NSString *address = params[@"address"];
     NSString *aliasType = params[@"aliasType"] ?: @"phone";
@@ -4324,6 +4396,9 @@ static NSDictionary* dispatchAction(NSInteger legacyId, NSString *action,
     if ([action isEqualToString:@"search-messages"]) return handleSearchMessages(legacyId, params);
     if ([action isEqualToString:@"get-account-info"]) return handleGetAccountInfo(legacyId, params);
     if ([action isEqualToString:@"get-nickname-info"]) return handleGetNicknameInfo(legacyId, params);
+    if ([action isEqualToString:@"share-contact-card"]) return handleShareContactCard(legacyId, params);
+    if ([action isEqualToString:@"contact-card-sharing-status"])
+        return handleContactCardSharingStatus(legacyId, params);
     if ([action isEqualToString:@"check-imessage-availability"])
         return handleCheckIMessageAvailability(legacyId, params);
     if ([action isEqualToString:@"download-purged-attachment"])
