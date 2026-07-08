@@ -209,6 +209,7 @@ static BOOL gHasSendMessageReason = NO;      // sendMessage:reason:
 
 static BOOL pollPayloadMessageInitializerAvailable(void);
 static BOOL pollVoteMessageInitializerAvailable(void);
+static BOOL urlPreviewMessageInitializerAvailable(void);
 
 static void probeSelectors(void) {
     Class chatClass = NSClassFromString(@"IMChat");
@@ -815,6 +816,7 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"sendMessageReason": @(gHasSendMessageReason),
         @"pollPayloadMessage": @(pollPayloadMessageInitializerAvailable()),
         @"pollVoteMessage": @(pollVoteMessageInitializerAvailable()),
+        @"urlPreviewMessage": @(urlPreviewMessageInitializerAvailable()),
         @"deleteChat": @(hasRegistry &&
             [registryClass instancesRespondToSelector:NSSelectorFromString(@"deleteChat:")]),
         @"removeChat": @(hasRegistry &&
@@ -1907,16 +1909,18 @@ static unsigned long long flagsForMessagePayload(NSAttributedString *subject,
                                                  NSArray *fileTransferGuids,
                                                  BOOL isAudioMessage);
 
-static id buildPollIMMessage(NSAttributedString *body,
-                             NSData *payloadData,
-                             NSDictionary *summaryInfo,
-                             NSString *threadIdentifier,
-                             NSString *replyToGUID,
-                             NSString *threadOriginatorGUID,
-                             NSString *threadOriginatorPart,
-                             id parentItem) {
+static id buildBalloonIMMessage(NSString *balloonID,
+                                NSAttributedString *body,
+                                NSData *payloadData,
+                                NSDictionary *summaryInfo,
+                                NSString *threadIdentifier,
+                                NSString *replyToGUID,
+                                NSString *threadOriginatorGUID,
+                                NSString *threadOriginatorPart,
+                                id parentItem) {
     Class messageClass = NSClassFromString(@"IMMessage");
     if (!messageClass) return nil;
+    if (!balloonID.length) return nil;
 
     if (replyToGUID.length) {
         Class itemClass = NSClassFromString(@"IMMessageItem");
@@ -1962,7 +1966,6 @@ static id buildPollIMMessage(NSAttributedString *body,
         }
         ensureItemBodyData(item, body);
 
-        NSString *balloonID = pollsBalloonBundleIdentifier();
         if (![item respondsToSelector:@selector(setBalloonBundleID:)]
             || ![item respondsToSelector:@selector(setPayloadData:)]
             || ![item respondsToSelector:@selector(setReplyToGUID:)]) {
@@ -2037,7 +2040,6 @@ static id buildPollIMMessage(NSAttributedString *body,
     NSDate *now = [NSDate date];
     NSArray *fileTransferGuids = @[];
     unsigned long long flags = flagsForMessagePayload(nil, fileTransferGuids, NO);
-    NSString *balloonID = pollsBalloonBundleIdentifier();
     unsigned long long scheduleType = 0;
     unsigned long long scheduleState = 0;
     NSString *messageThreadIdentifier = threadIdentifier.length ? threadIdentifier : nil;
@@ -2064,6 +2066,90 @@ static id buildPollIMMessage(NSAttributedString *body,
         clearReplyMetadataOnMessage(result);
     }
     return result;
+}
+
+static id buildPollIMMessage(NSAttributedString *body,
+                             NSData *payloadData,
+                             NSDictionary *summaryInfo,
+                             NSString *threadIdentifier,
+                             NSString *replyToGUID,
+                             NSString *threadOriginatorGUID,
+                             NSString *threadOriginatorPart,
+                             id parentItem) {
+    return buildBalloonIMMessage(pollsBalloonBundleIdentifier(),
+                                 body,
+                                 payloadData,
+                                 summaryInfo,
+                                 threadIdentifier,
+                                 replyToGUID,
+                                 threadOriginatorGUID,
+                                 threadOriginatorPart,
+                                 parentItem);
+}
+
+static NSString *urlPreviewBalloonBundleIdentifier(void) {
+    return @"com.apple.messages.URLBalloonProvider";
+}
+
+static BOOL urlPreviewMessageInitializerAvailable(void) {
+    Class messageClass = NSClassFromString(@"IMMessage");
+    if (!messageClass) return NO;
+    SEL sel = @selector(initWithSender:time:text:messageSubject:fileTransferGUIDs:flags:error:guid:subject:balloonBundleID:payloadData:expressiveSendStyleID:threadIdentifier:scheduleType:scheduleState:messageSummaryInfo:);
+    return [messageClass instancesRespondToSelector:sel];
+}
+
+static NSData *buildURLPreviewPayloadData(NSString *urlString, NSString **outErr) {
+    if (!urlString.length) {
+        if (outErr) *outErr = @"Missing URL";
+        return nil;
+    }
+    NSURL *url = [NSURL URLWithString:urlString];
+    if (!url || !url.scheme.length || !url.host.length) {
+        if (outErr) *outErr = @"Invalid URL";
+        return nil;
+    }
+
+    NSBundle *framework = [NSBundle bundleWithPath:
+        @"/System/Library/Frameworks/LinkPresentation.framework"];
+    if (framework && !framework.loaded) {
+        [framework load];
+    }
+    Class metadataClass = NSClassFromString(@"LPLinkMetadata");
+    if (!metadataClass) {
+        if (outErr) *outErr = @"LinkPresentation metadata unavailable";
+        return nil;
+    }
+
+    id metadata = [[metadataClass alloc] init];
+    if ([metadata respondsToSelector:@selector(setURL:)]) {
+        [metadata performSelector:@selector(setURL:) withObject:url];
+    }
+    if ([metadata respondsToSelector:@selector(setOriginalURL:)]) {
+        [metadata performSelector:@selector(setOriginalURL:) withObject:url];
+    }
+    if ([metadata respondsToSelector:@selector(setTitle:)]) {
+        NSString *title = url.host ?: url.absoluteString;
+        [metadata performSelector:@selector(setTitle:) withObject:title];
+    }
+
+    NSError *archiveError = nil;
+    NSData *payload = nil;
+    if ([NSKeyedArchiver respondsToSelector:
+            @selector(archivedDataWithRootObject:requiringSecureCoding:error:)]) {
+        payload = [NSKeyedArchiver archivedDataWithRootObject:metadata
+                                        requiringSecureCoding:NO
+                                                        error:&archiveError];
+    } else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        payload = [NSKeyedArchiver archivedDataWithRootObject:metadata];
+#pragma clang diagnostic pop
+    }
+    if (!payload.length) {
+        if (outErr) *outErr = archiveError.localizedDescription ?: @"Could not archive URL metadata";
+        return nil;
+    }
+    return payload;
 }
 
 static NSString *threadOriginatorPartForChatItem(id parentItem) {
@@ -2515,6 +2601,7 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
     NSString *effectId = params[@"effectId"];
     NSString *subject = params[@"subject"];
     NSString *selectedMessageGuid = params[@"selectedMessageGuid"];
+    NSString *richLinkURL = params[@"richLinkURL"];
     NSNumber *partIndexNum = params[@"partIndex"];
     NSInteger partIndex = partIndexNum ? [partIndexNum integerValue] : 0;
     NSNumber *ddScanNum = params[@"ddScan"];
@@ -2564,17 +2651,43 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
     }
 
     @try {
-        id imMessage = buildIMMessage(body, subjectAttr,
-                                      effectId,
-                                      threadIdentifier,
-                                      parentItem,
-                                      selectedMessageGuid,
-                                      associatedType,
-                                      zeroRange,
-                                      /*summaryInfo*/ nil,
-                                      /*fileTransferGuids*/ @[],
-                                      /*isAudio*/ NO,
-                                      ddScan);
+        id imMessage = nil;
+        if (richLinkURL.length) {
+            NSString *payloadError = nil;
+            NSData *payloadData = buildURLPreviewPayloadData(richLinkURL, &payloadError);
+            if (!payloadData) {
+                return errorResponse(requestId,
+                    payloadError.length ? payloadError : @"Could not build URL preview payload");
+            }
+            NSURL *url = [NSURL URLWithString:richLinkURL];
+            NSDictionary *summaryInfo = @{
+                @"url": richLinkURL,
+                @"title": url.host ?: richLinkURL
+            };
+            imMessage = buildBalloonIMMessage(urlPreviewBalloonBundleIdentifier(),
+                                              body,
+                                              payloadData,
+                                              summaryInfo,
+                                              threadIdentifier,
+                                              selectedMessageGuid,
+                                              parentMessage && [parentMessage respondsToSelector:@selector(guid)]
+                                                ? [parentMessage performSelector:@selector(guid)]
+                                                : nil,
+                                              nil,
+                                              parentItem);
+        } else {
+            imMessage = buildIMMessage(body, subjectAttr,
+                                       effectId,
+                                       threadIdentifier,
+                                       parentItem,
+                                       selectedMessageGuid,
+                                       associatedType,
+                                       zeroRange,
+                                       /*summaryInfo*/ nil,
+                                       /*fileTransferGuids*/ @[],
+                                       /*isAudio*/ NO,
+                                       ddScan);
+        }
         if (!imMessage) {
             return errorResponse(requestId, @"Could not construct IMMessage");
         }

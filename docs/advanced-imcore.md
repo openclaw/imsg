@@ -17,6 +17,8 @@ You almost certainly do not need any of this for normal use.
 - `imsg status` — read-only IMCore bridge status.
 - `imsg send-rich --chat <guid> --reply-to <message-guid> --file <path>` —
   sends a threaded reply with an attachment through the bridge.
+- `imsg send-rich --chat <guid> --url <url> --rich-link` — sends a URL
+  preview balloon through the bridge.
 - `imsg send-attachment --chat <guid> --file <path> [--reply-to <message-guid>]` —
   prefers the bridge for private attachment sends, with AppleScript fallback
   for normal files when no reply target is requested.

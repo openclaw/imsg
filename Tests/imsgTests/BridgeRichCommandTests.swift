@@ -89,6 +89,57 @@ func sendRichTextOnlyStillUsesMessageBridge() async throws {
 }
 
 @Test
+func sendRichURLWithRichLinkUsesMessageBridgePreviewParam() async throws {
+  let values = ParsedValues(
+    positional: [],
+    options: [
+      "chat": ["iMessage;-;+15551234567"],
+      "url": ["https://imsg.sh"],
+    ],
+    flags: ["richLink"]
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
+
+  _ = try await StdoutCapture.capture {
+    try await SendRichCommand.run(
+      values: values,
+      runtime: runtime,
+      invokeBridge: { action, params in
+        capturedAction = action
+        capturedParams = params
+        return ["messageGuid": "sent-guid"]
+      }
+    )
+  }
+
+  #expect(capturedAction == .sendMessage)
+  #expect(capturedParams["message"] as? String == "https://imsg.sh")
+  #expect(capturedParams["richLinkURL"] as? String == "https://imsg.sh")
+}
+
+@Test
+func injectedHelperWiresURLPreviewBalloonSend() throws {
+  let testFile = URL(fileURLWithPath: #filePath)
+  let repoRoot =
+    testFile
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
+  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
+  let sendMessageBody = try #require(functionBody(named: "handleSendMessage", in: source))
+
+  #expect(source.contains("com.apple.messages.URLBalloonProvider"))
+  #expect(source.contains("buildURLPreviewPayloadData"))
+  #expect(source.contains("LPLinkMetadata"))
+  #expect(source.contains("urlPreviewMessage"))
+  #expect(sendMessageBody.contains("richLinkURL"))
+  #expect(sendMessageBody.contains("buildBalloonIMMessage(urlPreviewBalloonBundleIdentifier()"))
+}
+
+@Test
 func sendRichJsonResolvesQueuedBridgeGuidBeforeEmitting() async throws {
   let values = ParsedValues(
     positional: [],

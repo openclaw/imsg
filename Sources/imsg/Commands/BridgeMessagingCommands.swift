@@ -100,6 +100,7 @@ enum SendRichCommand {
             label: "chat", names: [.long("chat")], help: "chat guid (e.g. iMessage;-;+15551234567)"),
           .make(label: "text", names: [.long("text")], help: "message body"),
           .make(label: "file", names: [.long("file")], help: "path to attachment"),
+          .make(label: "url", names: [.long("url")], help: "URL to send as a rich link preview"),
           .make(
             label: "effect", names: [.long("effect")],
             help: "expressive send id (impact, loud, gentle, invisibleink, confetti, …)"),
@@ -117,7 +118,10 @@ enum SendRichCommand {
         flags: [
           .make(
             label: "noDDScan", names: [.long("no-dd-scan")],
-            help: "disable data-detector scan deferral")
+            help: "disable data-detector scan deferral"),
+          .make(
+            label: "richLink", names: [.long("rich-link")],
+            help: "send --url as an Apple URL-preview balloon through the bridge"),
         ]
       )
     ),
@@ -126,6 +130,7 @@ enum SendRichCommand {
       "imsg send-rich --chat 'iMessage;-;+15551234567' --reply-to ABCD --file ~/Desktop/pic.jpg",
       "imsg send-rich --chat 'iMessage;-;+15551234567' --text 'BOOM' --effect impact",
       "imsg send-rich --chat 'iMessage;-;+15551234567' --text 'pew pew' --effect lasers",
+      "imsg send-rich --chat 'iMessage;-;+15551234567' --url https://imsg.sh --rich-link",
       "imsg send-rich --chat ... --text 'hello world' --format '[{\"start\":0,\"length\":5,\"styles\":[\"bold\"]}]'",
     ]
   ) { values, runtime in
@@ -155,12 +160,20 @@ enum SendRichCommand {
     }
     let text = values.option("text") ?? ""
     let file = values.option("file") ?? ""
+    let url = values.option("url") ?? ""
+    let richLink = values.flag("richLink")
+    if richLink && url.isEmpty {
+      throw ParsedValuesError.missingOption("url")
+    }
     var params: [String: Any] = [
       "chatGuid": chat,
-      "message": text,
+      "message": text.isEmpty && richLink ? url : text,
       "partIndex": Int(values.option("part") ?? "0") ?? 0,
       "ddScan": !values.flag("noDDScan"),
     ]
+    if richLink {
+      params["richLinkURL"] = url
+    }
     if let effect = values.option("effect"), !effect.isEmpty {
       params["effectId"] = ExpressiveSendEffect.expand(effect)
     }

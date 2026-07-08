@@ -27,6 +27,18 @@ extension RPCServer {
     if let formatting = params["text_formatting"] ?? params["textFormatting"] {
       bridgeParams["textFormatting"] = formatting
     }
+    if boolParam(params["rich_link"] ?? params["richLink"]) == true {
+      guard
+        let url = stringParam(params["url"] ?? params["link"] ?? params["rich_link_url"]),
+        !url.isEmpty
+      else {
+        throw RPCError.invalidParams("url is required when rich_link is true")
+      }
+      bridgeParams["richLinkURL"] = url
+      if text.isEmpty {
+        bridgeParams["message"] = url
+      }
+    }
 
     let sentAt = Date()
     let data = try await invokeBridge(action: .sendMessage, params: bridgeParams)

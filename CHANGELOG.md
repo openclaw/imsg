@@ -2,6 +2,9 @@
 
 ## 0.12.4 - Unreleased
 
+### Send
+- feat: add bridge-backed rich-link URL preview sends via `send-rich --url ... --rich-link` and RPC `send.rich` with `rich_link`.
+
 ## 0.12.3 - 2026-07-06
 
 ### Native Polls

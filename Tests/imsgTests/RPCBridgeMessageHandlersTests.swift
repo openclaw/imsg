@@ -285,6 +285,34 @@ func rpcSendAttachmentStagesFileBeforeBridgeSend() async throws {
 }
 
 @Test
+func rpcSendRichForwardsRichLinkURL() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, params in
+      capturedAction = action
+      capturedParams = params
+      return ["messageGuid": "rich-link-guid"]
+    }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"rich","method":"send.rich","params":{"chat_id":1,"url":"https://imsg.sh","rich_link":true}}"#
+  )
+
+  #expect(capturedAction == .sendMessage)
+  #expect(capturedParams["message"] as? String == "https://imsg.sh")
+  #expect(capturedParams["richLinkURL"] as? String == "https://imsg.sh")
+  let result = output.responses.first?["result"] as? [String: Any]
+  #expect(result?["message_id"] as? String == "rich-link-guid")
+}
+
+@Test
 func rpcBridgeMessageMethodsResolveDirectChatIdentifierToGUID() async throws {
   let store = try CommandTestDatabase.makeStoreForRPCDirectChat()
   let output = TestRPCOutput()
