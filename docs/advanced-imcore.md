@@ -20,6 +20,8 @@ You almost certainly do not need any of this for normal use.
 - `imsg send-attachment --chat <guid> --file <path> [--reply-to <message-guid>]` —
   prefers the bridge for private attachment sends, with AppleScript fallback
   for normal files when no reply target is requested.
+- `imsg sticker --chat <guid> --file <path> [--attach-to <message-guid>]` —
+  sends a sticker-attributed image transfer through the bridge.
 
 ## Why they're separate
 
@@ -113,3 +115,8 @@ complete without a running bridge for normal file attachments: it stages the
 file under Messages' attachments directory, tries the dylib path first, then
 falls back to AppleScript. `--audio` remains bridge-only because AppleScript
 cannot preserve the private audio-message flag.
+
+`sticker` is always bridge-only. It stages the image under Messages'
+attachments directory, marks the outgoing transfer with the sticker attribution
+metadata available on the running IMCore build, and optionally associates it to
+a target bubble with `--attach-to`.

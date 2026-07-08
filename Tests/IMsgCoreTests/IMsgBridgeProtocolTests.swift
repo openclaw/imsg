@@ -8,6 +8,7 @@ struct IMsgBridgeProtocolTests {
   @Test
   func actionRawValuesMatchDylibVocabulary() {
     #expect(BridgeAction.sendMessage.rawValue == "send-message")
+    #expect(BridgeAction.sendSticker.rawValue == "send-sticker")
     #expect(BridgeAction.sendPoll.rawValue == "send-poll")
     #expect(BridgeAction.sendReaction.rawValue == "send-reaction")
     #expect(BridgeAction.editMessage.rawValue == "edit-message")

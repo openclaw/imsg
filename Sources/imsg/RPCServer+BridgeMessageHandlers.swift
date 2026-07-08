@@ -84,6 +84,34 @@ extension RPCServer {
     respond(id: id, result: result)
   }
 
+  func handleSendSticker(params: [String: Any], id: Any?) async throws {
+    let chatGUID = try await resolveChatGUIDParam(params)
+    guard let file = stringParam(params["file"] ?? params["path"]), !file.isEmpty else {
+      throw RPCError.invalidParams("file is required")
+    }
+    var bridgeParams: [String: Any] = [
+      "chatGuid": chatGUID,
+      "filePath": try stageAttachment((file as NSString).expandingTildeInPath),
+      "partIndex": intParam(params["part_index"] ?? params["partIndex"]) ?? 0,
+    ]
+    if let attachTo = stringParam(
+      params["attach_to"] ?? params["attachTo"] ?? params["reply_to"] ?? params["replyTo"]
+        ?? params["message_guid"] ?? params["messageGuid"] ?? params["message_id"]
+    ), !attachTo.isEmpty {
+      bridgeParams["selectedMessageGuid"] = attachTo
+    }
+    let data = try await invokeBridge(action: .sendSticker, params: bridgeParams)
+    var result: [String: Any] = ["ok": true]
+    if let guid = data["messageGuid"] as? String, !guid.isEmpty {
+      result["guid"] = guid
+      result["message_id"] = guid
+    }
+    if let transferGuid = data["transferGuid"] as? String, !transferGuid.isEmpty {
+      result["transfer_guid"] = transferGuid
+    }
+    respond(id: id, result: result)
+  }
+
   func handlePollSend(params: [String: Any], id: Any?) async throws {
     let chatGUID = try await resolveChatGUIDParam(params)
     guard let question = stringParam(params["question"]), !question.isEmpty else {

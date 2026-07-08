@@ -14,6 +14,7 @@ typealias BridgeInvoker = (
 ) async throws -> [String: Any]
 
 typealias AttachmentStager = (_ path: String) throws -> String
+typealias StickerStager = (_ path: String) throws -> PreparedStickerAsset
 
 protocol RPCOutput: Sendable {
   func sendResponse(id: Any, result: Any)
@@ -38,7 +39,10 @@ let kSupportedRPCMethods: [String] = [
   "send",
   "send.rich",
   "send.attachment",
+  "send.sticker",
   "messages.scheduled",
+  "attachments.sendSticker",
+  "sticker.send",
   "poll.send",
   "messages.poll.send",
   "poll.vote",
@@ -70,6 +74,7 @@ final class RPCServer {
   let resolveSentMessage: SentMessageResolver
   let bridgeInvoker: BridgeInvoker
   let stageAttachment: AttachmentStager
+  let stageSticker: StickerStager
   let isBridgeReady: () -> Bool
   let startTyping: (String) throws -> Void
   let stopTyping: (String) throws -> Void
@@ -85,6 +90,9 @@ final class RPCServer {
       try await IMsgBridgeClient.shared.invoke(action: action, params: params)
     },
     stageAttachment: @escaping AttachmentStager = MessageSender.stageAttachmentForMessagesApp,
+    stageSticker: @escaping StickerStager = {
+      try StickerAssetPreparer.prepare(at: $0)
+    },
     isBridgeReady: @escaping () -> Bool = { IMsgBridgeClient.shared.isReady() },
     startTyping: @escaping (String) throws -> Void = {
       try TypingIndicator.startTyping(chatIdentifier: $0)
@@ -103,6 +111,7 @@ final class RPCServer {
     self.resolveSentMessage = resolveSentMessage
     self.bridgeInvoker = invokeBridge
     self.stageAttachment = stageAttachment
+    self.stageSticker = stageSticker
     self.isBridgeReady = isBridgeReady
     self.startTyping = startTyping
     self.stopTyping = stopTyping
@@ -161,6 +170,8 @@ final class RPCServer {
         try await handleSendRich(params: params, id: id)
       case "send.attachment":
         try await handleSendAttachment(params: params, id: id)
+      case "send.sticker", "attachments.sendSticker", "sticker.send":
+        try await handleSendSticker(params: params, id: id)
       case "messages.scheduled":
         guard request.paramsAreNamed else {
           throw RPCError.invalidParams("messages.scheduled params must be an object")

@@ -285,6 +285,43 @@ func rpcSendAttachmentStagesFileBeforeBridgeSend() async throws {
 }
 
 @Test
+func rpcSendStickerStagesFileAndReturnsTransferGuid() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
+  var stagedInput: String?
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, params in
+      capturedAction = action
+      capturedParams = params
+      return ["messageGuid": "sticker-guid", "transferGuid": "transfer-guid"]
+    },
+    stageAttachment: { path in
+      stagedInput = path
+      return "/tmp/staged-sticker.png"
+    }
+  )
+
+  let line =
+    #"{"jsonrpc":"2.0","id":"sticker","method":"attachments.sendSticker","params":{"#
+    + #""chat_id":1,"file":"~/Desktop/sticker.png","attach_to":"parent-guid","part_index":2}}"#
+  await server.handleLineForTesting(line)
+
+  #expect(capturedAction == .sendSticker)
+  #expect(stagedInput?.hasSuffix("/Desktop/sticker.png") == true)
+  #expect(capturedParams["filePath"] as? String == "/tmp/staged-sticker.png")
+  #expect(capturedParams["selectedMessageGuid"] as? String == "parent-guid")
+  #expect(capturedParams["partIndex"] as? Int == 2)
+  let result = output.responses.first?["result"] as? [String: Any]
+  #expect(result?["message_id"] as? String == "sticker-guid")
+  #expect(result?["transfer_guid"] as? String == "transfer-guid")
+}
+
+@Test
 func rpcBridgeMessageMethodsResolveDirectChatIdentifierToGUID() async throws {
   let store = try CommandTestDatabase.makeStoreForRPCDirectChat()
   let output = TestRPCOutput()

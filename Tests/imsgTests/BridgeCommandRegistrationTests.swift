@@ -12,7 +12,7 @@ import Testing
 func commandRouterIncludesAllBridgeCommands() {
   let router = CommandRouter()
   let expected: [String] = [
-    "send-rich", "send-multipart", "send-attachment", "tapback",
+    "send-rich", "send-multipart", "send-attachment", "sticker", "tapback",
     "poll", "edit", "unsend", "delete-message", "notify-anyways",
     "chat-create", "chat-name", "chat-photo",
     "chat-add-member", "chat-remove-member",
@@ -40,6 +40,7 @@ func bridgeMessagingCommandsExposeChatRequirement() async {
     ("unsend", ["--message", "message-guid"]),
     ("delete-message", ["--message", "message-guid"]),
     ("tapback", ["--message", "message-guid", "--kind", "love"]),
+    ("sticker", ["--file", "~/Desktop/sticker.png"]),
   ]
   for testCase in cases {
     let (output, status) = await StdoutCapture.capture {
@@ -48,6 +49,69 @@ func bridgeMessagingCommandsExposeChatRequirement() async {
     #expect(status == 1, "\(testCase.name) should require --chat")
     #expect(output.contains("Missing required option: --chat"))
   }
+}
+
+@Test
+func stickerCommandStagesFileAndForwardsAttachTarget() async throws {
+  let values = ParsedValues(
+    positional: [],
+    options: [
+      "chat": ["iMessage;-;+15551234567"],
+      "file": ["~/Desktop/sticker.png"],
+      "attachTo": ["parent-guid"],
+      "part": ["3"],
+    ],
+    flags: []
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
+  var stagedSource = ""
+
+  let (output, _) = try await StdoutCapture.capture {
+    try await StickerCommand.run(
+      values: values,
+      runtime: runtime,
+      invokeBridge: { action, params in
+        capturedAction = action
+        capturedParams = params
+        return ["messageGuid": "sent-guid", "transferGuid": "transfer-guid"]
+      },
+      stageAttachment: { path in
+        stagedSource = path
+        return "/staged/sticker.png"
+      }
+    )
+  }
+
+  #expect(capturedAction == .sendSticker)
+  #expect(capturedParams["chatGuid"] as? String == "iMessage;-;+15551234567")
+  #expect(capturedParams["filePath"] as? String == "/staged/sticker.png")
+  #expect(capturedParams["selectedMessageGuid"] as? String == "parent-guid")
+  #expect(capturedParams["partIndex"] as? Int == 3)
+  #expect(stagedSource.hasSuffix("/Desktop/sticker.png"))
+  #expect(output.contains("sticker: sent (guid=sent-guid)"))
+}
+
+@Test
+func injectedHelperWiresStickerSendAction() throws {
+  let testFile = URL(fileURLWithPath: #filePath)
+  let repoRoot =
+    testFile
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
+  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
+  let sendStickerBody = try #require(functionBody(named: "handleSendSticker", in: source))
+
+  #expect(source.contains("send-sticker"))
+  #expect(source.contains("markTransferAsSticker"))
+  #expect(source.contains("stickerTransfer"))
+  #expect(
+    sendStickerBody.contains("prepareOutgoingTransfer(fileURL, filename, chatGuid, &prepErr)"))
+  #expect(sendStickerBody.contains("selectedMessageGuid.length ? 100 : 0"))
+  #expect(sendStickerBody.contains("buildAttachmentAttributed(transferGuid, filename, partIndex)"))
 }
 
 @Test

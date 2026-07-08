@@ -270,6 +270,24 @@ Response:
 
 `messages.poll.send` is accepted as an alias for `poll.send`. The caption echo is deliberately best-effort: if the poll is created but the follow-up caption send fails, the RPC still returns the poll result to avoid retrying and creating a duplicate poll.
 
+### Stickers
+
+`attachments.sendSticker` sends an image file as a sticker-attributed IMCore
+transfer. The bridge must be injected with `imsg launch`; AppleScript cannot
+preserve sticker attribution. `sticker.send` is accepted as an alias.
+
+Request:
+
+```json
+{"jsonrpc":"2.0","id":"sticker","method":"attachments.sendSticker","params":{"chat_id":42,"file":"~/Desktop/sticker.png","attach_to":"MESSAGE_GUID"}}
+```
+
+Response:
+
+```json
+{"ok":true,"guid":"...","message_id":"...","transfer_guid":"..."}
+```
+
 ## Objects
 
 ### Chat

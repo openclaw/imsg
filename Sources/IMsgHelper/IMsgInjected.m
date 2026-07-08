@@ -815,6 +815,11 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"sendMessageReason": @(gHasSendMessageReason),
         @"pollPayloadMessage": @(pollPayloadMessageInitializerAvailable()),
         @"pollVoteMessage": @(pollVoteMessageInitializerAvailable()),
+        @"stickerTransfer": @(NSClassFromString(@"IMFileTransfer") &&
+            ([NSClassFromString(@"IMFileTransfer") instancesRespondToSelector:
+                NSSelectorFromString(@"setIsSticker:")] ||
+             [NSClassFromString(@"IMFileTransfer") instancesRespondToSelector:
+                NSSelectorFromString(@"setUserInfo:")])),
         @"deleteChat": @(hasRegistry &&
             [registryClass instancesRespondToSelector:NSSelectorFromString(@"deleteChat:")]),
         @"removeChat": @(hasRegistry &&
@@ -3081,6 +3086,41 @@ static NSAttributedString *buildAttachmentAttributed(NSString *transferGuid,
     return [[NSAttributedString alloc] initWithString:@"￼" attributes:attrs];
 }
 
+static BOOL markTransferAsSticker(IMFileTransfer *transfer, NSString **outErr) {
+    if (!transfer) {
+        if (outErr) *outErr = @"Missing transfer";
+        return NO;
+    }
+    BOOL marked = NO;
+    if ([transfer respondsToSelector:@selector(setIsSticker:)]) {
+        BOOL yes = YES;
+        NSMethodSignature *sig = [transfer methodSignatureForSelector:@selector(setIsSticker:)];
+        NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+        [inv setSelector:@selector(setIsSticker:)];
+        [inv setTarget:transfer];
+        [inv setArgument:&yes atIndex:2];
+        [inv invoke];
+        marked = YES;
+    }
+    if ([transfer respondsToSelector:@selector(setUserInfo:)]) {
+        NSMutableDictionary *userInfo = [NSMutableDictionary dictionary];
+        if ([transfer respondsToSelector:@selector(userInfo)]) {
+            id existing = [transfer performSelector:@selector(userInfo)];
+            if ([existing isKindOfClass:[NSDictionary class]]) {
+                [userInfo addEntriesFromDictionary:(NSDictionary *)existing];
+            }
+        }
+        userInfo[@"isSticker"] = @YES;
+        userInfo[@"com.apple.messages.is-sticker"] = @YES;
+        [transfer performSelector:@selector(setUserInfo:) withObject:userInfo];
+        marked = YES;
+    }
+    if (!marked && outErr) {
+        *outErr = @"IMFileTransfer sticker selectors unavailable";
+    }
+    return marked;
+}
+
 /// Register an outgoing file transfer with IMFileTransferCenter so that
 /// Messages.app/imagent persists the attachment row and links it back to the
 /// outbound message. Mirrors BlueBubblesHelper's `prepareFileTransferForAttachment`:
@@ -3370,6 +3410,108 @@ static NSDictionary *handleSendAttachment(NSInteger requestId, NSDictionary *par
     } @catch (NSException *exception) {
         return errorResponse(requestId,
             [NSString stringWithFormat:@"send-attachment failed: %@", exception.reason]);
+    }
+}
+
+/// `send-sticker`: registers an outgoing file transfer and marks the transfer
+/// as sticker-attributed before dispatch. A selectedMessageGuid attaches the
+/// sticker to a message bubble using the same association path as tapbacks.
+static NSDictionary *handleSendSticker(NSInteger requestId, NSDictionary *params) {
+    NSString *chatGuid = params[@"chatGuid"];
+    NSString *filePath = params[@"filePath"];
+    NSString *selectedMessageGuid = params[@"selectedMessageGuid"];
+    NSNumber *partIndexNum = params[@"partIndex"];
+    NSInteger partIndex = partIndexNum ? [partIndexNum integerValue] : 0;
+
+    if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
+    if (!filePath.length) return errorResponse(requestId, @"Missing filePath");
+    NSError *attrErr = nil;
+    NSDictionary *attrs = [[NSFileManager defaultManager]
+        attributesOfItemAtPath:filePath error:&attrErr];
+    if (!attrs) {
+        return errorResponse(requestId,
+            [NSString stringWithFormat:@"File not found: %@", filePath]);
+    }
+    if ([attrs[NSFileType] isEqualToString:NSFileTypeSymbolicLink]) {
+        return errorResponse(requestId, @"Symlinked sticker paths are not allowed");
+    }
+    if (pathHasSymlinkComponent(filePath)) {
+        return errorResponse(requestId, @"Sticker path traverses a symlink");
+    }
+    if (![[NSFileManager defaultManager] fileExistsAtPath:filePath]) {
+        return errorResponse(requestId,
+            [NSString stringWithFormat:@"File not found: %@", filePath]);
+    }
+
+    IMChat *chat = resolveChatByGuid(chatGuid);
+    if (!chat) {
+        return errorResponse(requestId,
+            [NSString stringWithFormat:@"Chat not found: %@", chatGuid]);
+    }
+
+    NSURL *fileURL = [NSURL fileURLWithPath:filePath];
+    NSString *filename = [fileURL lastPathComponent];
+
+    @try {
+        NSString *prepErr = nil;
+        IMFileTransfer *transfer = prepareOutgoingTransfer(fileURL, filename, chatGuid, &prepErr);
+        if (!transfer) {
+            return errorResponse(requestId,
+                prepErr.length ? prepErr : @"Could not register sticker transfer");
+        }
+        NSString *stickerErr = nil;
+        if (!markTransferAsSticker(transfer, &stickerErr)) {
+            return errorResponse(requestId, stickerErr ?: @"Could not mark transfer as sticker");
+        }
+        NSString *transferGuid = [transfer guid];
+        if (!transferGuid.length) {
+            return errorResponse(requestId, @"Sticker transfer registered without guid");
+        }
+
+        NSAttributedString *body = buildAttachmentAttributed(transferGuid, filename, partIndex);
+        long long associatedType = selectedMessageGuid.length ? 100 : 0;
+        id parentMessage = nil;
+        id parentItem = nil;
+        NSString *threadIdentifier = nil;
+        if (selectedMessageGuid.length) {
+            threadIdentifier = deriveThreadIdentifier(selectedMessageGuid,
+                                                      &parentMessage,
+                                                      &parentItem);
+            debugLog(@"handleSendSticker: parent=%@ threadId=%@",
+                     selectedMessageGuid, threadIdentifier ?: @"(none)");
+        } else {
+            clearThreadContextForChat(chat, nil);
+        }
+
+        id imMessage = buildIMMessage(body, nil, nil, threadIdentifier,
+                                      parentItem,
+                                      selectedMessageGuid, associatedType,
+                                      NSMakeRange(0, body.length), nil,
+                                      @[transferGuid], NO, NO);
+        if (!imMessage) {
+            return errorResponse(requestId, @"Could not build sticker IMMessage");
+        }
+        if (parentMessage
+            && [imMessage respondsToSelector:@selector(setThreadOriginator:)]) {
+            [imMessage performSelector:@selector(setThreadOriginator:)
+                            withObject:parentMessage];
+        }
+        if (threadIdentifier
+            && [imMessage respondsToSelector:@selector(setThreadIdentifier:)]) {
+            [imMessage performSelector:@selector(setThreadIdentifier:)
+                            withObject:threadIdentifier];
+        }
+        dispatchIMMessageInChat(chat, imMessage, threadIdentifier, parentItem);
+        NSString *guid = lastSentMessageGuid(chat);
+        return successResponse(requestId, @{
+            @"chatGuid": chatGuid,
+            @"messageGuid": guid ?: @"",
+            @"transferGuid": transferGuid,
+            @"selectedMessageGuid": selectedMessageGuid ?: @""
+        });
+    } @catch (NSException *exception) {
+        return errorResponse(requestId,
+            [NSString stringWithFormat:@"send-sticker failed: %@", exception.reason]);
     }
 }
 
@@ -4302,6 +4444,7 @@ static NSDictionary* dispatchAction(NSInteger legacyId, NSString *action,
     if ([action isEqualToString:@"send-message"]) return handleSendMessage(legacyId, params);
     if ([action isEqualToString:@"send-multipart"]) return handleSendMultipart(legacyId, params);
     if ([action isEqualToString:@"send-attachment"]) return handleSendAttachment(legacyId, params);
+    if ([action isEqualToString:@"send-sticker"]) return handleSendSticker(legacyId, params);
     if ([action isEqualToString:@"send-poll"]) return handleSendPoll(legacyId, params);
     if ([action isEqualToString:@"send-poll-vote"]) return handleSendPollVote(legacyId, params);
     if ([action isEqualToString:@"send-reaction"]) return handleSendReaction(legacyId, params);
