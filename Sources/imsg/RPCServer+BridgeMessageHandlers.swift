@@ -148,6 +148,62 @@ extension RPCServer {
   }
 
   func handlePollVote(params: [String: Any], id: Any?) async throws {
+    try await handlePollVoteMutation(params: params, id: id, remove: false)
+  }
+
+  func handlePollUnvote(params: [String: Any], id: Any?) async throws {
+    try await handlePollVoteMutation(params: params, id: id, remove: true)
+  }
+
+  func handlePollAddOption(params: [String: Any], id: Any?) async throws {
+    let chatGUID = try await resolveChatGUIDParam(params)
+    guard
+      let pollGUID = stringParam(
+        params["poll_guid"] ?? params["pollGuid"] ?? params["poll_message_guid"]
+          ?? params["message_guid"] ?? params["message_id"]), !pollGUID.isEmpty
+    else {
+      throw RPCError.invalidParams("poll_guid is required")
+    }
+    guard
+      let optionText = stringParam(
+        params["option"] ?? params["option_text"] ?? params["optionText"]),
+      !optionText.isEmpty
+    else {
+      throw RPCError.invalidParams("option is required")
+    }
+    let pollOptions = try store.pollOptions(guid: pollGUID)
+    guard !pollOptions.isEmpty else {
+      throw RPCError.invalidParams("poll \(pollGUID) not found or not decodable")
+    }
+    var bridgeParams: [String: Any] = [
+      "chatGuid": chatGUID,
+      "pollMessageGuid": barePollGuid(pollGUID),
+      "optionText": optionText,
+    ]
+    if let creatorHandle = stringParam(params["creator_handle"] ?? params["creatorHandle"]),
+      !creatorHandle.isEmpty
+    {
+      bridgeParams["creatorHandle"] = creatorHandle
+    }
+
+    let data = try await invokeBridge(action: .sendPollAddOption, params: bridgeParams)
+    var result: [String: Any] = [
+      "ok": true,
+      "event": "imessage.poll.option_added",
+      "poll_guid": barePollGuid(pollGUID),
+      "option_text": optionText,
+    ]
+    if let optionID = data["optionIdentifier"] as? String, !optionID.isEmpty {
+      result["option_id"] = optionID
+    }
+    if let guid = data["messageGuid"] as? String, !guid.isEmpty {
+      result["guid"] = guid
+      result["message_id"] = guid
+    }
+    respond(id: id, result: result)
+  }
+
+  private func handlePollVoteMutation(params: [String: Any], id: Any?, remove: Bool) async throws {
     let chatGUID = try await resolveChatGUIDParam(params)
     guard
       let pollGUID = stringParam(
@@ -182,10 +238,12 @@ extension RPCServer {
       bridgeParams["optionText"] = matchedOption.text
     }
 
-    let data = try await invokeBridge(action: .sendPollVote, params: bridgeParams)
+    let data = try await invokeBridge(
+      action: remove ? .sendPollUnvote : .sendPollVote,
+      params: bridgeParams)
     var result: [String: Any] = [
       "ok": true,
-      "event": "imessage.poll.voted",
+      "event": remove ? "imessage.poll.unvoted" : "imessage.poll.voted",
       // Callers use the resolved option to suppress a redundant text reply that
       // just restates the vote, so return it alongside the poll linkage.
       "poll_guid": barePollGuid(pollGUID),

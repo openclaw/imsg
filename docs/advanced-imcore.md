@@ -20,6 +20,8 @@ You almost certainly do not need any of this for normal use.
 - `imsg send-attachment --chat <guid> --file <path> [--reply-to <message-guid>]` —
   prefers the bridge for private attachment sends, with AppleScript fallback
   for normal files when no reply target is requested.
+- `imsg poll send|vote|unvote|add-option ...` — create native Polls balloons,
+  cast or remove selections, and append choices.
 
 ## Why they're separate
 

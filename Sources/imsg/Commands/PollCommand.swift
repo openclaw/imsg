@@ -8,8 +8,8 @@ enum PollCommand {
     abstract: "Send a native Apple Messages poll",
     discussion: """
       Requires `imsg launch` (SIP-disabled, dylib injected). Use the `send`
-      action to create a native Messages Polls extension balloon, or the `vote`
-      action to cast a vote on an existing poll.
+      action to create a native Messages Polls extension balloon, `vote`/`unvote`
+      to select or remove a selection, or `add-option` to append a choice.
 
       Messages renders only the options on a poll balloon — the poll title is
       never shown to recipients. So `send` automatically sends `--question` as a
@@ -22,7 +22,7 @@ enum PollCommand {
     signature: CommandSignatures.withRuntimeFlags(
       CommandSignature(
         arguments: [
-          .make(label: "action", help: "send|vote", isOptional: false)
+          .make(label: "action", help: "send|vote|unvote|add-option", isOptional: false)
         ],
         options: CommandSignatures.baseOptions() + [
           .make(label: "chat", names: [.long("chat")], help: "chat guid or rowid"),
@@ -46,13 +46,13 @@ enum PollCommand {
             help: "poll option text; pass at least twice"),
           .make(
             label: "poll", names: [.long("poll")],
-            help: "vote: guid of the poll message to vote on"),
+            help: "vote/unvote/add-option: guid of the poll message to update"),
           .make(
             label: "optionID", names: [.long("option-id")],
-            help: "vote: UUID of the option to select"),
+            help: "vote/unvote: UUID of the option to select"),
           .make(
             label: "optionIndex", names: [.long("option-index")],
-            help: "vote: 1-based option number to select"),
+            help: "vote/unvote: 1-based option number to select"),
         ]
       )
     ),
@@ -61,6 +61,8 @@ enum PollCommand {
       "imsg poll send --chat 'iMessage;-;+15551234567' --question 'Dinner?' --comment 'Vote by 5pm 🍽️' --option 'Pizza' --option 'Sushi'",
       "imsg poll send --chat 'iMessage;-;+15551234567' --reply-to ABCD --question 'Approve?' --option 'Yes' --option 'No'",
       "imsg poll vote --chat 'iMessage;-;+15551234567' --poll ABCD --option-id 1B2C-...",
+      "imsg poll unvote --chat 'iMessage;-;+15551234567' --poll ABCD --option-index 1",
+      "imsg poll add-option --chat 'iMessage;-;+15551234567' --poll ABCD --option 'Tacos'",
     ]
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
@@ -81,6 +83,14 @@ enum PollCommand {
         values: values, runtime: runtime, storeFactory: storeFactory, invokeBridge: invokeBridge)
     case "vote":
       try await runVote(
+        remove: false,
+        values: values, runtime: runtime, storeFactory: storeFactory, invokeBridge: invokeBridge)
+    case "unvote":
+      try await runVote(
+        remove: true,
+        values: values, runtime: runtime, storeFactory: storeFactory, invokeBridge: invokeBridge)
+    case "add-option":
+      try await runAddOption(
         values: values, runtime: runtime, storeFactory: storeFactory, invokeBridge: invokeBridge)
     default:
       throw ParsedValuesError.invalidOption("action")
@@ -155,6 +165,7 @@ enum PollCommand {
   }
 
   private static func runVote(
+    remove: Bool,
     values: ParsedValues,
     runtime: RuntimeOptions,
     storeFactory: @escaping (String) throws -> MessageStore,
@@ -183,7 +194,8 @@ enum PollCommand {
     }
 
     do {
-      let data = try await invokeBridge(.sendPollVote, params)
+      let action: BridgeAction = remove ? .sendPollUnvote : .sendPollVote
+      let data = try await invokeBridge(action, params)
       // Merge the CLI-resolved option label into the emitted result so callers
       // get it regardless of the injected dylib version (older bridges don't
       // echo optionText). OpenClaw's echo guard reads this to drop a redundant
@@ -197,7 +209,51 @@ enum PollCommand {
       let guid = (merged["messageGuid"] as? String) ?? ""
       BridgeOutput.emit(
         merged, runtime: runtime,
-        summary: guid.isEmpty ? "vote: queued" : "vote: sent (guid=\(guid))")
+        summary: guid.isEmpty
+          ? "\(remove ? "unvote" : "vote"): queued"
+          : "\(remove ? "unvote" : "vote"): sent (guid=\(guid))")
+    } catch {
+      BridgeOutput.emitError(String(describing: error), runtime: runtime)
+      throw BridgeOutput.EmittedError()
+    }
+  }
+
+  private static func runAddOption(
+    values: ParsedValues,
+    runtime: RuntimeOptions,
+    storeFactory: @escaping (String) throws -> MessageStore,
+    invokeBridge: @escaping (BridgeAction, [String: Any]) async throws -> [String: Any]
+  ) async throws {
+    let chat = try resolveChatGUID(values: values, storeFactory: storeFactory)
+    guard let pollGuid = values.option("poll")?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !pollGuid.isEmpty
+    else {
+      throw ParsedValuesError.missingOption("poll")
+    }
+    guard let option = values.option("option")?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !option.isEmpty
+    else {
+      throw ParsedValuesError.missingOption("option")
+    }
+    let dbPath = values.option("db") ?? MessageStore.defaultPath
+    let store = try storeFactory(dbPath)
+    let options = try store.pollOptions(guid: pollGuid)
+    guard !options.isEmpty else {
+      throw ParsedValuesError.invalidOption("poll (could not decode options for \(pollGuid))")
+    }
+
+    let params: [String: Any] = [
+      "chatGuid": chat,
+      "pollMessageGuid": barePollGuid(pollGuid),
+      "optionText": option,
+    ]
+
+    do {
+      let data = try await invokeBridge(.sendPollAddOption, params)
+      let guid = (data["messageGuid"] as? String) ?? ""
+      BridgeOutput.emit(
+        data, runtime: runtime,
+        summary: guid.isEmpty ? "poll option: queued" : "poll option: sent (guid=\(guid))")
     } catch {
       BridgeOutput.emitError(String(describing: error), runtime: runtime)
       throw BridgeOutput.EmittedError()
