@@ -15,6 +15,10 @@ You almost certainly do not need any of this for normal use.
 - `imsg typing --to <handle> [--duration 5s] [--stop true]` — show or stop the typing indicator.
 - `imsg launch [--dylib <path>] [--kill-only]` — launch Messages.app with the helper dylib injected.
 - `imsg status` — read-only IMCore bridge status.
+- `imsg chat-background set --chat <guid> --file <image>` and
+  `imsg chat-background clear --chat <guid>` — macOS 26-gated chat background
+  probes that fail closed when the running Messages private API lacks a known
+  selector.
 - `imsg send-rich --chat <guid> --reply-to <message-guid> --file <path>` —
   sends a threaded reply with an attachment through the bridge.
 - `imsg send-attachment --chat <guid> --file <path> [--reply-to <message-guid>]` —

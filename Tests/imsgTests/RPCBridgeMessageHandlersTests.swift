@@ -305,3 +305,25 @@ func rpcBridgeMessageMethodsResolveDirectChatIdentifierToGUID() async throws {
 
   #expect(capturedParams["chatGuid"] as? String == "iMessage;-;+123")
 }
+
+@Test
+func rpcChatBackgroundRemoveInvokesBridge() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  var capturedAction: BridgeAction?
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, _ in
+      capturedAction = action
+      return ["background_cleared": true]
+    }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"bg","method":"chats.removeBackground","params":{"chat_id":1}}"#
+  )
+
+  #expect(capturedAction == .clearChatBackground)
+}

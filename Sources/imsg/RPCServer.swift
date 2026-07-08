@@ -31,6 +31,8 @@ let kSupportedRPCMethods: [String] = [
   "chats.create",
   "chats.delete",
   "chats.markUnread",
+  "chats.setBackground",
+  "chats.removeBackground",
   "messages.history",
   "watch.subscribe",
   "watch.unsubscribe",
@@ -180,6 +182,10 @@ final class RPCServer {
         try await handleChatsDelete(id: id, params: params)
       case "chats.markUnread":
         try await handleChatsMarkUnread(id: id, params: params)
+      case "chats.setBackground":
+        try await handleChatsSetBackground(params: params, id: id)
+      case "chats.removeBackground":
+        try await handleChatsRemoveBackground(params: params, id: id)
       case "group.rename":
         try await handleGroupRename(id: id, params: params)
       case "group.setIcon":

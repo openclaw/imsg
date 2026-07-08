@@ -35,6 +35,7 @@ struct CommandRouter {
       ChatCreateCommand.spec,
       ChatNameCommand.spec,
       ChatPhotoCommand.spec,
+      ChatBackgroundCommand.spec,
       ChatAddMemberCommand.spec,
       ChatRemoveMemberCommand.spec,
       ChatLeaveCommand.spec,
