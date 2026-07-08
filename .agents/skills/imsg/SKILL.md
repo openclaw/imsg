@@ -37,12 +37,14 @@ Then inspect and read the chat by rowid:
 imsg group --chat-id ID --json                 # identity + participants; check before automating
 imsg history --chat-id ID --limit 50 --json | jq -s
 imsg history --chat-id ID --start 2025-01-01T00:00:00Z --end 2025-02-01T00:00:00Z --json
+imsg stats --chat-id ID --media --json         # counts by chat/handle/service/day + media totals
 ```
 
 - Chat `id` is the `chat.db` rowid: stable on one machine, the preferred `--chat-id` handle. `identifier` and `guid` are portable across machines.
 - `--start` is inclusive, `--end` exclusive; both take ISO8601. Use absolute timestamps for date-scoped questions.
 - `--attachments` adds attachment metadata; `--convert-attachments` converts CAF→M4A / GIF→PNG for model consumption.
 - `imsg search --query "pizza tonight" --json` searches message bodies only (`--match contains` default, `exact` available).
+- `imsg stats [--chat-id ID] [--media] --json` aggregates local message and attachment counts; no bridge required.
 - SIP-free lookups: `imsg whois --address "+15551234567" --type phone --local`, `imsg nickname --address "+15551234567" --local --json`, `imsg account --local --json`. Note `nickname --local` returns *your* AddressBook label for the handle; the iMessage-shared nickname needs default-mode `nickname` via the bridge.
 - Direct `sqlite3` queries are a last resort; the `handle` table lacks the resolved names `imsg chats` provides.
 

@@ -36,6 +36,45 @@ Result:
 { "chats": [Chat] }
 ```
 
+### `server.getMessageStats`
+
+Params:
+
+- `chat_id` (int, optional)
+- `media` / `include_media` (bool, default `false`)
+
+Result:
+
+```json
+{
+  "total_messages": 123,
+  "chats": [],
+  "handles": [],
+  "services": [],
+  "dates": [],
+  "media": null
+}
+```
+
+When media is requested, `media` includes attachment totals and byte counts grouped by
+UTI/MIME and chat.
+
+### `getMediaStatistics`
+
+Params:
+
+- `chat_id` (int, optional)
+
+Result: a media statistics object with `total_attachments`, `total_bytes`, `types`, and `chats`.
+
+### `getMediaStatisticsByChat`
+
+Params:
+
+- `chat_id` (int, required)
+
+Result: the same media statistics object, scoped to one chat.
+
 ### `messages.history`
 
 Params:

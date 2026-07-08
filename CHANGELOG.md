@@ -2,6 +2,9 @@
 
 ## 0.12.4 - Unreleased
 
+### Local Stats
+- feat: add SIP-free `imsg stats` plus JSON-RPC message/media statistics methods for read-only aggregate counts by chat, handle, service, day, and attachment type.
+
 ## 0.12.3 - 2026-07-06
 
 ### Native Polls
