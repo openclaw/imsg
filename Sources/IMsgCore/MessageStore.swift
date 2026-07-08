@@ -56,7 +56,9 @@ public final class MessageStore: @unchecked Sendable {
     hasChatMessageJoinMessageDateColumn: Bool? = nil,
     hasChatAccountIDColumn: Bool? = nil,
     hasChatAccountLoginColumn: Bool? = nil,
-    hasChatLastAddressedHandleColumn: Bool? = nil
+    hasChatLastAddressedHandleColumn: Bool? = nil,
+    hasScheduleTypeColumn: Bool? = nil,
+    hasScheduleStateColumn: Bool? = nil
   ) throws {
     self.path = path
     self.queue = DispatchQueue(label: "imsg.db.test", qos: .userInitiated)
@@ -73,6 +75,8 @@ public final class MessageStore: @unchecked Sendable {
       hasAudioMessageColumn: hasAudioMessageColumn,
       hasAttachmentUserInfo: hasAttachmentUserInfo,
       hasBalloonBundleIDColumn: hasBalloonBundleIDColumn,
+      hasScheduleTypeColumn: hasScheduleTypeColumn,
+      hasScheduleStateColumn: hasScheduleStateColumn,
       hasChatMessageJoinMessageDateColumn: hasChatMessageJoinMessageDateColumn,
       hasChatAccountIDColumn: hasChatAccountIDColumn,
       hasChatAccountLoginColumn: hasChatAccountLoginColumn,

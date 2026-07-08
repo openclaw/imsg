@@ -189,6 +189,60 @@ func rpcSendRichInvokesBridgeWithResolvedChat() async throws {
 }
 
 @Test
+func rpcScheduledCreateRequiresAndForwardsSchedule() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  let scheduledAt = CLIISO8601.format(Date().addingTimeInterval(3600))
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, params in
+      capturedAction = action
+      capturedParams = params
+      return ["messageGuid": "scheduled-guid", "queued": true, "scheduledAt": scheduledAt]
+    }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"scheduled","method":"scheduledMessages.createScheduledMessage","params":{"chat_id":1,"text":"later","scheduled_at":""#
+      + scheduledAt + #""}}"#
+  )
+
+  #expect(capturedAction == .sendMessage)
+  #expect(capturedParams["scheduledAt"] as? String == scheduledAt)
+  let result = output.responses.first?["result"] as? [String: Any]
+  #expect(result?["guid"] as? String == "scheduled-guid")
+}
+
+@Test
+func rpcScheduledCancelInvokesBridge() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, params in
+      capturedAction = action
+      capturedParams = params
+      return ["cancelled": true]
+    }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"cancel","method":"scheduledMessages.cancelScheduledMessage","params":{"guid":"scheduled-guid"}}"#
+  )
+
+  #expect(capturedAction == .cancelScheduledMessage)
+  #expect(capturedParams["messageGuid"] as? String == "scheduled-guid")
+}
+
+@Test
 func rpcSendRichSuppressesQueuedBridgeGuid() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()

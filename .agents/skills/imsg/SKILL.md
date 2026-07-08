@@ -72,6 +72,9 @@ Only after `imsg status` confirms the bridge is loaded (`imsg launch` injects it
 
 ```bash
 imsg send-rich --chat 'iMessage;-;+15551234567' --text 'hi' --reply-to MSG_GUID   # replies, effects, subjects
+imsg send-rich --chat GUID --text 'later' --schedule 2026-07-08T22:00:00Z
+imsg scheduled list --json
+imsg scheduled cancel MSG_GUID
 imsg poll send --chat GUID --question 'Dinner?' --option 'Pizza' --option 'Sushi' --comment 'Vote by 5pm'
 imsg edit --chat GUID --message MSG_GUID --new-text 'updated'                     # macOS 13+
 imsg chat-create --addresses '+15551234567,+15559876543' --name 'Crew'

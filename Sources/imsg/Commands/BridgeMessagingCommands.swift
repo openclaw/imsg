@@ -105,6 +105,7 @@ enum SendRichCommand {
             help: "expressive send id (impact, loud, gentle, invisibleink, confetti, …)"),
           .make(label: "subject", names: [.long("subject")], help: "subject line"),
           .make(label: "replyTo", names: [.long("reply-to")], help: "guid of message to reply to"),
+          .make(label: "schedule", names: [.long("schedule")], help: "ISO8601 send-later time"),
           .make(label: "part", names: [.long("part")], help: "part index (default 0)"),
           .make(
             label: "format",
@@ -167,6 +168,15 @@ enum SendRichCommand {
     if let subject = values.option("subject"), !subject.isEmpty { params["subject"] = subject }
     if let reply = values.option("replyTo"), !reply.isEmpty {
       params["selectedMessageGuid"] = reply
+    }
+    if let rawSchedule = values.option("schedule"), !rawSchedule.isEmpty {
+      guard let scheduledAt = CLIISO8601.parse(rawSchedule) else {
+        throw ParsedValuesError.invalidOption("schedule")
+      }
+      guard scheduledAt > Date() else {
+        throw ParsedValuesError.invalidOption("schedule must be in the future")
+      }
+      params["scheduledAt"] = CLIISO8601.format(scheduledAt)
     }
 
     // Optional text formatting (macOS 15+ — Sequoia and later). Pass either
@@ -243,7 +253,7 @@ enum SendRichCommand {
     storeFactory: (String) throws -> MessageStore
   ) async throws -> [String: Any] {
     var enriched = data
-    guard !text.isEmpty, data["queued"] as? Bool == true else {
+    guard !text.isEmpty, data["queued"] as? Bool == true, data["scheduledAt"] == nil else {
       return enriched
     }
 

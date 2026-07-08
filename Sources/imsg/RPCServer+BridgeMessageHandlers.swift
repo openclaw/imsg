@@ -24,6 +24,18 @@ extension RPCServer {
     ), !reply.isEmpty {
       bridgeParams["selectedMessageGuid"] = reply
     }
+    if let rawSchedule = stringParam(
+      params["schedule"] ?? params["scheduled_at"] ?? params["scheduledAt"]),
+      !rawSchedule.isEmpty
+    {
+      guard let scheduledAt = CLIISO8601.parse(rawSchedule) else {
+        throw RPCError.invalidParams("schedule must be ISO8601")
+      }
+      guard scheduledAt > Date() else {
+        throw RPCError.invalidParams("schedule must be in the future")
+      }
+      bridgeParams["scheduledAt"] = CLIISO8601.format(scheduledAt)
+    }
     if let formatting = params["text_formatting"] ?? params["textFormatting"] {
       bridgeParams["textFormatting"] = formatting
     }
@@ -44,6 +56,7 @@ extension RPCServer {
       chatGUID: chatGUID
     )
     if data["queued"] as? Bool == true,
+      data["scheduledAt"] == nil,
       !text.isEmpty,
       let sentMessage = try? await resolveSentMessage(store, options, chatID, sentAt),
       !sentMessage.guid.isEmpty
@@ -80,6 +93,52 @@ extension RPCServer {
     if let guid = data["messageGuid"] as? String, !guid.isEmpty {
       result["guid"] = guid
       result["message_id"] = guid
+    }
+    respond(id: id, result: result)
+  }
+
+  func handleScheduledCreate(params: [String: Any], id: Any?) async throws {
+    var scheduledParams = params
+    if scheduledParams["schedule"] == nil,
+      let scheduledAt = scheduledParams["scheduled_at"] ?? scheduledParams["scheduledAt"]
+    {
+      scheduledParams["schedule"] = scheduledAt
+    }
+    guard stringParam(scheduledParams["schedule"])?.isEmpty == false else {
+      throw RPCError.invalidParams("schedule is required")
+    }
+    try await handleSendRich(params: scheduledParams, id: id)
+  }
+
+  func handleScheduledList(params: [String: Any], id: Any?) async throws {
+    let limit = intParam(params["limit"]) ?? 50
+    let messages = try store.scheduledMessages(limit: limit)
+    let payloads = try messages.map { message -> [String: Any] in
+      let data = try JSONLines.encode(ScheduledMessagePayload(message)).data(using: .utf8) ?? Data()
+      return try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+    }
+    respond(id: id, result: ["messages": payloads])
+  }
+
+  func handleScheduledCancel(params: [String: Any], id: Any?) async throws {
+    guard
+      let guid = stringParam(params["guid"] ?? params["message_guid"] ?? params["messageGuid"]),
+      !guid.isEmpty
+    else {
+      throw RPCError.invalidParams("guid is required")
+    }
+    var bridgeParams: [String: Any] = ["messageGuid": guid]
+    if let chatGUID = stringParam(params["chat_guid"] ?? params["chatGuid"]), !chatGUID.isEmpty {
+      bridgeParams["chatGuid"] = chatGUID
+    } else if let chatID = int64Param(params["chat_id"]),
+      let info = try await cache.info(chatID: chatID)
+    {
+      bridgeParams["chatGuid"] = info.guid.isEmpty ? info.identifier : info.guid
+    }
+    let data = try await invokeBridge(action: .cancelScheduledMessage, params: bridgeParams)
+    var result: [String: Any] = ["ok": true, "guid": guid]
+    for (key, value) in data {
+      result[key] = value
     }
     respond(id: id, result: result)
   }

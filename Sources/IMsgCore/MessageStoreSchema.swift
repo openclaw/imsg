@@ -12,6 +12,8 @@ struct MessageStoreSchema: Sendable {
   let hasPayloadDataColumn: Bool
   let hasMessageSummaryInfoColumn: Bool
   let hasReplyToGUIDColumn: Bool
+  let hasScheduleTypeColumn: Bool
+  let hasScheduleStateColumn: Bool
   let hasChatMessageJoinMessageDateColumn: Bool
   let hasChatAccountIDColumn: Bool
   let hasChatAccountLoginColumn: Bool
@@ -37,6 +39,8 @@ struct MessageStoreSchema: Sendable {
     self.hasPayloadDataColumn = messageColumns.contains("payload_data")
     self.hasMessageSummaryInfoColumn = messageColumns.contains("message_summary_info")
     self.hasReplyToGUIDColumn = messageColumns.contains("reply_to_guid")
+    self.hasScheduleTypeColumn = messageColumns.contains("schedule_type")
+    self.hasScheduleStateColumn = messageColumns.contains("schedule_state")
     self.hasChatMessageJoinMessageDateColumn = chatMessageJoinColumns.contains("message_date")
     self.hasChatAccountIDColumn = chatColumns.contains("account_id")
     self.hasChatAccountLoginColumn = chatColumns.contains("account_login")
@@ -56,6 +60,8 @@ struct MessageStoreSchema: Sendable {
     hasPayloadDataColumn: Bool? = nil,
     hasMessageSummaryInfoColumn: Bool? = nil,
     hasReplyToGUIDColumn: Bool? = nil,
+    hasScheduleTypeColumn: Bool? = nil,
+    hasScheduleStateColumn: Bool? = nil,
     hasChatMessageJoinMessageDateColumn: Bool? = nil,
     hasChatAccountIDColumn: Bool? = nil,
     hasChatAccountLoginColumn: Bool? = nil,
@@ -75,6 +81,8 @@ struct MessageStoreSchema: Sendable {
     self.hasMessageSummaryInfoColumn =
       hasMessageSummaryInfoColumn ?? base.hasMessageSummaryInfoColumn
     self.hasReplyToGUIDColumn = hasReplyToGUIDColumn ?? base.hasReplyToGUIDColumn
+    self.hasScheduleTypeColumn = hasScheduleTypeColumn ?? base.hasScheduleTypeColumn
+    self.hasScheduleStateColumn = hasScheduleStateColumn ?? base.hasScheduleStateColumn
     self.hasChatMessageJoinMessageDateColumn =
       hasChatMessageJoinMessageDateColumn ?? base.hasChatMessageJoinMessageDateColumn
     self.hasChatAccountIDColumn = hasChatAccountIDColumn ?? base.hasChatAccountIDColumn

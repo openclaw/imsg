@@ -89,6 +89,65 @@ func sendRichTextOnlyStillUsesMessageBridge() async throws {
 }
 
 @Test
+func sendRichScheduledMessagePassesScheduleToBridge() async throws {
+  let scheduledAt = CLIISO8601.format(Date().addingTimeInterval(3600))
+  let values = ParsedValues(
+    positional: [],
+    options: [
+      "chat": ["iMessage;-;+15551234567"],
+      "text": ["later"],
+      "schedule": [scheduledAt],
+    ],
+    flags: ["jsonOutput"]
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
+
+  _ = try await StdoutCapture.capture {
+    try await SendRichCommand.run(
+      values: values,
+      runtime: runtime,
+      invokeBridge: { action, params in
+        capturedAction = action
+        capturedParams = params
+        return ["messageGuid": "scheduled-guid", "queued": true, "scheduledAt": scheduledAt]
+      }
+    )
+  }
+
+  #expect(capturedAction == .sendMessage)
+  #expect(capturedParams["scheduledAt"] as? String == scheduledAt)
+}
+
+@Test
+func scheduledCancelInvokesBridge() async throws {
+  let values = ParsedValues(
+    positional: ["cancel", "scheduled-guid"],
+    options: [:],
+    flags: ["jsonOutput"]
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
+
+  _ = try await StdoutCapture.capture {
+    try await ScheduledCommand.run(
+      values: values,
+      runtime: runtime,
+      invokeBridge: { action, params in
+        capturedAction = action
+        capturedParams = params
+        return ["cancelled": true]
+      }
+    )
+  }
+
+  #expect(capturedAction == .cancelScheduledMessage)
+  #expect(capturedParams["messageGuid"] as? String == "scheduled-guid")
+}
+
+@Test
 func sendRichJsonResolvesQueuedBridgeGuidBeforeEmitting() async throws {
   let values = ParsedValues(
     positional: [],

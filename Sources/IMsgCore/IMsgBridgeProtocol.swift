@@ -68,6 +68,7 @@ public enum BridgeAction: String, Sendable, CaseIterable {
   case sendPollVote = "send-poll-vote"
   case sendReaction = "send-reaction"
   case notifyAnyways = "notify-anyways"
+  case cancelScheduledMessage = "cancel-scheduled-message"
 
   // Mutate
   case editMessage = "edit-message"
