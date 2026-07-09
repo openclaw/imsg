@@ -239,6 +239,37 @@ func bridgeReplySendsKeepAssociatedMessageFallback() throws {
 }
 
 @Test
+func bridgeV2InboxClaimsRequestBeforeDispatch() throws {
+  let testFile = URL(fileURLWithPath: #filePath)
+  let repoRoot =
+    testFile
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
+  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
+  let processBody = try #require(functionBody(named: "processV2InboxFile", in: source))
+  let cleanupBody = try #require(functionBody(named: "cleanupOrphanedV2Claims", in: source))
+  let scanBody = try #require(functionBody(named: "scanV2Inbox", in: source))
+  let claim = try #require(
+    processBody.range(of: "rename(inPath.UTF8String, claimPath.UTF8String)"))
+  let read = try #require(
+    processBody.range(of: "dataWithContentsOfFile:claimPath"))
+  let dispatch = try #require(processBody.range(of: "processV2Envelope(envelope)"))
+
+  #expect(processBody.contains(#"@"%@.processing.%d""#))
+  #expect(processBody.contains("claimErrno != ENOENT"))
+  #expect(processBody.contains("removeItemAtPath:claimPath"))
+  #expect(!processBody.contains("processedRpcIds"))
+  #expect(claim.lowerBound < read.lowerBound)
+  #expect(read.lowerBound < dispatch.lowerBound)
+  #expect(cleanupBody.contains("kill(ownerPID, 0)"))
+  #expect(cleanupBody.contains("kV2ClaimMaxAge"))
+  #expect(cleanupBody.contains("removeItemAtPath:path"))
+  #expect(scanBody.contains("cleanupOrphanedV2Claims(entries)"))
+}
+
+@Test
 func injectedHelperWiresNativePollSend() throws {
   let testFile = URL(fileURLWithPath: #filePath)
   let repoRoot =
@@ -361,6 +392,9 @@ func injectedHelperConstructorOnlySchedulesDelayedBootstrap() throws {
   let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
   let constructorBody = try #require(functionBody(named: "injectedInit", in: source))
   let bootstrapBody = try #require(functionBody(named: "bridgeBootstrap", in: source))
+  let cleanupBody = try #require(functionBody(named: "injectedCleanup", in: source))
+  let bundleGuard = try #require(bootstrapBody.range(of: "com.apple.MobileSMS"))
+  let initializePaths = try #require(bootstrapBody.range(of: "initFilePaths()"))
 
   #expect(constructorBody.contains("dispatch_after"))
   #expect(constructorBody.contains("dispatch_async"))
@@ -374,10 +408,13 @@ func injectedHelperConstructorOnlySchedulesDelayedBootstrap() throws {
 
   #expect(bootstrapBody.contains("dispatch_once"))
   #expect(bootstrapBody.contains("@autoreleasepool"))
+  #expect(bundleGuard.lowerBound < initializePaths.lowerBound)
+  #expect(bootstrapBody.contains("bridgeDidBootstrap = YES"))
   #expect(bootstrapBody.contains("connectToDaemon"))
   #expect(bootstrapBody.contains("startFileWatcher()"))
   #expect(bootstrapBody.contains("startV2InboxWatcher()"))
   #expect(bootstrapBody.contains("registerEventObservers()"))
+  #expect(cleanupBody.contains("if (!bridgeDidBootstrap) return;"))
 }
 
 private func stripObjectiveCComments(_ source: String) -> String {
