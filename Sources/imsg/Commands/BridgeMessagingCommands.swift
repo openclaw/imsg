@@ -253,7 +253,32 @@ enum SendRichCommand {
     storeFactory: (String) throws -> MessageStore
   ) async throws -> [String: Any] {
     var enriched = data
-    guard !text.isEmpty, data["queued"] as? Bool == true, data["scheduledAt"] == nil else {
+    if let rawScheduledAt = data["scheduledAt"] as? String,
+      let scheduledAt = CLIISO8601.parse(rawScheduledAt)
+    {
+      do {
+        let store = try storeFactory(dbPath)
+        if let scheduledMessage = try store.scheduledMessage(
+          chatGUID: chat,
+          scheduledAt: scheduledAt)
+        {
+          enriched["id"] = scheduledMessage.rowID
+          enriched["guid"] = scheduledMessage.guid
+          enriched["message_id"] = scheduledMessage.guid
+          enriched["messageGuid"] = scheduledMessage.guid
+          enriched["scheduled_at"] = CLIISO8601.format(scheduledMessage.scheduledAt)
+          enriched["schedule_type"] = scheduledMessage.scheduleType
+          enriched["schedule_state"] = scheduledMessage.scheduleState
+        }
+      } catch {
+        if data["queued"] as? Bool == true {
+          enriched.removeValue(forKey: "messageGuid")
+        }
+      }
+      return enriched
+    }
+
+    guard !text.isEmpty, data["queued"] as? Bool == true else {
       return enriched
     }
 

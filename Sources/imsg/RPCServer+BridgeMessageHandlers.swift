@@ -55,7 +55,19 @@ extension RPCServer {
       service: .auto,
       chatGUID: chatGUID
     )
-    if data["queued"] as? Bool == true,
+    if let rawScheduledAt = data["scheduledAt"] as? String,
+      let scheduledAt = CLIISO8601.parse(rawScheduledAt),
+      let scheduledMessage = try? store.scheduledMessage(
+        chatGUID: chatGUID,
+        scheduledAt: scheduledAt)
+    {
+      result["guid"] = scheduledMessage.guid
+      result["message_id"] = scheduledMessage.guid
+      result["id"] = scheduledMessage.rowID
+      result["scheduled_at"] = CLIISO8601.format(scheduledMessage.scheduledAt)
+      result["schedule_type"] = scheduledMessage.scheduleType
+      result["schedule_state"] = scheduledMessage.scheduleState
+    } else if data["queued"] as? Bool == true,
       data["scheduledAt"] == nil,
       !text.isEmpty,
       let sentMessage = try? await resolveSentMessage(store, options, chatID, sentAt),
@@ -63,7 +75,7 @@ extension RPCServer {
     {
       result["guid"] = sentMessage.guid
       result["message_id"] = sentMessage.guid
-    } else if data["queued"] as? Bool != true,
+    } else if data["queued"] as? Bool != true || data["scheduledAt"] != nil,
       let guid = data["messageGuid"] as? String, !guid.isEmpty
     {
       result["guid"] = guid

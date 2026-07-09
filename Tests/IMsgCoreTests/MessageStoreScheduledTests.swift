@@ -36,6 +36,11 @@ func scheduledMessagesListsRowsWithScheduleColumns() throws {
   #expect(messages[0].chatGUID == "iMessage;-;+123")
   #expect(messages[0].scheduleType == 2)
   #expect(messages[0].scheduleState == 1)
+  let resolved = try store.scheduledMessage(
+    chatGUID: "iMessage;-;+123",
+    scheduledAt: Date(timeIntervalSince1970: 1_767_225_600)
+  )
+  #expect(resolved?.guid == "scheduled-guid")
 }
 
 @Test

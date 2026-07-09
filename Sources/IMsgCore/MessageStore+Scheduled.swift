@@ -87,4 +87,15 @@ extension MessageStore {
       return results
     }
   }
+
+  public func scheduledMessage(chatGUID: String, scheduledAt: Date) throws -> ScheduledMessage? {
+    let target = chatGUID.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !target.isEmpty else { return nil }
+    let scheduledRows = try scheduledMessages(limit: 100)
+    return scheduledRows.first { message in
+      let sameChat = message.chatGUID == target || message.chatIdentifier == target
+      let sameTime = abs(message.scheduledAt.timeIntervalSince(scheduledAt)) < 2
+      return sameChat && sameTime
+    }
+  }
 }
