@@ -10,7 +10,6 @@ struct IMsgBridgeProtocolTests {
     #expect(BridgeAction.sendMessage.rawValue == "send-message")
     #expect(BridgeAction.sendPoll.rawValue == "send-poll")
     #expect(BridgeAction.sendPollUnvote.rawValue == "send-poll-unvote")
-    #expect(BridgeAction.sendPollAddOption.rawValue == "send-poll-add-option")
     #expect(BridgeAction.sendReaction.rawValue == "send-reaction")
     #expect(BridgeAction.editMessage.rawValue == "edit-message")
     #expect(BridgeAction.unsendMessage.rawValue == "unsend-message")
@@ -98,7 +97,6 @@ struct IMsgBridgeProtocolTests {
       .sendPoll,
       .sendPollVote,
       .sendPollUnvote,
-      .sendPollAddOption,
       .sendReaction,
       .createChat,
     ] {

@@ -253,13 +253,11 @@ Response:
 ```
 
 `poll.vote` casts a native vote after validating the poll and option against local history.
-`polls.unvote` removes a selection with the same poll/option parameters, and
-`polls.addOption` appends a new choice:
+`polls.unvote` removes a selection with the same poll/option parameters:
 
 ```json
 {"jsonrpc":"2.0","id":"vote","method":"poll.vote","params":{"chat_id":42,"poll_guid":"POLL-GUID","option_id":"OPTION-UUID"}}
 {"jsonrpc":"2.0","id":"unvote","method":"polls.unvote","params":{"chat_id":42,"poll_guid":"POLL-GUID","option_id":"OPTION-UUID"}}
-{"jsonrpc":"2.0","id":"add","method":"polls.addOption","params":{"chat_id":42,"poll_guid":"POLL-GUID","option":"Tacos"}}
 ```
 
 `messages.poll.send` is accepted as an alias for `poll.send`. The caption echo is deliberately best-effort: if the poll is created but the follow-up caption send fails, the RPC still returns the poll result to avoid retrying and creating a duplicate poll.

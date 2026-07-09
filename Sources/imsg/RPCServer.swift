@@ -45,9 +45,6 @@ let kSupportedRPCMethods: [String] = [
   "poll.unvote",
   "polls.unvote",
   "messages.poll.unvote",
-  "poll.addOption",
-  "polls.addOption",
-  "messages.poll.addOption",
   "tapback",
   "typing",
   "read",
@@ -172,8 +169,6 @@ final class RPCServer {
         try await handlePollVote(params: params, id: id)
       case "poll.unvote", "polls.unvote", "messages.poll.unvote":
         try await handlePollUnvote(params: params, id: id)
-      case "poll.addOption", "polls.addOption", "messages.poll.addOption":
-        try await handlePollAddOption(params: params, id: id)
       case "tapback":
         try await handleTapback(params: params, id: id)
       case "typing":

@@ -9,7 +9,7 @@ enum PollCommand {
     discussion: """
       Requires `imsg launch` (SIP-disabled, dylib injected). Use the `send`
       action to create a native Messages Polls extension balloon, `vote`/`unvote`
-      to select or remove a selection, or `add-option` to append a choice.
+      to select or remove a selection.
 
       Messages renders only the options on a poll balloon — the poll title is
       never shown to recipients. So `send` automatically sends `--question` as a
@@ -22,7 +22,7 @@ enum PollCommand {
     signature: CommandSignatures.withRuntimeFlags(
       CommandSignature(
         arguments: [
-          .make(label: "action", help: "send|vote|unvote|add-option", isOptional: false)
+          .make(label: "action", help: "send|vote|unvote", isOptional: false)
         ],
         options: CommandSignatures.baseOptions() + [
           .make(label: "chat", names: [.long("chat")], help: "chat guid or rowid"),
@@ -46,7 +46,7 @@ enum PollCommand {
             help: "poll option text; pass at least twice"),
           .make(
             label: "poll", names: [.long("poll")],
-            help: "vote/unvote/add-option: guid of the poll message to update"),
+            help: "vote/unvote: guid of the poll message to update"),
           .make(
             label: "optionID", names: [.long("option-id")],
             help: "vote/unvote: UUID of the option to select"),
@@ -62,7 +62,6 @@ enum PollCommand {
       "imsg poll send --chat 'iMessage;-;+15551234567' --reply-to ABCD --question 'Approve?' --option 'Yes' --option 'No'",
       "imsg poll vote --chat 'iMessage;-;+15551234567' --poll ABCD --option-id 1B2C-...",
       "imsg poll unvote --chat 'iMessage;-;+15551234567' --poll ABCD --option-index 1",
-      "imsg poll add-option --chat 'iMessage;-;+15551234567' --poll ABCD --option 'Tacos'",
     ]
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
@@ -88,9 +87,6 @@ enum PollCommand {
     case "unvote":
       try await runVote(
         remove: true,
-        values: values, runtime: runtime, storeFactory: storeFactory, invokeBridge: invokeBridge)
-    case "add-option":
-      try await runAddOption(
         values: values, runtime: runtime, storeFactory: storeFactory, invokeBridge: invokeBridge)
     default:
       throw ParsedValuesError.invalidOption("action")
@@ -212,48 +208,6 @@ enum PollCommand {
         summary: guid.isEmpty
           ? "\(remove ? "unvote" : "vote"): queued"
           : "\(remove ? "unvote" : "vote"): sent (guid=\(guid))")
-    } catch {
-      BridgeOutput.emitError(String(describing: error), runtime: runtime)
-      throw BridgeOutput.EmittedError()
-    }
-  }
-
-  private static func runAddOption(
-    values: ParsedValues,
-    runtime: RuntimeOptions,
-    storeFactory: @escaping (String) throws -> MessageStore,
-    invokeBridge: @escaping (BridgeAction, [String: Any]) async throws -> [String: Any]
-  ) async throws {
-    let chat = try resolveChatGUID(values: values, storeFactory: storeFactory)
-    guard let pollGuid = values.option("poll")?.trimmingCharacters(in: .whitespacesAndNewlines),
-      !pollGuid.isEmpty
-    else {
-      throw ParsedValuesError.missingOption("poll")
-    }
-    guard let option = values.option("option")?.trimmingCharacters(in: .whitespacesAndNewlines),
-      !option.isEmpty
-    else {
-      throw ParsedValuesError.missingOption("option")
-    }
-    let dbPath = values.option("db") ?? MessageStore.defaultPath
-    let store = try storeFactory(dbPath)
-    let options = try store.pollOptions(guid: pollGuid)
-    guard !options.isEmpty else {
-      throw ParsedValuesError.invalidOption("poll (could not decode options for \(pollGuid))")
-    }
-
-    let params: [String: Any] = [
-      "chatGuid": chat,
-      "pollMessageGuid": barePollGuid(pollGuid),
-      "optionText": option,
-    ]
-
-    do {
-      let data = try await invokeBridge(.sendPollAddOption, params)
-      let guid = (data["messageGuid"] as? String) ?? ""
-      BridgeOutput.emit(
-        data, runtime: runtime,
-        summary: guid.isEmpty ? "poll option: queued" : "poll option: sent (guid=\(guid))")
     } catch {
       BridgeOutput.emitError(String(describing: error), runtime: runtime)
       throw BridgeOutput.EmittedError()

@@ -78,7 +78,6 @@ Only after `imsg status` confirms the bridge is loaded (`imsg launch` injects it
 imsg send-rich --chat 'iMessage;-;+15551234567' --text 'hi' --reply-to MSG_GUID   # replies, effects, subjects
 imsg poll send --chat GUID --question 'Dinner?' --option 'Pizza' --option 'Sushi' --comment 'Vote by 5pm'
 imsg poll unvote --chat GUID --poll POLL_GUID --option-index 1
-imsg poll add-option --chat GUID --poll POLL_GUID --option 'Tacos'
 imsg edit --chat GUID --message MSG_GUID --new-text 'updated'                     # macOS 13+
 imsg chat-create --addresses '+15551234567,+15559876543' --name 'Crew'
 ```

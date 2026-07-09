@@ -16,7 +16,6 @@ func rpcStatusAdvertisesBridgeMessageMethods() {
     "poll.vote",
     "messages.poll.vote",
     "polls.unvote",
-    "polls.addOption",
     "tapback",
     "message.edit",
     "message.unsend",
@@ -59,38 +58,6 @@ func rpcPollUnvoteValidatesAndResolvesOption() async throws {
   #expect(result?["event"] as? String == "imessage.poll.unvoted")
   #expect(result?["option_text"] as? String == "Yes")
   #expect(result?["message_id"] as? String == "unvote-guid")
-}
-
-@Test
-func rpcPollAddOptionInvokesBridgeWithValidatedPoll() async throws {
-  let store = try CommandTestDatabase.makeStoreForRPCWithPollVote()
-  let output = TestRPCOutput()
-  var capturedAction: BridgeAction?
-  var capturedParams: [String: Any] = [:]
-  let server = RPCServer(
-    store: store,
-    verbose: false,
-    output: output,
-    invokeBridge: { action, params in
-      capturedAction = action
-      capturedParams = params
-      return ["messageGuid": "add-guid", "optionIdentifier": "choice-tacos"]
-    }
-  )
-
-  let request =
-    #"{"jsonrpc":"2.0","id":"add","method":"polls.addOption","params":{"chat_id":1,"#
-    + #""poll_guid":"p:0/poll-guid-6","option":"Tacos"}}"#
-  await server.handleLineForTesting(request)
-
-  #expect(capturedAction == .sendPollAddOption)
-  #expect(capturedParams["chatGuid"] as? String == "iMessage;+;chat123")
-  #expect(capturedParams["pollMessageGuid"] as? String == "poll-guid-6")
-  #expect(capturedParams["optionText"] as? String == "Tacos")
-  let result = output.responses.first?["result"] as? [String: Any]
-  #expect(result?["event"] as? String == "imessage.poll.option_added")
-  #expect(result?["option_text"] as? String == "Tacos")
-  #expect(result?["option_id"] as? String == "choice-tacos")
 }
 
 @Test
