@@ -71,17 +71,18 @@ func bridgeAttachmentStagingUsesChatGuid() throws {
       in: source
     ))
 
+  let prepareSignature =
+    #"prepareOutgoingTransfer\s*\([^)]*NSString\s*\*chatGuid\s*,"#
+    + #"\s*BOOL\s+hideAttachment\s*,\s*NSString\s*\*mimeType\s*,"#
+    + #"\s*NSString\s*\*\*outErr\)"#
+  #expect(source.range(of: prepareSignature, options: .regularExpression) != nil)
   #expect(
-    source.range(
-      of: #"prepareOutgoingTransfer\s*\([^)]*NSString\s*\*chatGuid\s*,\s*NSString\s*\*\*outErr\)"#,
-      options: .regularExpression
-    ) != nil)
-  #expect(
-    prepareBody.contains(
+    source.contains(
       "_persistentPathForTransfer:filename:highQuality:chatGUID:storeAtExternalPath:"))
-  #expect(prepareBody.contains("[inv setArgument:&cg atIndex:5];"))
+  #expect(source.contains("[inv setArgument:&cg atIndex:5];"))
   #expect(
-    sendAttachmentBody.contains("prepareOutgoingTransfer(fileURL, filename, chatGuid, &prepErr)"))
+    sendAttachmentBody.contains("prepareOutgoingTransfer(fileURL, filename, chatGuid"))
+  #expect(sendAttachmentBody.contains("NO, nil, &prepErr"))
 }
 
 @Test
