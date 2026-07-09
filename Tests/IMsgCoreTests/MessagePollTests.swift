@@ -651,11 +651,13 @@ func messageStoreDecodesPollVoteRowsWithPayloadGate() throws {
   #expect(voteMessage.poll?.vote?.optionText == "A")
   #expect(unvoteMessage.poll?.kind == .vote)
   #expect(unvoteMessage.poll?.originalGUID == "original-poll-guid")
-  #expect(unvoteMessage.poll?.votes?.isEmpty == true)
+  #expect(unvoteMessage.poll?.vote == nil)
+  #expect(unvoteMessage.poll?.votes?.isEmpty ?? true)
   #expect(streamedVote.poll?.kind == .vote)
   #expect(streamedVote.poll?.vote?.optionText == "A")
   #expect(streamedUnvote.poll?.kind == .vote)
-  #expect(streamedUnvote.poll?.votes?.isEmpty == true)
+  #expect(streamedUnvote.poll?.vote == nil)
+  #expect(streamedUnvote.poll?.votes?.isEmpty ?? true)
 }
 
 @Test
