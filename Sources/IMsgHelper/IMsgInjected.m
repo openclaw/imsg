@@ -4083,40 +4083,9 @@ static BOOL invokeChatBackgroundSelector(
 }
 
 static NSDictionary *handleSetChatBackground(NSInteger requestId, NSDictionary *params) {
-    if (!isMacOS26OrLater()) {
-        return errorResponse(requestId, @"Chat backgrounds require macOS 26 or later");
-    }
-    NSString *chatGuid = params[@"chatGuid"];
-    NSString *filePath = params[@"filePath"];
-    if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
-    if (!filePath.length) return errorResponse(requestId, @"Missing filePath");
-    IMChat *chat = resolveChatByGuid(chatGuid);
-    if (!chat) return errorResponse(requestId, @"Chat not found");
-
-    for (NSString *name in chatBackgroundSetSelectors()) {
-        SEL sel = NSSelectorFromString(name);
-        if (![chat respondsToSelector:sel]) continue;
-        NSURL *fileURL = [NSURL fileURLWithPath:filePath];
-        NSString *prepErr = nil;
-        IMFileTransfer *transfer = prepareOutgoingTransfer(fileURL,
-            [fileURL lastPathComponent], chatGuid, &prepErr);
-        if (!transfer || ![transfer guid].length) {
-            return errorResponse(requestId,
-                prepErr.length ? prepErr : @"Could not prepare chat-background transfer");
-        }
-        NSString *invokeErr = nil;
-        NSString *transferGuid = [transfer guid];
-        if (invokeChatBackgroundSelector(chat, sel, nil, transferGuid, &invokeErr)) {
-            return successResponse(requestId, @{
-                @"chatGuid": chatGuid,
-                @"background_set": @YES,
-                @"selector": name,
-                @"transferGuid": transferGuid
-            });
-        }
-        return errorResponse(requestId, invokeErr ?: @"chat-background set failed");
-    }
-    return errorResponse(requestId, @"No chat-background set selector available");
+    (void)params;
+    return errorResponse(requestId,
+        @"chat-background set is not implemented: native backgrounds require PosterKit channel state; use status or clear");
 }
 
 static NSDictionary *handleClearChatBackground(NSInteger requestId, NSDictionary *params) {

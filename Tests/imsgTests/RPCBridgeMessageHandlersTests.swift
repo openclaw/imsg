@@ -329,23 +329,20 @@ func rpcChatBackgroundRemoveInvokesBridge() async throws {
 }
 
 @Test
-func rpcChatBackgroundSetStagesFileBeforeBridgeSend() async throws {
+func rpcChatBackgroundSetReturnsUnsupported() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()
-  var stagedInput: String?
-  var capturedAction: BridgeAction?
-  var capturedParams: [String: Any] = [:]
+  var invokedBridge = false
   let server = RPCServer(
     store: store,
     verbose: false,
     output: output,
-    invokeBridge: { action, params in
-      capturedAction = action
-      capturedParams = params
-      return ["background_set": true]
+    invokeBridge: { _, _ in
+      invokedBridge = true
+      return [:]
     },
-    stageAttachment: { path in
-      stagedInput = path
+    stageAttachment: { _ in
+      Issue.record("set should not stage files")
       return "/tmp/staged-bg.png"
     }
   )
@@ -355,9 +352,9 @@ func rpcChatBackgroundSetStagesFileBeforeBridgeSend() async throws {
     + #""chat_id":1,"file":"~/Desktop/bg.png"}}"#
   await server.handleLineForTesting(line)
 
-  #expect(stagedInput?.hasSuffix("/Desktop/bg.png") == true)
-  #expect(capturedAction == .setChatBackground)
-  #expect(capturedParams["filePath"] as? String == "/tmp/staged-bg.png")
-  let result = output.responses.first?["result"] as? [String: Any]
-  #expect(result?["ok"] as? Bool == true)
+  #expect(invokedBridge == false)
+  #expect(output.responses.isEmpty)
+  let error = output.errors.first?["error"] as? [String: Any]
+  #expect((error?["code"] as? Int) == -32602)
+  #expect((error?["data"] as? String)?.contains("PosterKit channel state") == true)
 }

@@ -238,7 +238,8 @@ enum CommandTestDatabase {
         service_name TEXT,
         account_id TEXT,
         account_login TEXT,
-        last_addressed_handle TEXT
+        last_addressed_handle TEXT,
+        properties BLOB
       );
       """
     )
