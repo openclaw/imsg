@@ -144,6 +144,24 @@ Inside the `attachments` array on a message:
 | `converted_path` | string | Present with `--convert-attachments`. |
 | `converted_mime_type` | string | Present with `--convert-attachments`. |
 
+## Statistics aggregate
+
+Returned as one object by `imsg stats --json` and as the result of JSON-RPC `messages.stats`.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `total_messages` | int | Logical messages after reaction exclusion and URL-preview coalescing. |
+| `sent_messages` | int | Outbound logical messages. |
+| `received_messages` | int | Inbound logical messages. |
+| `time_zone` | string | Resolved timezone used for `dates`. |
+| `chats` | array | Counts grouped by chat. |
+| `senders` | array | Inbound counts grouped by sender handle. |
+| `services` | array | Counts grouped by message service. |
+| `dates` | array | Counts grouped by local `YYYY-MM-DD` date. |
+| `media` | object | Present only when `--media` / `include_media` is requested. Distinct attachment totals plus type/chat groups. |
+
+See [Statistics](stats.md) for filtering, ordering, and timezone behavior.
+
 ## Conventions
 
 - Every numeric field is a JSON number. `id`, `chat_id`, and `byte_size` are integers; nothing requires 64-bit JSON-string encoding.

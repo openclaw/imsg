@@ -10,7 +10,11 @@ enum StatsCommand {
     signature: CommandSignatures.withRuntimeFlags(
       CommandSignature(
         options: CommandSignatures.baseOptions() + [
-          .make(label: "chatID", names: [.long("chat-id")], help: "Limit stats to a chat rowid")
+          .make(label: "chatID", names: [.long("chat-id")], help: "Limit stats to a chat rowid"),
+          .make(
+            label: "timeZone", names: [.long("time-zone")],
+            help: "IANA time zone for date buckets (defaults to local)"
+          ),
         ],
         flags: [
           .make(label: "media", names: [.long("media")], help: "include attachment statistics")
@@ -19,7 +23,7 @@ enum StatsCommand {
     ),
     usageExamples: [
       "imsg stats",
-      "imsg stats --chat-id 42 --media --json",
+      "imsg stats --chat-id 42 --time-zone Europe/Vienna --media --json",
     ]
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
@@ -27,10 +31,22 @@ enum StatsCommand {
 
   static func run(values: ParsedValues, runtime: RuntimeOptions) async throws {
     let dbPath = values.option("db") ?? MessageStore.defaultPath
-    let chatID = values.optionInt64("chatID")
+    let chatID: Int64?
+    if let rawChatID = values.option("chatID") {
+      guard let parsed = Int64(rawChatID) else {
+        throw ParsedValuesError.invalidOption("chat-id")
+      }
+      chatID = parsed
+    } else {
+      chatID = nil
+    }
     let includeMedia = values.flag("media")
     let store = try MessageStore(path: dbPath)
-    let stats = try store.messageStats(chatID: chatID, includeMedia: includeMedia)
+    let stats = try store.messageStats(
+      chatID: chatID,
+      includeMedia: includeMedia,
+      timeZoneIdentifier: values.option("timeZone")
+    )
 
     if runtime.jsonOutput {
       try JSONLines.print(stats)
@@ -41,7 +57,10 @@ enum StatsCommand {
   }
 
   private static func printSummary(_ stats: MessageStats) {
-    StdoutWriter.writeLine("Messages: \(stats.totalMessages)")
+    StdoutWriter.writeLine(
+      "Messages: \(stats.totalMessages) (\(stats.sentMessages) sent, \(stats.receivedMessages) received)"
+    )
+    StdoutWriter.writeLine("Time zone: \(stats.timeZone)")
 
     if !stats.chats.isEmpty {
       StdoutWriter.writeLine("By chat:")
@@ -51,10 +70,10 @@ enum StatsCommand {
       }
     }
 
-    if !stats.handles.isEmpty {
-      StdoutWriter.writeLine("By handle:")
-      for handle in stats.handles {
-        StdoutWriter.writeLine("  \(handle.handle): \(handle.messageCount)")
+    if !stats.senders.isEmpty {
+      StdoutWriter.writeLine("By sender:")
+      for sender in stats.senders {
+        StdoutWriter.writeLine("  \(sender.handle): \(sender.messageCount)")
       }
     }
 

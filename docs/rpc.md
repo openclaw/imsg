@@ -37,44 +37,32 @@ Result:
 { "chats": [Chat] }
 ```
 
-### `server.getMessageStats`
+### `messages.stats`
 
 Params:
 
 - `chat_id` (int, optional)
-- `media` / `include_media` (bool, default `false`)
+- `time_zone` (IANA identifier, optional; defaults to the local timezone)
+- `include_media` (bool, default `false`)
 
 Result:
 
 ```json
 {
   "total_messages": 123,
+  "sent_messages": 60,
+  "received_messages": 63,
+  "time_zone": "Europe/Vienna",
   "chats": [],
-  "handles": [],
+  "senders": [],
   "services": [],
-  "dates": [],
-  "media": null
+  "dates": []
 }
 ```
 
-When media is requested, `media` includes attachment totals and byte counts grouped by
-UTI/MIME and chat.
-
-### `getMediaStatistics`
-
-Params:
-
-- `chat_id` (int, optional)
-
-Result: a media statistics object with `total_attachments`, `total_bytes`, `types`, and `chats`.
-
-### `getMediaStatisticsByChat`
-
-Params:
-
-- `chat_id` (int, required)
-
-Result: the same media statistics object, scoped to one chat.
+When media is requested, `media` includes distinct attachment totals and bytes grouped by
+UTI/MIME and chat. Otherwise the `media` key is omitted. Invalid, non-positive, or nonexistent
+`chat_id` values return invalid params rather than widening to all chats.
 
 ### `messages.history`
 

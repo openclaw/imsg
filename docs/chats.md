@@ -87,16 +87,3 @@ imsg chats --json | jq -s 'map(select(.service == "SMS"))'
 ```
 
 For more targeted history queries with date and participant filters, use [`imsg history`](history.md).
-
-## Message statistics
-
-`imsg stats` aggregates message counts without launching the IMCore bridge:
-
-```bash
-imsg stats
-imsg stats --chat-id 42 --media --json
-```
-
-The JSON payload includes `total_messages` plus grouped counts under `chats`, `handles`,
-`services`, and `dates`. `--media` adds attachment totals and byte counts grouped by UTI/MIME
-and by chat. All queries are read-only against `chat.db`.

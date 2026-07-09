@@ -15,6 +15,9 @@ imsg chats --limit 10 --json | jq -s
 # Read history from one chat, with attachment metadata.
 imsg history --chat-id 42 --limit 20 --attachments --json
 
+# Summarize logical message and media counts.
+imsg stats --time-zone Europe/Vienna --media --json
+
 # Stream new messages live, including tapbacks.
 imsg watch --chat-id 42 --reactions --json
 
@@ -43,6 +46,7 @@ imsg send --to "Jane Appleseed" --file ~/Desktop/voice.m4a
 - **Trying it.** [Install](install.md) → [Quickstart](quickstart.md). Five minutes from `brew install` to a streaming watch.
 - **Reading on Linux.** [Linux read-only preview](linux.md) covers copying an existing database from macOS and running read-only commands.
 - **Wiring up an agent.** [JSON output](json.md) and [JSON-RPC](rpc.md) cover the stable contracts; [completions](completions.md) shows how to feed the CLI reference into an LLM.
+- **Analyzing local history.** [Statistics](stats.md) explains logical counts, timezone-aware date buckets, and optional media totals.
 - **Sending messages.** [Send](send.md) and [React](send.md#standard-tapbacks) explain text/file/group sends and how the Tahoe ghost-row check works.
 - **Diagnosing access.** [Permissions](permissions.md) and [Troubleshooting](troubleshooting.md).
 - **Advanced IMCore.** [Read receipts, typing, status, launch](advanced-imcore.md). SIP-disabled and increasingly limited on macOS 26.

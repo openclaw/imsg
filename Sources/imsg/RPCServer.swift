@@ -31,9 +31,7 @@ let kSupportedRPCMethods: [String] = [
   "chats.create",
   "chats.delete",
   "chats.markUnread",
-  "server.getMessageStats",
-  "getMediaStatistics",
-  "getMediaStatisticsByChat",
+  "messages.stats",
   "messages.history",
   "watch.subscribe",
   "watch.unsubscribe",
@@ -145,12 +143,11 @@ final class RPCServer {
       switch method {
       case "chats.list":
         try await handleChatsList(id: id, params: params)
-      case "server.getMessageStats":
-        try await handleServerGetMessageStats(id: id, params: params)
-      case "getMediaStatistics":
-        try await handleGetMediaStatistics(id: id, params: params)
-      case "getMediaStatisticsByChat":
-        try await handleGetMediaStatisticsByChat(id: id, params: params)
+      case "messages.stats":
+        guard request.paramsAreNamed else {
+          throw RPCError.invalidParams("messages.stats params must be an object")
+        }
+        try await handleMessagesStats(id: id, params: params)
       case "messages.history":
         try await handleMessagesHistory(id: id, params: params)
       case "watch.subscribe":
