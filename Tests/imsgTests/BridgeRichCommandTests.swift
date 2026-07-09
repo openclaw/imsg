@@ -188,6 +188,53 @@ func sendRichJsonResolvesQueuedBridgeGuidBeforeEmitting() async throws {
 }
 
 @Test
+func sendRichURLWithRichLinkResolvesQueuedBridgeGuidWithURL() async throws {
+  let values = ParsedValues(
+    positional: [],
+    options: [
+      "chat": ["iMessage;+;chat123"],
+      "url": ["https://imsg.sh"],
+    ],
+    flags: ["jsonOutput", "richLink"]
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+  let store = try CommandTestDatabase.makeStoreForRPC()
+
+  let (output, _) = try await StdoutCapture.capture {
+    try await SendRichCommand.run(
+      values: values,
+      runtime: runtime,
+      invokeBridge: { _, _ in
+        ["messageGuid": "stale-guid", "queued": true]
+      },
+      resolveSentMessage: { _, options, chatID, _ in
+        #expect(options.text == "https://imsg.sh")
+        #expect(chatID == 1)
+        return Message(
+          rowID: 42,
+          chatID: 1,
+          sender: "",
+          text: "https://imsg.sh",
+          date: Date(),
+          isFromMe: true,
+          service: "iMessage",
+          handleID: nil,
+          attachmentsCount: 0,
+          guid: "actual-rich-link-guid"
+        )
+      },
+      storeFactory: { _ in store }
+    )
+  }
+
+  let data = output.data(using: .utf8) ?? Data()
+  let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+  #expect(object["messageGuid"] as? String == "actual-rich-link-guid")
+  #expect(object["guid"] as? String == "actual-rich-link-guid")
+  #expect(object["message_id"] as? String == "actual-rich-link-guid")
+}
+
+@Test
 func pollCommandSendInvokesPollBridge() async throws {
   let values = ParsedValues(
     positional: ["send"],

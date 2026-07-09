@@ -252,6 +252,45 @@ func rpcSendRichResolvesQueuedBridgeGuidBeforeResponding() async throws {
 }
 
 @Test
+func rpcSendRichWithRichLinkResolvesQueuedBridgeGuidWithURL() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    resolveSentMessage: { _, options, chatID, _ in
+      #expect(options.text == "https://imsg.sh")
+      #expect(chatID == 1)
+      return Message(
+        rowID: 42,
+        chatID: 1,
+        sender: "",
+        text: "https://imsg.sh",
+        date: Date(),
+        isFromMe: true,
+        service: "iMessage",
+        handleID: nil,
+        attachmentsCount: 0,
+        guid: "actual-rich-link-guid"
+      )
+    },
+    invokeBridge: { _, _ in
+      ["messageGuid": "previous-guid", "queued": true]
+    }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"rich","method":"send.rich","params":{"chat_id":1,"url":"https://imsg.sh","rich_link":true}}"#
+  )
+
+  let result = output.responses.first?["result"] as? [String: Any]
+  #expect(result?["queued"] as? Bool == true)
+  #expect(result?["guid"] as? String == "actual-rich-link-guid")
+  #expect(result?["message_id"] as? String == "actual-rich-link-guid")
+}
+
+@Test
 func rpcSendAttachmentStagesFileBeforeBridgeSend() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()

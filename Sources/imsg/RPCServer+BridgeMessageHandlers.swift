@@ -5,6 +5,7 @@ extension RPCServer {
   func handleSendRich(params: [String: Any], id: Any?) async throws {
     let chatGUID = try await resolveChatGUIDParam(params)
     let text = stringParam(params["text"]) ?? stringParam(params["message"]) ?? ""
+    var effectiveText = text
     var bridgeParams: [String: Any] = [
       "chatGuid": chatGUID,
       "message": text,
@@ -36,7 +37,8 @@ extension RPCServer {
       }
       bridgeParams["richLinkURL"] = url
       if text.isEmpty {
-        bridgeParams["message"] = url
+        effectiveText = url
+        bridgeParams["message"] = effectiveText
       }
     }
 
@@ -51,12 +53,12 @@ extension RPCServer {
       ?? (try? store.chatInfo(matchingTarget: chatGUID)?.id)
     let options = MessageSendOptions(
       recipient: "",
-      text: text,
+      text: effectiveText,
       service: .auto,
       chatGUID: chatGUID
     )
     if data["queued"] as? Bool == true,
-      !text.isEmpty,
+      !effectiveText.isEmpty,
       let sentMessage = try? await resolveSentMessage(store, options, chatID, sentAt),
       !sentMessage.guid.isEmpty
     {

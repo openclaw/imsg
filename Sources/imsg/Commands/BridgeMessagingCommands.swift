@@ -165,9 +165,10 @@ enum SendRichCommand {
     if richLink && url.isEmpty {
       throw ParsedValuesError.missingOption("url")
     }
+    let effectiveText = text.isEmpty && richLink ? url : text
     var params: [String: Any] = [
       "chatGuid": chat,
-      "message": text.isEmpty && richLink ? url : text,
+      "message": effectiveText,
       "partIndex": Int(values.option("part") ?? "0") ?? 0,
       "ddScan": !values.flag("noDDScan"),
     ]
@@ -225,7 +226,7 @@ enum SendRichCommand {
       let enriched = try await enrichedSentMessageResponse(
         data,
         chat: chat,
-        text: text,
+        text: effectiveText,
         dbPath: values.option("db") ?? MessageStore.defaultPath,
         sentAt: sentAt,
         resolveSentMessage: resolveSentMessage,
