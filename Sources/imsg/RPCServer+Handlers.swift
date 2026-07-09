@@ -190,6 +190,9 @@ extension RPCServer {
     let selectedMessageGuid = stringParam(
       params["reply_to"] ?? params["replyTo"] ?? params["reply_to_guid"] ?? params["message_guid"]
     ).flatMap { $0.isEmpty ? nil : $0 }
+    let threadOriginatorGuid = stringParam(
+      params["thread_originator_guid"] ?? params["threadOriginatorGuid"]
+    ).flatMap { $0.isEmpty ? nil : $0 }
     let rawRecipient = stringParam(params["to"]) ?? ""
     let rawInput = ChatTargetInput(
       recipient: rawRecipient,
@@ -281,6 +284,7 @@ extension RPCServer {
           text: text,
           file: file,
           selectedMessageGuid: selectedMessageGuid,
+          threadOriginatorGuid: threadOriginatorGuid,
           textFormatting: textFormatting
         )
         var result: [String: Any] = ["ok": true, "transport": "bridge"]
@@ -297,17 +301,17 @@ extension RPCServer {
         respond(id: id, result: result)
         return
       } catch let err as RPCError {
-        if transport == .bridge || selectedMessageGuid != nil {
+        if transport == .bridge || selectedMessageGuid != nil || threadOriginatorGuid != nil {
           throw err
         }
       } catch {
-        if transport == .bridge || selectedMessageGuid != nil {
+        if transport == .bridge || selectedMessageGuid != nil || threadOriginatorGuid != nil {
           throw RPCError.internalError(String(describing: error))
         }
       }
     } else if transport == .bridge {
       throw RPCError.invalidParams("bridge transport requires an existing chat target")
-    } else if selectedMessageGuid != nil {
+    } else if selectedMessageGuid != nil || threadOriginatorGuid != nil {
       throw RPCError.invalidParams(
         "reply_to requires bridge transport; AppleScript fallback cannot send threaded replies"
       )
@@ -465,11 +469,34 @@ extension RPCServer {
       }
     }
     if isTyping {
-      try startTyping(identifier)
+      if isBridgeReady(), let messageGuid = stringParam(
+        params["reply_to"] ?? params["replyTo"] ?? params["message_guid"] ?? params["messageGuid"]
+      ) {
+        let data = try await invokeBridge(action: .typing, params: [
+          "handle": identifier,
+          "typing": true,
+          "messageGuid": messageGuid,
+        ])
+        respond(id: id, result: data)
+      } else {
+        try startTyping(identifier)
+        respond(id: id, result: ["ok": true])
+      }
     } else {
-      try stopTyping(identifier)
+      if isBridgeReady(), let messageGuid = stringParam(
+        params["reply_to"] ?? params["replyTo"] ?? params["message_guid"] ?? params["messageGuid"]
+      ) {
+        let data = try await invokeBridge(action: .typing, params: [
+          "handle": identifier,
+          "typing": false,
+          "messageGuid": messageGuid,
+        ])
+        respond(id: id, result: data)
+      } else {
+        try stopTyping(identifier)
+        respond(id: id, result: ["ok": true])
+      }
     }
-    respond(id: id, result: ["ok": true])
   }
 
   /// `read` — mark all messages in a chat as read on this device, which also

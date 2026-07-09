@@ -149,4 +149,9 @@ extension RPCServer {
       throw RPCError.internalError(String(describing: error))
     }
   }
+
+  func handleBridgeIntrospect(params: [String: Any], id: Any?) async throws {
+    let data = try await invokeBridge(action: .introspect, params: [:])
+    respond(id: id, result: data)
+  }
 }

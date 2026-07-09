@@ -128,10 +128,12 @@ extension RPCServer {
     text: String,
     file: String,
     selectedMessageGuid: String? = nil,
+    threadOriginatorGuid: String? = nil,
     textFormatting: Any? = nil
   ) async throws -> [String: Any] {
     if !file.isEmpty {
-      let requiresMetadata = !text.isEmpty || selectedMessageGuid != nil || textFormatting != nil
+      let requiresMetadata = !text.isEmpty || selectedMessageGuid != nil
+        || threadOriginatorGuid != nil || textFormatting != nil
       if requiresMetadata {
         let status = try await bridgeInvoker(.status, [:])
         guard status["attachment_metadata"] as? Bool == true else {
@@ -151,6 +153,9 @@ extension RPCServer {
       if let selectedMessageGuid {
         params["selectedMessageGuid"] = selectedMessageGuid
       }
+      if let threadOriginatorGuid {
+        params["threadOriginatorGuid"] = threadOriginatorGuid
+      }
       if let textFormatting {
         params["textFormatting"] = textFormatting
       }
@@ -159,6 +164,9 @@ extension RPCServer {
     var params: [String: Any] = ["chatGuid": chatGUID, "message": text]
     if let selectedMessageGuid {
       params["selectedMessageGuid"] = selectedMessageGuid
+    }
+    if let threadOriginatorGuid {
+      params["threadOriginatorGuid"] = threadOriginatorGuid
     }
     if let textFormatting {
       params["textFormatting"] = textFormatting

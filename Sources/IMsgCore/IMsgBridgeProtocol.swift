@@ -47,6 +47,7 @@ public enum BridgeAction: String, Sendable, CaseIterable {
   // Liveness
   case ping
   case status
+  case introspect
   case listChats = "list_chats"
 
   // Typing

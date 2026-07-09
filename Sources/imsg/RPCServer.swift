@@ -238,6 +238,8 @@ final class RPCServer {
         try await handleNamePhotoShare(params: params, id: id)
       case "handles.check":
         try await handleHandlesCheck(params: params, id: id)
+      case "bridge.introspect":
+        try await handleBridgeIntrospect(params: params, id: id as Any?)
       default:
         output.sendError(id: id, error: RPCError.methodNotFound(method))
       }
