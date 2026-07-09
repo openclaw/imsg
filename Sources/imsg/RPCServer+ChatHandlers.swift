@@ -54,13 +54,11 @@ extension RPCServer {
       throw RPCError.invalidParams("file is required")
     }
     let expanded = (file as NSString).expandingTildeInPath
-    let data = try Data(contentsOf: URL(fileURLWithPath: expanded))
     let result = try await invokeBridge(
       action: .setChatBackground,
       params: [
         "chatGuid": chatGUID,
-        "imageBase64": data.base64EncodedString(),
-        "filename": URL(fileURLWithPath: expanded).lastPathComponent,
+        "filePath": try stageAttachment(expanded),
       ])
     respond(id: id, result: ["ok": true, "data": result])
   }

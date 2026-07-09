@@ -95,7 +95,7 @@ enum StatusCommand {
         StdoutWriter.writeLine("  Send: imsg send-rich, send-multipart, send-attachment, tapback")
         StdoutWriter.writeLine("  Mutate: imsg edit, unsend, delete-message, notify-anyways")
         StdoutWriter.writeLine(
-          "  Chat: imsg chat-create, chat-name, chat-photo, chat-add/remove-member, chat-leave/delete, chat-mark"
+          "  Chat: imsg chat-create, chat-name, chat-photo, chat-background, chat-add/remove-member, chat-leave/delete, chat-mark"
         )
         StdoutWriter.writeLine("  Introspect: imsg account, whois, nickname")
         StdoutWriter.writeLine("  Local DB: imsg search")

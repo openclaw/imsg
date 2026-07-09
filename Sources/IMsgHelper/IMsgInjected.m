@@ -4021,24 +4021,14 @@ static BOOL isMacOS26OrLater(void) {
 
 static NSArray<NSString *> *chatBackgroundSetSelectors(void) {
     return @[
-        @"setBackgroundImage:",
-        @"setChatBackgroundImage:",
-        @"setWallpaperImage:",
-        @"setConversationBackgroundImage:",
-        @"updateBackgroundImage:"
+        @"setTranscriptBackgroundAndSendToChat:transferID:"
     ];
 }
 
 static NSArray<NSString *> *chatBackgroundClearSelectors(void) {
     return @[
-        @"clearBackgroundImage",
-        @"clearChatBackgroundImage",
-        @"removeBackgroundImage",
-        @"removeChatBackgroundImage",
-        @"setBackgroundImage:",
-        @"setChatBackgroundImage:",
-        @"setWallpaperImage:",
-        @"setConversationBackgroundImage:"
+        @"setTranscriptBackgroundAndSendToChat:transferID:",
+        @"setTranscriptBackgroundDetails:"
     ];
 }
 
@@ -4060,26 +4050,13 @@ static NSDictionary *chatBackgroundSelectorStatus(void) {
     };
 }
 
-static id imageForChatBackgroundParams(NSDictionary *params, NSString **outErr) {
-    NSString *b64 = params[@"imageBase64"];
-    if (!b64.length) {
-        if (outErr) *outErr = @"Missing imageBase64";
-        return nil;
-    }
-    NSData *data = [[NSData alloc] initWithBase64EncodedString:b64 options:0];
-    if (!data.length) {
-        if (outErr) *outErr = @"Invalid imageBase64";
-        return nil;
-    }
-    NSImage *image = [[NSImage alloc] initWithData:data];
-    if (!image) {
-        if (outErr) *outErr = @"Could not decode image";
-        return nil;
-    }
-    return image;
-}
-
-static BOOL invokeChatBackgroundSelector(IMChat *chat, SEL sel, id argument, NSString **outErr) {
+static BOOL invokeChatBackgroundSelector(
+    IMChat *chat,
+    SEL sel,
+    id backgroundDetails,
+    NSString *transferID,
+    NSString **outErr
+) {
     @try {
         NSMethodSignature *sig = [chat methodSignatureForSelector:sel];
         if (!sig) {
@@ -4090,8 +4067,12 @@ static BOOL invokeChatBackgroundSelector(IMChat *chat, SEL sel, id argument, NSS
         [inv setSelector:sel];
         [inv setTarget:chat];
         if (sig.numberOfArguments > 2) {
-            __unsafe_unretained id arg = argument;
-            [inv setArgument:&arg atIndex:2];
+            __unsafe_unretained id detailsArg = backgroundDetails;
+            [inv setArgument:&detailsArg atIndex:2];
+        }
+        if (sig.numberOfArguments > 3) {
+            __unsafe_unretained NSString *transferArg = transferID;
+            [inv setArgument:&transferArg atIndex:3];
         }
         [inv invoke];
         return YES;
@@ -4106,22 +4087,31 @@ static NSDictionary *handleSetChatBackground(NSInteger requestId, NSDictionary *
         return errorResponse(requestId, @"Chat backgrounds require macOS 26 or later");
     }
     NSString *chatGuid = params[@"chatGuid"];
+    NSString *filePath = params[@"filePath"];
     if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
+    if (!filePath.length) return errorResponse(requestId, @"Missing filePath");
     IMChat *chat = resolveChatByGuid(chatGuid);
     if (!chat) return errorResponse(requestId, @"Chat not found");
-    NSString *imageErr = nil;
-    id image = imageForChatBackgroundParams(params, &imageErr);
-    if (!image) return errorResponse(requestId, imageErr ?: @"Could not load background image");
 
     for (NSString *name in chatBackgroundSetSelectors()) {
         SEL sel = NSSelectorFromString(name);
         if (![chat respondsToSelector:sel]) continue;
+        NSURL *fileURL = [NSURL fileURLWithPath:filePath];
+        NSString *prepErr = nil;
+        IMFileTransfer *transfer = prepareOutgoingTransfer(fileURL,
+            [fileURL lastPathComponent], chatGuid, &prepErr);
+        if (!transfer || ![transfer guid].length) {
+            return errorResponse(requestId,
+                prepErr.length ? prepErr : @"Could not prepare chat-background transfer");
+        }
         NSString *invokeErr = nil;
-        if (invokeChatBackgroundSelector(chat, sel, image, &invokeErr)) {
+        NSString *transferGuid = [transfer guid];
+        if (invokeChatBackgroundSelector(chat, sel, nil, transferGuid, &invokeErr)) {
             return successResponse(requestId, @{
                 @"chatGuid": chatGuid,
                 @"background_set": @YES,
-                @"selector": name
+                @"selector": name,
+                @"transferGuid": transferGuid
             });
         }
         return errorResponse(requestId, invokeErr ?: @"chat-background set failed");
@@ -4141,7 +4131,7 @@ static NSDictionary *handleClearChatBackground(NSInteger requestId, NSDictionary
         SEL sel = NSSelectorFromString(name);
         if (![chat respondsToSelector:sel]) continue;
         NSString *invokeErr = nil;
-        if (invokeChatBackgroundSelector(chat, sel, nil, &invokeErr)) {
+        if (invokeChatBackgroundSelector(chat, sel, nil, nil, &invokeErr)) {
             return successResponse(requestId, @{
                 @"chatGuid": chatGuid,
                 @"background_cleared": @YES,

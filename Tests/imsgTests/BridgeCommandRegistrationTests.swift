@@ -80,6 +80,38 @@ func chatBackgroundClearForwardsBridgeAction() async throws {
 }
 
 @Test
+func chatBackgroundSetStagesFilePathForBridgeAction() async throws {
+  let values = ParsedValues(
+    positional: ["set"],
+    options: ["chat": ["iMessage;+;chat0000"], "file": ["/tmp/bg.png"]],
+    flags: []
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
+
+  _ = try await StdoutCapture.capture {
+    try await ChatBackgroundCommand.run(
+      values: values,
+      runtime: runtime,
+      stageAttachment: { path in
+        #expect(path == "/tmp/bg.png")
+        return "/tmp/staged-bg.png"
+      },
+      invokeBridge: { action, params in
+        capturedAction = action
+        capturedParams = params
+        return ["background_set": true]
+      }
+    )
+  }
+
+  #expect(capturedAction == .setChatBackground)
+  #expect(capturedParams["chatGuid"] as? String == "iMessage;+;chat0000")
+  #expect(capturedParams["filePath"] as? String == "/tmp/staged-bg.png")
+}
+
+@Test
 func injectedHelperWiresChatBackgroundActions() throws {
   let testFile = URL(fileURLWithPath: #filePath)
   let repoRoot =
@@ -94,7 +126,7 @@ func injectedHelperWiresChatBackgroundActions() throws {
   #expect(source.contains("clear-chat-background"))
   #expect(source.contains("chatBackgroundSelectorStatus"))
   #expect(source.contains("Chat backgrounds require macOS 26 or later"))
-  #expect(source.contains("setBackgroundImage:"))
+  #expect(source.contains("setTranscriptBackgroundAndSendToChat:transferID:"))
 }
 
 @Test

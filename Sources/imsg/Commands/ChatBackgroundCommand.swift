@@ -33,6 +33,8 @@ enum ChatBackgroundCommand {
   static func run(
     values: ParsedValues,
     runtime: RuntimeOptions,
+    stageAttachment: @escaping (String) throws -> String = MessageSender
+      .stageAttachmentForMessagesApp,
     invokeBridge: @escaping (BridgeAction, [String: Any]) async throws -> [String: Any] = {
       action, params in
       try await IMsgBridgeClient.shared.invoke(action: action, params: params)
@@ -49,9 +51,7 @@ enum ChatBackgroundCommand {
         throw ParsedValuesError.missingOption("file")
       }
       let expanded = (file as NSString).expandingTildeInPath
-      let data = try Data(contentsOf: URL(fileURLWithPath: expanded))
-      params["imageBase64"] = data.base64EncodedString()
-      params["filename"] = URL(fileURLWithPath: expanded).lastPathComponent
+      params["filePath"] = try stageAttachment(expanded)
       action = .setChatBackground
     case "clear":
       action = .clearChatBackground

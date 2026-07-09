@@ -327,3 +327,37 @@ func rpcChatBackgroundRemoveInvokesBridge() async throws {
 
   #expect(capturedAction == .clearChatBackground)
 }
+
+@Test
+func rpcChatBackgroundSetStagesFileBeforeBridgeSend() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  var stagedInput: String?
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, params in
+      capturedAction = action
+      capturedParams = params
+      return ["background_set": true]
+    },
+    stageAttachment: { path in
+      stagedInput = path
+      return "/tmp/staged-bg.png"
+    }
+  )
+
+  let line =
+    #"{"jsonrpc":"2.0","id":"bg","method":"chats.setBackground","params":{"#
+    + #""chat_id":1,"file":"~/Desktop/bg.png"}}"#
+  await server.handleLineForTesting(line)
+
+  #expect(stagedInput?.hasSuffix("/Desktop/bg.png") == true)
+  #expect(capturedAction == .setChatBackground)
+  #expect(capturedParams["filePath"] as? String == "/tmp/staged-bg.png")
+  let result = output.responses.first?["result"] as? [String: Any]
+  #expect(result?["ok"] as? Bool == true)
+}
