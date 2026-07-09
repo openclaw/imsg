@@ -61,13 +61,16 @@ extension MessageStore {
       FROM message m
       JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
       JOIN chat c ON c.ROWID = cmj.chat_id
-      WHERE \(scheduleTypeColumn) != 0 OR \(scheduleStateColumn) != 0
+      WHERE (\(scheduleTypeColumn) != 0 OR \(scheduleStateColumn) != 0)
+        AND IFNULL(m.date, 0) >= ?
       ORDER BY m.date ASC, m.ROWID ASC
       LIMIT ?
       """
     return try withConnection { db in
       var results: [ScheduledMessage] = []
-      let rows = try db.prepareRowIterator(sql, bindings: [max(limit, 1)])
+      let rows = try db.prepareRowIterator(
+        sql,
+        bindings: [MessageStore.appleEpoch(Date()), max(limit, 1)])
       while let row = try rows.failableNext() {
         results.append(
           ScheduledMessage(

@@ -11,7 +11,9 @@ func scheduledMessagesListsRowsWithScheduleColumns() throws {
   options.includeReactionColumns = true
   options.includeScheduleColumns = true
   try MessageDatabaseFixture.createSchema(db, options: options)
-  let scheduledAt = MessageStore.appleEpoch(Date(timeIntervalSince1970: 1_767_225_600))
+  let scheduledDate = Date().addingTimeInterval(3600)
+  let scheduledAt = MessageStore.appleEpoch(scheduledDate)
+  let deliveredAt = MessageStore.appleEpoch(Date().addingTimeInterval(-60))
 
   try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
   try db.run(
@@ -27,6 +29,14 @@ func scheduledMessagesListsRowsWithScheduleColumns() throws {
     scheduledAt
   )
   try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 1)")
+  try db.run(
+    """
+    INSERT INTO message(ROWID, guid, handle_id, text, schedule_type, schedule_state, date, is_from_me, service)
+    VALUES (2, 'delivered-guid', 1, 'already sent', 2, 2, ?, 1, 'iMessage')
+    """,
+    deliveredAt
+  )
+  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 2)")
 
   let store = try MessageStore(connection: db, path: ":memory:")
   let messages = try store.scheduledMessages()
@@ -38,7 +48,7 @@ func scheduledMessagesListsRowsWithScheduleColumns() throws {
   #expect(messages[0].scheduleState == 1)
   let resolved = try store.scheduledMessage(
     chatGUID: "iMessage;-;+123",
-    scheduledAt: Date(timeIntervalSince1970: 1_767_225_600)
+    scheduledAt: scheduledDate
   )
   #expect(resolved?.guid == "scheduled-guid")
 }
