@@ -134,7 +134,7 @@ func sendRichScheduledMessageSuppressesBridgeGuidWhenRowIsUnresolved() async thr
   )
   let runtime = RuntimeOptions(parsedValues: values)
 
-  let output = try await StdoutCapture.capture {
+  let (output, _) = try await StdoutCapture.capture {
     try await SendRichCommand.run(
       values: values,
       runtime: runtime,
