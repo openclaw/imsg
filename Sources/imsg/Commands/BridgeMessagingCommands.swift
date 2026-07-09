@@ -567,9 +567,7 @@ enum DeleteMessageCommand {
     ) { _ in "delete-message: queued" }
   }
 }
-
 // MARK: - notify-anyways
-
 enum NotifyAnywaysCommand {
   static let spec = CommandSpec(
     name: "notify-anyways",
@@ -587,7 +585,6 @@ enum NotifyAnywaysCommand {
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
   }
-
   static func run(values: ParsedValues, runtime: RuntimeOptions) async throws {
     guard let chat = values.option("chat"), !chat.isEmpty else {
       throw ParsedValuesError.missingOption("chat")
