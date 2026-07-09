@@ -152,6 +152,8 @@ func injectedHelperWiresNativePollSend() throws {
   #expect(source.contains("scheduleState = 1"))
   #expect(source.contains("cancel-scheduled-message"))
   #expect(source.contains("cancelScheduledMessage:"))
+  #expect(source.contains("IMDMessageRecordDeleteMessagesForGUIDs"))
+  #expect(source.contains(#""selector": @"IMDMessageRecordDeleteMessagesForGUIDs""#))
 }
 
 @Test

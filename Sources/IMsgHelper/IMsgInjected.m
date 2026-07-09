@@ -2801,6 +2801,22 @@ static NSDictionary *handleCancelScheduledMessage(NSInteger requestId, NSDiction
             [NSString stringWithFormat:@"cancel-scheduled-message failed: %@", exception.reason]);
     }
 
+    typedef void (*IMDDeleteMessagesForGUIDsFn)(NSArray *);
+    IMDDeleteMessagesForGUIDsFn deleteMessagesForGUIDs =
+        (IMDDeleteMessagesForGUIDsFn)dlsym(RTLD_DEFAULT, "IMDMessageRecordDeleteMessagesForGUIDs");
+    if (deleteMessagesForGUIDs) {
+        @try {
+            deleteMessagesForGUIDs(@[messageGuid]);
+            return successResponse(requestId, @{
+                @"messageGuid": messageGuid,
+                @"selector": @"IMDMessageRecordDeleteMessagesForGUIDs",
+                @"cancelled": @YES
+            });
+        } @catch (NSException *exception) {
+            debugLog(@"cancel-scheduled-message IMD delete exception=%@", exception.reason);
+        }
+    }
+
     return errorResponse(requestId,
         @"Scheduled-message cancel selector unavailable on this macOS");
 }
