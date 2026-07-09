@@ -49,6 +49,52 @@ typedef NSString *(*IMCreateThreadIdentifierForMessagePartChatItemFn)(id);
 }
 @end
 
+@interface RichLinkImageAttachmentSubstitute : NSObject <NSSecureCoding>
+@property (nonatomic, assign) NSInteger richLinkImageAttachmentSubstituteIndex;
+@property (nonatomic, copy) NSString *MIMEType;
+@property (nonatomic, assign) NSInteger imageType;
+@property (nonatomic, assign) BOOL hasSingleDominantColor;
+@property (nonatomic, assign) BOOL dominantColor;
+@property (nonatomic, assign) CGFloat dominantColorRed;
+@property (nonatomic, assign) CGFloat dominantColorGreen;
+@property (nonatomic, assign) CGFloat dominantColorBlue;
+@property (nonatomic, assign) CGFloat dominantColorAlpha;
+@end
+
+@implementation RichLinkImageAttachmentSubstitute
++ (BOOL)supportsSecureCoding { return YES; }
+
+- (void)encodeWithCoder:(NSCoder *)coder {
+    [coder encodeInteger:self.richLinkImageAttachmentSubstituteIndex
+                 forKey:@"richLinkImageAttachmentSubstituteIndex"];
+    [coder encodeObject:self.MIMEType ?: @"image/png" forKey:@"MIMEType"];
+    [coder encodeInteger:self.imageType forKey:@"imageType"];
+    [coder encodeBool:self.hasSingleDominantColor forKey:@"hasSingleDominantColor"];
+    [coder encodeBool:self.dominantColor forKey:@"dominantColor"];
+    [coder encodeDouble:self.dominantColorRed forKey:@"dominantColor.red"];
+    [coder encodeDouble:self.dominantColorGreen forKey:@"dominantColor.green"];
+    [coder encodeDouble:self.dominantColorBlue forKey:@"dominantColor.blue"];
+    [coder encodeDouble:self.dominantColorAlpha forKey:@"dominantColor.alpha"];
+}
+
+- (instancetype)initWithCoder:(NSCoder *)coder {
+    self = [super init];
+    if (self) {
+        _richLinkImageAttachmentSubstituteIndex =
+            [coder decodeIntegerForKey:@"richLinkImageAttachmentSubstituteIndex"];
+        _MIMEType = [coder decodeObjectForKey:@"MIMEType"];
+        _imageType = [coder decodeIntegerForKey:@"imageType"];
+        _hasSingleDominantColor = [coder decodeBoolForKey:@"hasSingleDominantColor"];
+        _dominantColor = [coder decodeBoolForKey:@"dominantColor"];
+        _dominantColorRed = [coder decodeDoubleForKey:@"dominantColor.red"];
+        _dominantColorGreen = [coder decodeDoubleForKey:@"dominantColor.green"];
+        _dominantColorBlue = [coder decodeDoubleForKey:@"dominantColor.blue"];
+        _dominantColorAlpha = [coder decodeDoubleForKey:@"dominantColor.alpha"];
+    }
+    return self;
+}
+@end
+
 static IMCreateThreadIdentifierForMessagePartChatItemFn
 imCreateThreadIdentifierFn(void) {
     static IMCreateThreadIdentifierForMessagePartChatItemFn fn = NULL;
@@ -379,6 +425,16 @@ static void probeSelectors(void) {
 - (void)retargetTransfer:(NSString *)guid toPath:(NSString *)path;
 - (void)registerTransferWithDaemon:(NSString *)guid;
 @end
+
+static IMFileTransfer *prepareOutgoingTransfer(NSURL *originalURL, NSString *filename,
+                                               NSString *chatGuid, BOOL hideAttachment,
+                                               NSString *mimeType, NSString **outErr);
+static void configurePreviewPayloadTransfer(IMFileTransfer *transfer,
+                                            NSString *mimeType,
+                                            NSString *filename);
+static NSAttributedString *annotateBodyForRichLink(NSAttributedString *body,
+                                                   NSString *urlString);
+static void scanOutgoingMessageForDataDetectors(id message);
 
 @interface IMDPersistentAttachmentController : NSObject
 + (instancetype)sharedInstance;
@@ -1658,6 +1714,36 @@ static void dispatchIMMessageInChat(IMChat *chat,
     scheduleThreadContextClear(chat, threadIdentifier);
 }
 
+static void scanOutgoingMessageForDataDetectors(id message) {
+    if (!message) return;
+    Class ddClass = NSClassFromString(@"IMDDController");
+    id scanner = (ddClass && [ddClass respondsToSelector:@selector(sharedInstance)])
+        ? [ddClass performSelector:@selector(sharedInstance)]
+        : nil;
+    SEL sel = @selector(scanMessage:outgoing:waitUntilDone:completionBlock:);
+    if (!scanner || ![scanner respondsToSelector:sel]) return;
+    @try {
+        NSMethodSignature *sig = [scanner methodSignatureForSelector:sel];
+        NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+        [inv setTarget:scanner];
+        [inv setSelector:sel];
+        __unsafe_unretained id msg = message;
+        BOOL outgoing = YES;
+        BOOL wait = YES;
+        id block = nil;
+        [inv setArgument:&msg atIndex:2];
+        [inv setArgument:&outgoing atIndex:3];
+        [inv setArgument:&wait atIndex:4];
+        [inv setArgument:&block atIndex:5];
+        [inv retainArguments];
+        [inv invoke];
+        debugLog(@"rich-link: IMDDController scan invoked");
+    } @catch (NSException *exception) {
+        debugLog(@"rich-link: IMDDController scan failed: %@",
+                 exception.reason ?: @"unknown");
+    }
+}
+
 static unsigned long long flagsForMessagePayload(NSAttributedString *subject,
                                                  NSArray *fileTransferGuids,
                                                  BOOL isAudioMessage);
@@ -1937,6 +2023,7 @@ static id buildBalloonIMMessage(NSString *balloonID,
                                 NSAttributedString *body,
                                 NSData *payloadData,
                                 NSDictionary *summaryInfo,
+                                NSArray *fileTransferGuids,
                                 NSString *threadIdentifier,
                                 NSString *replyToGUID,
                                 NSString *threadOriginatorGUID,
@@ -1960,8 +2047,8 @@ static id buildBalloonIMMessage(NSString *balloonID,
         if (!item) return nil;
 
         NSDate *now = [NSDate date];
-        NSArray *fileTransferGuids = @[];
-        unsigned long long flags = flagsForMessagePayload(nil, fileTransferGuids, NO);
+        NSArray *transferGuids = fileTransferGuids ?: @[];
+        unsigned long long flags = flagsForMessagePayload(nil, transferGuids, NO);
         NSError *err = nil;
         NSString *guid = [[NSUUID UUID] UUIDString];
         id sender = nil;
@@ -1976,7 +2063,7 @@ static id buildBalloonIMMessage(NSString *balloonID,
         [iinv setArgument:&now atIndex:3];
         [iinv setArgument:&body atIndex:4];
         [iinv setArgument:&attributes atIndex:5];
-        [iinv setArgument:&fileTransferGuids atIndex:6];
+        [iinv setArgument:&transferGuids atIndex:6];
         [iinv setArgument:&flags atIndex:7];
         [iinv setArgument:&err atIndex:8];
         [iinv setArgument:&guid atIndex:9];
@@ -2062,8 +2149,8 @@ static id buildBalloonIMMessage(NSString *balloonID,
 
     id nilObj = nil;
     NSDate *now = [NSDate date];
-    NSArray *fileTransferGuids = @[];
-    unsigned long long flags = flagsForMessagePayload(nil, fileTransferGuids, NO);
+    NSArray *transferGuids = fileTransferGuids ?: @[];
+    unsigned long long flags = flagsForMessagePayload(nil, transferGuids, NO);
     unsigned long long scheduleType = 0;
     unsigned long long scheduleState = 0;
     NSString *messageThreadIdentifier = threadIdentifier.length ? threadIdentifier : nil;
@@ -2072,7 +2159,7 @@ static id buildBalloonIMMessage(NSString *balloonID,
     [inv setArgument:&now atIndex:3];                 // time
     [inv setArgument:&body atIndex:4];                // text
     [inv setArgument:&nilObj atIndex:5];              // messageSubject
-    [inv setArgument:&fileTransferGuids atIndex:6];
+    [inv setArgument:&transferGuids atIndex:6];
     [inv setArgument:&flags atIndex:7];
     [inv setArgument:&nilObj atIndex:8];              // error
     [inv setArgument:&nilObj atIndex:9];              // guid
@@ -2104,6 +2191,7 @@ static id buildPollIMMessage(NSAttributedString *body,
                                  body,
                                  payloadData,
                                  summaryInfo,
+                                 @[],
                                  threadIdentifier,
                                  replyToGUID,
                                  threadOriginatorGUID,
@@ -2143,7 +2231,170 @@ static LPLinkMetadata *fetchURLPreviewMetadata(NSURL *url) {
     return fetched;
 }
 
-static NSData *buildURLPreviewPayloadData(NSString *urlString, NSString **outErr) {
+static NSData *loadDataFromItemProvider(NSItemProvider *provider, NSString **outMimeType) {
+    if (!provider) return nil;
+    NSArray<NSString *> *types = @[
+        @"public.jpeg",
+        @"public.png",
+        @"org.webmproject.webp",
+        @"public.image"
+    ];
+    for (NSString *type in types) {
+        if (![provider hasItemConformingToTypeIdentifier:type]) continue;
+        dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+        __block NSData *loaded = nil;
+        [provider loadDataRepresentationForTypeIdentifier:type
+                                         completionHandler:^(NSData *data, NSError *error) {
+            if (data.length) loaded = data;
+            dispatch_semaphore_signal(sem);
+        }];
+        dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 8 * NSEC_PER_SEC));
+        if (loaded.length) {
+            if (outMimeType) {
+                if ([type isEqualToString:@"public.png"]) {
+                    *outMimeType = @"image/png";
+                } else if ([type isEqualToString:@"org.webmproject.webp"]) {
+                    *outMimeType = @"image/webp";
+                } else {
+                    *outMimeType = @"image/jpeg";
+                }
+            }
+            return loaded;
+        }
+    }
+    return nil;
+}
+
+static NSData *loadPreviewImageDataFromMetadataImages(LPLinkMetadata *metadata,
+                                                      NSString **outMimeType) {
+    if (!metadata) return nil;
+    @try {
+        NSArray *keys = @[
+            @"contentImages",
+            @"images",
+            @"icons",
+            @"contentImagesMetadata",
+            @"imagesMetadata",
+            @"iconsMetadata",
+            @"_contentImages",
+            @"_images",
+            @"_icons",
+            @"_contentImagesMetadata",
+            @"_imagesMetadata",
+            @"_iconsMetadata"
+        ];
+        for (NSString *key in keys) {
+            id images = nil;
+            @try {
+                images = [metadata valueForKey:key];
+            } @catch (NSException *ignored) {
+                images = nil;
+            }
+            if (![images isKindOfClass:[NSArray class]]) continue;
+            for (id image in (NSArray *)images) {
+                id data = nil;
+                @try {
+                    data = [image valueForKey:@"data"];
+                } @catch (NSException *ignored) {
+                    data = nil;
+                }
+                if (![data isKindOfClass:[NSData class]] || ![(NSData *)data length]) {
+                    NSURL *imageURL = nil;
+                    @try {
+                        id rawURL = [image valueForKey:@"URL"];
+                        if ([rawURL isKindOfClass:[NSURL class]]) {
+                            imageURL = (NSURL *)rawURL;
+                        }
+                    } @catch (NSException *ignored) {
+                        imageURL = nil;
+                    }
+                    if (imageURL) {
+                        NSMutableURLRequest *request =
+                            [NSMutableURLRequest requestWithURL:imageURL
+                                                    cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
+                                                timeoutInterval:8.0];
+                        request.HTTPShouldHandleCookies = NO;
+                        NSURLResponse *response = nil;
+                        NSError *error = nil;
+                        NSData *downloaded =
+                            [NSURLConnection sendSynchronousRequest:request
+                                                  returningResponse:&response
+                                                              error:&error];
+                        NSString *mime = response.MIMEType;
+                        if (downloaded.length
+                            && [mime.lowercaseString hasPrefix:@"image/"]) {
+                            if (outMimeType) {
+                                *outMimeType = mime.length ? mime : @"image/jpeg";
+                            }
+                            return downloaded;
+                        }
+                        debugLog(@"rich-link: image URL download failed url=%@ mime=%@ error=%@",
+                                 imageURL.absoluteString,
+                                 mime ?: @"(nil)",
+                                 error.localizedDescription ?: @"unknown");
+                    }
+                    continue;
+                }
+                if (outMimeType) {
+                    id mime = nil;
+                    @try {
+                        mime = [image valueForKey:@"MIMEType"];
+                    } @catch (NSException *ignored) {
+                        mime = nil;
+                    }
+                    *outMimeType = [mime isKindOfClass:[NSString class]]
+                        ? (NSString *)mime
+                        : @"image/jpeg";
+                }
+                return (NSData *)data;
+            }
+        }
+    } @catch (NSException *exception) {
+        debugLog(@"rich-link: could not read private metadata images: %@",
+                 exception.reason ?: @"unknown");
+    }
+    return nil;
+}
+
+static RichLinkImageAttachmentSubstitute *makeURLPreviewImageSubstitute(NSString *mimeType) {
+    RichLinkImageAttachmentSubstitute *substitute = [RichLinkImageAttachmentSubstitute new];
+    substitute.richLinkImageAttachmentSubstituteIndex = 0;
+    substitute.MIMEType = mimeType.length ? mimeType : @"image/png";
+    substitute.imageType = 0;
+    substitute.hasSingleDominantColor = NO;
+    substitute.dominantColor = YES;
+    substitute.dominantColorRed = 0.1686274509803922;
+    substitute.dominantColorGreen = 0.1686274509803922;
+    substitute.dominantColorBlue = 0.1764705882352941;
+    substitute.dominantColorAlpha = 1.0;
+    return substitute;
+}
+
+static void replaceURLPreviewImagesWithAttachmentSubstitute(LPLinkMetadata *metadata,
+                                                            NSString *mimeType) {
+    if (!metadata) return;
+    RichLinkImageAttachmentSubstitute *substitute =
+        makeURLPreviewImageSubstitute(mimeType);
+    @try {
+        [metadata setValue:nil forKey:@"image"];
+        [metadata setValue:nil forKey:@"icon"];
+        [metadata setValue:@[substitute] forKey:@"contentImages"];
+    } @catch (NSException *exception) {
+        @try {
+            [metadata setValue:nil forKey:@"_image"];
+            [metadata setValue:nil forKey:@"_icon"];
+            [metadata setValue:@[substitute] forKey:@"_contentImages"];
+        } @catch (NSException *ignored) {
+            debugLog(@"rich-link: could not install image substitute: %@",
+                     ignored.reason ?: exception.reason ?: @"unknown");
+        }
+    }
+}
+
+static NSData *buildURLPreviewPayloadData(NSString *urlString,
+                                          NSData **outPreviewImageData,
+                                          NSString **outPreviewMimeType,
+                                          NSString **outErr) {
     if (!urlString.length) {
         if (outErr) *outErr = @"Missing URL";
         return nil;
@@ -2161,6 +2412,27 @@ static NSData *buildURLPreviewPayloadData(NSString *urlString, NSString **outErr
     if (!metadata.URL) metadata.URL = url;
     if (!metadata.originalURL) metadata.originalURL = url;
     if (!metadata.title.length) metadata.title = url.host ?: url.absoluteString;
+    NSString *previewMimeType = nil;
+    NSData *previewImageData = loadDataFromItemProvider(metadata.imageProvider,
+                                                       &previewMimeType);
+    if (!previewImageData.length) {
+        previewImageData = loadDataFromItemProvider(metadata.iconProvider,
+                                                    &previewMimeType);
+    }
+    if (!previewImageData.length) {
+        previewImageData = loadPreviewImageDataFromMetadataImages(metadata,
+                                                                 &previewMimeType);
+    }
+    if (previewImageData.length) {
+        replaceURLPreviewImagesWithAttachmentSubstitute(metadata, previewMimeType);
+        if (outPreviewImageData) *outPreviewImageData = previewImageData;
+        if (outPreviewMimeType) *outPreviewMimeType = previewMimeType ?: @"image/jpeg";
+        debugLog(@"rich-link: extracted preview image bytes=%lu mime=%@",
+                 (unsigned long)previewImageData.length,
+                 previewMimeType ?: @"(nil)");
+    } else {
+        debugLog(@"rich-link: no preview image data extracted for %@", urlString);
+    }
 
     Class richLinkClass = NSClassFromString(@"RichLink");
     if (!richLinkClass) {
@@ -2699,21 +2971,64 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
     @try {
         id imMessage = nil;
         if (richLinkURL.length) {
+            body = annotateBodyForRichLink(body, richLinkURL);
             NSString *payloadError = nil;
-            NSData *payloadData = buildURLPreviewPayloadData(richLinkURL, &payloadError);
+            NSData *previewImageData = nil;
+            NSString *previewMimeType = nil;
+            NSData *payloadData = buildURLPreviewPayloadData(richLinkURL,
+                                                             &previewImageData,
+                                                             &previewMimeType,
+                                                             &payloadError);
             if (!payloadData) {
                 return errorResponse(requestId,
                     payloadError.length ? payloadError : @"Could not build URL preview payload");
             }
-            NSURL *url = [NSURL URLWithString:richLinkURL];
+            NSMutableArray *fileTransferGuids = [NSMutableArray array];
+            if (previewImageData.length) {
+                NSString *previewGuid = [[NSUUID UUID] UUIDString];
+                NSString *filename = [previewGuid stringByAppendingString:
+                    @".pluginPayloadAttachment"];
+                NSURL *tempDir = [NSURL fileURLWithPath:NSTemporaryDirectory()
+                                             isDirectory:YES];
+                NSURL *previewFile = [tempDir URLByAppendingPathComponent:filename];
+                NSError *writeError = nil;
+                if ([previewImageData writeToURL:previewFile
+                                         options:NSDataWritingAtomic
+                                           error:&writeError]) {
+                    debugLog(@"rich-link: wrote preview file %@ bytes=%lu",
+                             previewFile.path,
+                             (unsigned long)previewImageData.length);
+                    NSString *prepErr = nil;
+                    IMFileTransfer *transfer = prepareOutgoingTransfer(previewFile,
+                                                                       filename,
+                                                                       chatGuid,
+                                                                       YES,
+                                                                       previewMimeType,
+                                                                       &prepErr);
+                    NSString *transferGuid = [transfer guid];
+                    if (transferGuid.length) {
+                        debugLog(@"rich-link: prepared preview transfer guid=%@",
+                                 transferGuid);
+                        [fileTransferGuids addObject:transferGuid];
+                    } else {
+                        debugLog(@"rich-link: preview transfer unavailable: %@",
+                                 prepErr ?: @"missing guid");
+                    }
+                } else {
+                    debugLog(@"rich-link: could not write preview image: %@",
+                             writeError.localizedDescription ?: @"unknown");
+                }
+            }
             NSDictionary *summaryInfo = @{
-                @"url": richLinkURL,
-                @"title": url.host ?: richLinkURL
+                @"enc": @YES,
+                @"eogcd": @3,
+                @"ust": @YES
             };
             imMessage = buildBalloonIMMessage(urlPreviewBalloonBundleIdentifier(),
                                               body,
                                               payloadData,
                                               summaryInfo,
+                                              fileTransferGuids,
                                               threadIdentifier,
                                               selectedMessageGuid,
                                               parentMessage && [parentMessage respondsToSelector:@selector(guid)]
@@ -2736,6 +3051,9 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
         }
         if (!imMessage) {
             return errorResponse(requestId, @"Could not construct IMMessage");
+        }
+        if (richLinkURL.length) {
+            scanOutgoingMessageForDataDetectors(imMessage);
         }
 
         // IMCore exposes separate originator types: IMMessageItem wants the
@@ -3202,6 +3520,26 @@ static NSAttributedString *buildAttachmentAttributed(NSString *transferGuid,
     return [[NSAttributedString alloc] initWithString:@"￼" attributes:attrs];
 }
 
+static NSAttributedString *annotateBodyForRichLink(NSAttributedString *body,
+                                                   NSString *urlString) {
+    if (!body.length || !urlString.length) return body;
+    NSURL *url = [NSURL URLWithString:urlString];
+    if (!url) return body;
+    NSMutableAttributedString *annotated = [body mutableCopy];
+    NSString *plain = annotated.string ?: @"";
+    NSRange range = [plain rangeOfString:urlString];
+    if (range.location == NSNotFound && [urlString hasSuffix:@"/"]) {
+        range = [plain rangeOfString:[urlString substringToIndex:urlString.length - 1]];
+    }
+    if (range.location == NSNotFound || range.length == 0) {
+        range = NSMakeRange(0, annotated.length);
+    }
+    [annotated addAttribute:@"__kIMLinkAttributeName" value:url range:range];
+    [annotated addAttribute:@"__kIMLinkIsRichLinkAttributeName" value:@YES range:range];
+    [annotated addAttribute:NSLinkAttributeName value:url range:range];
+    return annotated;
+}
+
 /// Register an outgoing file transfer with IMFileTransferCenter so that
 /// Messages.app/imagent persists the attachment row and links it back to the
 /// outbound message. Mirrors BlueBubblesHelper's `prepareFileTransferForAttachment`:
@@ -3236,8 +3574,26 @@ static void retargetPreparedTransfer(id ftc, IMFileTransfer *transfer,
     }
 }
 
+static void configurePreviewPayloadTransfer(IMFileTransfer *transfer,
+                                            NSString *mimeType,
+                                            NSString *filename) {
+    if (!transfer) return;
+    if ([transfer respondsToSelector:@selector(setHideAttachment:)]) {
+        ((void (*)(id, SEL, BOOL))objc_msgSend)(transfer,
+                                                @selector(setHideAttachment:),
+                                                YES);
+    }
+    if (mimeType.length && [transfer respondsToSelector:@selector(setMimeType:)]) {
+        [transfer performSelector:@selector(setMimeType:) withObject:mimeType];
+    }
+    if (filename.length && [transfer respondsToSelector:@selector(setTransferredFilename:)]) {
+        [transfer performSelector:@selector(setTransferredFilename:) withObject:filename];
+    }
+}
+
 static IMFileTransfer *prepareOutgoingTransfer(NSURL *originalURL, NSString *filename,
-                                               NSString *chatGuid, NSString **outErr) {
+                                               NSString *chatGuid, BOOL hideAttachment,
+                                               NSString *mimeType, NSString **outErr) {
     Class ftcClass = NSClassFromString(@"IMFileTransferCenter");
     if (!ftcClass) {
         if (outErr) *outErr = @"IMFileTransferCenter not available";
@@ -3361,6 +3717,10 @@ static IMFileTransfer *prepareOutgoingTransfer(NSURL *originalURL, NSString *fil
         }
     }
 
+    if (hideAttachment) {
+        configurePreviewPayloadTransfer(transfer, mimeType, filename);
+    }
+
     // Register the transfer so imagent picks it up. BB notes this can warn
     // silently on failure; we still try because skipping it leaves the
     // attachment unsendable.
@@ -3419,7 +3779,8 @@ static NSDictionary *handleSendAttachment(NSInteger requestId, NSDictionary *par
 
     @try {
         NSString *prepErr = nil;
-        IMFileTransfer *transfer = prepareOutgoingTransfer(fileURL, filename, chatGuid, &prepErr);
+        IMFileTransfer *transfer = prepareOutgoingTransfer(fileURL, filename, chatGuid,
+                                                           NO, nil, &prepErr);
         if (!transfer) {
             return errorResponse(requestId,
                 prepErr.length ? prepErr : @"Could not register attachment transfer");
@@ -4119,7 +4480,7 @@ static NSDictionary *handleUpdateGroupPhoto(NSInteger requestId, NSDictionary *p
         NSURL *fileURL = [NSURL fileURLWithPath:filePath];
         NSString *prepErr = nil;
         IMFileTransfer *transfer = prepareOutgoingTransfer(fileURL,
-            [fileURL lastPathComponent], chatGuid, &prepErr);
+            [fileURL lastPathComponent], chatGuid, NO, nil, &prepErr);
         if (!transfer || ![transfer guid].length) {
             return errorResponse(requestId,
                 prepErr.length ? prepErr : @"Could not prepare group-photo transfer");

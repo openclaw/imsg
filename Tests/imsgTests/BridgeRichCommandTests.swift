@@ -138,6 +138,18 @@ func injectedHelperWiresURLPreviewBalloonSend() throws {
   #expect(source.contains("NSString *richLinkURL = params[@\"richLinkURL\"]"))
   #expect(source.contains("if (richLinkURL.length)"))
   #expect(source.contains("buildBalloonIMMessage(urlPreviewBalloonBundleIdentifier()"))
+  #expect(source.contains("RichLinkImageAttachmentSubstitute"))
+  #expect(source.contains("[metadata setValue:@[substitute] forKey:@\"contentImages\"]"))
+  #expect(source.contains("prepareOutgoingTransfer(previewFile"))
+  #expect(
+    source.contains(
+      "YES,\n                                                                       previewMimeType"
+    )
+  )
+  #expect(source.contains("fileTransferGuids"))
+  #expect(source.contains("\"__kIMLinkIsRichLinkAttributeName\""))
+  #expect(source.contains("IMDDController"))
+  #expect(source.contains("scanOutgoingMessageForDataDetectors(imMessage)"))
 }
 
 @Test
