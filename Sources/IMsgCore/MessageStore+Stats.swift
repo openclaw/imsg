@@ -141,7 +141,7 @@ extension MessageStore {
   public func messageStats(chatID: Int64? = nil, includeMedia: Bool = false) throws -> MessageStats
   {
     try withConnection { db in
-      let filter = MessageStatsFilter(chatID: chatID)
+      let filter = MessageStatsFilter(schema: schema, chatID: chatID)
       let totalMessages = try messageStatsTotal(db: db, filter: filter)
       return MessageStats(
         totalMessages: totalMessages,
@@ -156,7 +156,7 @@ extension MessageStore {
 
   public func mediaStats(chatID: Int64? = nil) throws -> MediaStats {
     try withConnection { db in
-      try mediaStats(db: db, filter: MessageStatsFilter(chatID: chatID))
+      try mediaStats(db: db, filter: MessageStatsFilter(schema: schema, chatID: chatID))
     }
   }
 
@@ -405,13 +405,19 @@ private struct MessageStatsFilter {
   let whereClause: String
   let bindings: [Binding?]
 
-  init(chatID: Int64?) {
-    if let chatID {
-      self.whereClause = "WHERE cmj.chat_id = ?"
-      self.bindings = [chatID]
-    } else {
-      self.whereClause = ""
-      self.bindings = []
+  init(schema: MessageStoreSchema, chatID: Int64?) {
+    var clauses: [String] = []
+    var bindings: [Binding?] = []
+    if schema.hasReactionColumns {
+      clauses.append(
+        "(m.associated_message_type IS NULL OR m.associated_message_type < 2000 OR m.associated_message_type > 3006)"
+      )
     }
+    if let chatID {
+      clauses.append("cmj.chat_id = ?")
+      bindings.append(chatID)
+    }
+    self.whereClause = clauses.isEmpty ? "" : "WHERE \(clauses.joined(separator: " AND "))"
+    self.bindings = bindings
   }
 }

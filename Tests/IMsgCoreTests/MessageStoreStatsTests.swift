@@ -92,3 +92,45 @@ func messageStatsCanFilterByChat() throws {
   #expect(stats.chats.map(\.chatID) == [2])
   #expect(stats.handles == [HandleMessageStats(handle: "+456", messageCount: 1)])
 }
+
+@Test
+func messageStatsExcludeReactionRows() throws {
+  let db = try Connection(.inMemory)
+  var options = MessageDatabaseFixture.SchemaOptions()
+  options.includeReactionColumns = true
+  try MessageDatabaseFixture.createSchema(db, options: options)
+  let date = MessageStore.appleEpoch(Date(timeIntervalSince1970: 1_735_689_600))
+
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
+  try db.run(
+    """
+    INSERT INTO chat(ROWID, chat_identifier, guid, display_name, service_name)
+    VALUES (1, '+123', 'iMessage;-;+123', 'Alice', 'iMessage')
+    """)
+  try db.run(
+    """
+    INSERT INTO message(
+      ROWID, handle_id, text, guid, associated_message_guid, associated_message_type,
+      date, is_from_me, service
+    )
+    VALUES (1, 1, 'hello', 'message-guid', NULL, NULL, ?, 0, 'iMessage'),
+           (2, 1, 'Liked "hello"', 'reaction-guid', 'p:0/message-guid', 2000, ?, 0, 'iMessage')
+    """,
+    date,
+    date
+  )
+  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 1), (1, 2)")
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let stats = try store.messageStats(chatID: 1)
+
+  #expect(stats.totalMessages == 1)
+  #expect(
+    stats.chats == [
+      ChatMessageStats(
+        chatID: 1, identifier: "+123", name: "Alice", service: "iMessage", messageCount: 1)
+    ])
+  #expect(stats.handles == [HandleMessageStats(handle: "+123", messageCount: 1)])
+  #expect(stats.services == [ServiceMessageStats(service: "iMessage", messageCount: 1)])
+  #expect(stats.dates == [DateMessageStats(date: "2025-01-01", messageCount: 1)])
+}
