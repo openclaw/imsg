@@ -34,6 +34,9 @@ extension RPCServer {
       guard scheduledAt > Date() else {
         throw RPCError.invalidParams("schedule must be in the future")
       }
+      guard bridgeParams["selectedMessageGuid"] == nil else {
+        throw RPCError.invalidParams("schedule cannot be combined with reply_to")
+      }
       bridgeParams["scheduledAt"] = CLIISO8601.format(scheduledAt)
     }
     if let formatting = params["text_formatting"] ?? params["textFormatting"] {
@@ -76,7 +79,8 @@ extension RPCServer {
     {
       result["guid"] = sentMessage.guid
       result["message_id"] = sentMessage.guid
-    } else if data["queued"] as? Bool != true || data["scheduledAt"] != nil,
+    } else if data["queued"] as? Bool != true,
+      data["scheduledAt"] == nil,
       let guid = data["messageGuid"] as? String, !guid.isEmpty
     {
       result["guid"] = guid

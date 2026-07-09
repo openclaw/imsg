@@ -179,6 +179,9 @@ enum SendRichCommand {
       guard file.isEmpty else {
         throw ParsedValuesError.invalidOption("schedule cannot be combined with file")
       }
+      guard params["selectedMessageGuid"] == nil else {
+        throw ParsedValuesError.invalidOption("schedule cannot be combined with reply-to")
+      }
       params["scheduledAt"] = CLIISO8601.format(scheduledAt)
     }
 
@@ -259,6 +262,10 @@ enum SendRichCommand {
     if let rawScheduledAt = data["scheduledAt"] as? String,
       let scheduledAt = CLIISO8601.parse(rawScheduledAt)
     {
+      enriched.removeValue(forKey: "guid")
+      enriched.removeValue(forKey: "message_id")
+      enriched.removeValue(forKey: "messageGuid")
+      enriched.removeValue(forKey: "id")
       do {
         let store = try storeFactory(dbPath)
         if let scheduledMessage = try store.scheduledMessage(
@@ -275,9 +282,6 @@ enum SendRichCommand {
           enriched["schedule_state"] = scheduledMessage.scheduleState
         }
       } catch {
-        if data["queued"] as? Bool == true {
-          enriched.removeValue(forKey: "messageGuid")
-        }
       }
       return enriched
     }

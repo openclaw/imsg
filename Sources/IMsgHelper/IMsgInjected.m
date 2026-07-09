@@ -2613,6 +2613,9 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
         if (!scheduledDate) {
             return errorResponse(requestId, @"Invalid scheduledAt ISO8601 value");
         }
+        if (selectedMessageGuid.length) {
+            return errorResponse(requestId, @"scheduledAt cannot be combined with selectedMessageGuid");
+        }
     }
 
     NSRange zeroRange = NSMakeRange(0, body.length);

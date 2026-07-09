@@ -121,6 +121,63 @@ func sendRichScheduledMessagePassesScheduleToBridge() async throws {
 }
 
 @Test
+func sendRichScheduledMessageSuppressesBridgeGuidWhenRowIsUnresolved() async throws {
+  let scheduledAt = CLIISO8601.format(Date().addingTimeInterval(3600))
+  let values = ParsedValues(
+    positional: [],
+    options: [
+      "chat": ["iMessage;-;+15551234567"],
+      "text": ["later"],
+      "schedule": [scheduledAt],
+    ],
+    flags: ["jsonOutput"]
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+
+  let output = try await StdoutCapture.capture {
+    try await SendRichCommand.run(
+      values: values,
+      runtime: runtime,
+      invokeBridge: { _, _ in
+        ["messageGuid": "transient-guid", "queued": true, "scheduledAt": scheduledAt]
+      },
+      storeFactory: { _ in
+        throw NSError(domain: "imsg-tests", code: 1)
+      }
+    )
+  }
+
+  let data = try #require(output.data(using: .utf8))
+  let result = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+  #expect(result["messageGuid"] == nil)
+  #expect(result["guid"] == nil)
+  #expect(result["message_id"] == nil)
+}
+
+@Test
+func sendRichRejectsScheduledReplies() async throws {
+  let scheduledAt = CLIISO8601.format(Date().addingTimeInterval(3600))
+  let values = ParsedValues(
+    positional: [],
+    options: [
+      "chat": ["iMessage;-;+15551234567"],
+      "text": ["later"],
+      "replyTo": ["parent-guid"],
+      "schedule": [scheduledAt],
+    ],
+    flags: ["jsonOutput"]
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+
+  await #expect(throws: ParsedValuesError.self) {
+    try await SendRichCommand.run(
+      values: values,
+      runtime: runtime
+    )
+  }
+}
+
+@Test
 func sendRichRejectsScheduledAttachments() async throws {
   let scheduledAt = CLIISO8601.format(Date().addingTimeInterval(3600))
   let values = ParsedValues(

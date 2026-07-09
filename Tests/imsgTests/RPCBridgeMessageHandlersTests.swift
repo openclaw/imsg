@@ -214,7 +214,33 @@ func rpcScheduledCreateRequiresAndForwardsSchedule() async throws {
   #expect(capturedAction == .sendMessage)
   #expect(capturedParams["scheduledAt"] as? String == scheduledAt)
   let result = output.responses.first?["result"] as? [String: Any]
-  #expect(result?["guid"] as? String == "scheduled-guid")
+  #expect(result?["guid"] == nil)
+  #expect(result?["message_id"] == nil)
+}
+
+@Test
+func rpcScheduledCreateRejectsReplyTargets() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  let scheduledAt = CLIISO8601.format(Date().addingTimeInterval(3600))
+  var invoked = false
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { _, _ in
+      invoked = true
+      return [:]
+    }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"scheduled","method":"scheduledMessages.createScheduledMessage","params":{"chat_id":1,"text":"later","reply_to":"parent-guid","scheduled_at":""#
+      + scheduledAt + #""}}"#
+  )
+
+  #expect(invoked == false)
+  #expect(output.errors.count == 1)
 }
 
 @Test
