@@ -133,6 +133,7 @@ func injectedHelperWiresURLPreviewBalloonSend() throws {
   #expect(source.contains("com.apple.messages.URLBalloonProvider"))
   #expect(source.contains("buildURLPreviewPayloadData"))
   #expect(source.contains("LPLinkMetadata"))
+  #expect(source.contains("RichLink"))
   #expect(source.contains("urlPreviewMessage"))
   #expect(source.contains("NSString *richLinkURL = params[@\"richLinkURL\"]"))
   #expect(source.contains("if (richLinkURL.length)"))

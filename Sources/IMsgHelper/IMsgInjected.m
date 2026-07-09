@@ -11,6 +11,7 @@
 
 #import <Foundation/Foundation.h>
 #import <AppKit/AppKit.h>
+#import <LinkPresentation/LinkPresentation.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <os/lock.h>
@@ -24,6 +25,29 @@
 // parent message's first IMMessagePartChatItem, returns the thread
 // identifier string ("0:0:<parent-len>:<parent-guid>") to set on the reply.
 typedef NSString *(*IMCreateThreadIdentifierForMessagePartChatItemFn)(id);
+
+@interface RichLink : NSObject <NSSecureCoding>
+@property (nonatomic, strong) id richLinkMetadata;
+@property (nonatomic, assign) BOOL richLinkIsPlaceholder;
+@end
+
+@implementation RichLink
++ (BOOL)supportsSecureCoding { return YES; }
+
+- (void)encodeWithCoder:(NSCoder *)coder {
+    [coder encodeObject:self.richLinkMetadata forKey:@"richLinkMetadata"];
+    [coder encodeBool:self.richLinkIsPlaceholder forKey:@"richLinkIsPlaceholder"];
+}
+
+- (instancetype)initWithCoder:(NSCoder *)coder {
+    self = [super init];
+    if (self) {
+        _richLinkMetadata = [coder decodeObjectForKey:@"richLinkMetadata"];
+        _richLinkIsPlaceholder = [coder decodeBoolForKey:@"richLinkIsPlaceholder"];
+    }
+    return self;
+}
+@end
 
 static IMCreateThreadIdentifierForMessagePartChatItemFn
 imCreateThreadIdentifierFn(void) {
@@ -2098,6 +2122,27 @@ static BOOL urlPreviewMessageInitializerAvailable(void) {
     return [messageClass instancesRespondToSelector:sel];
 }
 
+static LPLinkMetadata *fetchURLPreviewMetadata(NSURL *url) {
+    LPMetadataProvider *provider = [LPMetadataProvider new];
+    __block LPLinkMetadata *fetched = nil;
+    __block BOOL done = NO;
+    [provider startFetchingMetadataForURL:url
+                        completionHandler:^(LPLinkMetadata *metadata, NSError *error) {
+        if (metadata) fetched = metadata;
+        done = YES;
+    }];
+
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:8.0];
+    while (!done && [deadline timeIntervalSinceNow] > 0) {
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                 beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+    }
+    if (!done) {
+        [provider cancel];
+    }
+    return fetched;
+}
+
 static NSData *buildURLPreviewPayloadData(NSString *urlString, NSString **outErr) {
     if (!urlString.length) {
         if (outErr) *outErr = @"Missing URL";
@@ -2109,40 +2154,41 @@ static NSData *buildURLPreviewPayloadData(NSString *urlString, NSString **outErr
         return nil;
     }
 
-    NSBundle *framework = [NSBundle bundleWithPath:
-        @"/System/Library/Frameworks/LinkPresentation.framework"];
-    if (framework && !framework.loaded) {
-        [framework load];
+    LPLinkMetadata *metadata = fetchURLPreviewMetadata(url);
+    if (!metadata) {
+        metadata = [LPLinkMetadata new];
     }
-    Class metadataClass = NSClassFromString(@"LPLinkMetadata");
-    if (!metadataClass) {
-        if (outErr) *outErr = @"LinkPresentation metadata unavailable";
+    if (!metadata.URL) metadata.URL = url;
+    if (!metadata.originalURL) metadata.originalURL = url;
+    if (!metadata.title.length) metadata.title = url.host ?: url.absoluteString;
+
+    Class richLinkClass = NSClassFromString(@"RichLink");
+    if (!richLinkClass) {
+        if (outErr) *outErr = @"RichLink payload class unavailable";
         return nil;
     }
-
-    id metadata = [[metadataClass alloc] init];
-    if ([metadata respondsToSelector:@selector(setURL:)]) {
-        [metadata performSelector:@selector(setURL:) withObject:url];
-    }
-    if ([metadata respondsToSelector:@selector(setOriginalURL:)]) {
-        [metadata performSelector:@selector(setOriginalURL:) withObject:url];
-    }
-    if ([metadata respondsToSelector:@selector(setTitle:)]) {
-        NSString *title = url.host ?: url.absoluteString;
-        [metadata performSelector:@selector(setTitle:) withObject:title];
+    id richLink = [[richLinkClass alloc] init];
+    @try {
+        [richLink setValue:metadata forKey:@"richLinkMetadata"];
+        [richLink setValue:@NO forKey:@"richLinkIsPlaceholder"];
+    } @catch (NSException *exception) {
+        if (outErr) {
+            *outErr = exception.reason ?: @"Could not build RichLink payload";
+        }
+        return nil;
     }
 
     NSError *archiveError = nil;
     NSData *payload = nil;
     if ([NSKeyedArchiver respondsToSelector:
             @selector(archivedDataWithRootObject:requiringSecureCoding:error:)]) {
-        payload = [NSKeyedArchiver archivedDataWithRootObject:metadata
+        payload = [NSKeyedArchiver archivedDataWithRootObject:richLink
                                         requiringSecureCoding:NO
                                                         error:&archiveError];
     } else {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        payload = [NSKeyedArchiver archivedDataWithRootObject:metadata];
+        payload = [NSKeyedArchiver archivedDataWithRootObject:richLink];
 #pragma clang diagnostic pop
     }
     if (!payload.length) {
