@@ -13,9 +13,9 @@ imsg watch --chat-id 42 --json
 
 Human progress, prompts, and warnings are written to **stderr**, not stdout. Stdout is reserved for parseable JSON so pipelines stay clean.
 
-## Chat
+## Chat list item
 
-Returned by `imsg chats`, `imsg group`, and embedded in nested chat references in messages.
+Returned by `imsg chats --json` and JSON-RPC `chats.list`.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -32,10 +32,11 @@ Returned by `imsg chats`, `imsg group`, and embedded in nested chat references i
 | `account_id` | string | Routing diagnostic. Read-only. |
 | `account_login` | string | Routing diagnostic. Read-only. |
 | `last_addressed_handle` | string | Routing diagnostic. Read-only. |
+| `unread_count` | int | Count of unread inbound messages in the chat. Omitted on older database schemas without read state. |
 
 ## Message
 
-Returned by `imsg history`, `imsg watch`, and the JSON-RPC `messages.history` and `watch.subscribe` notifications.
+Returned by `imsg history`, `imsg search`, `imsg watch`, and the JSON-RPC `messages.history` and `watch.subscribe` notifications.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -59,6 +60,10 @@ Returned by `imsg history`, `imsg watch`, and the JSON-RPC `messages.history` an
 | `attachments` | array | Present when `--attachments` is set. See below. |
 | `thread_originator_guid` | string | For inline-reply threads. |
 | `poll` | object | Present for native Apple Messages Polls creation and vote rows. See below. |
+| `is_read` | bool | Inbound only — omitted when `is_from_me` is true. |
+| `date_read` | ISO8601 | Inbound only — present when `is_read` is true. |
+
+Read state is a database snapshot. A watch notification includes the state present when that message row is emitted; reading it later does not generate a second message notification.
 
 ### URL preview coalescing
 

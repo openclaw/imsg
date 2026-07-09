@@ -1687,6 +1687,16 @@ static NSString *activeIMessageSenderHandle(void) {
     return nil;
 }
 
+static NSString *pollParticipantHandle(NSString *handle) {
+    NSString *trimmed = trimmedPollString(handle);
+    if (!trimmed.length) return nil;
+    if ([trimmed hasPrefix:@"e:"] || [trimmed hasPrefix:@"p:"]) {
+        NSString *stripped = [trimmed substringFromIndex:2];
+        return stripped.length ? stripped : trimmed;
+    }
+    return trimmed;
+}
+
 static NSArray<NSString *> *normalizedPollOptions(NSArray *rawOptions) {
     NSMutableArray<NSString *> *options = [NSMutableArray array];
     NSMutableSet<NSString *> *seen = [NSMutableSet set];
@@ -1821,6 +1831,27 @@ static NSData *archivePollPayloadEnvelope(NSURL *url,
         @"requiredCapabilities": requiredCapabilities,
         @"sendAsText": @YES,
         @"an": @"Polls"
+    };
+    if (@available(macOS 10.13, *)) {
+        return [NSKeyedArchiver archivedDataWithRootObject:envelope
+                                     requiringSecureCoding:NO
+                                                     error:outError];
+    }
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    return [NSKeyedArchiver archivedDataWithRootObject:envelope];
+    #pragma clang diagnostic pop
+}
+
+/// Native vote rows carry only the Polls URL and session identity. Reusing the
+/// creation envelope suppresses participant markers and native notifications.
+static NSData *archivePollMutationEnvelope(NSURL *url,
+                                           NSUUID *sessionIdentifier,
+                                           NSError **outError) {
+    NSDictionary *envelope = @{
+        @"URL": url,
+        @"an": @"Polls",
+        @"sessionIdentifier": sessionIdentifier
     };
     if (@available(macOS 10.13, *)) {
         return [NSKeyedArchiver archivedDataWithRootObject:envelope
@@ -2768,7 +2799,7 @@ static NSData *buildPollVotePayloadData(NSString *optionIdentifier,
                                         NSString **outError) {
     NSDictionary *vote = @{
         @"voteOptionIdentifier": optionIdentifier,
-        @"participantHandle": voterHandle ?: @""
+        @"participantHandle": pollParticipantHandle(voterHandle) ?: @""
     };
     NSDictionary *root = @{
         @"version": @1,
@@ -2793,7 +2824,7 @@ static NSData *buildPollVotePayloadData(NSString *optionIdentifier,
     }
     NSUUID *sessionIdentifier = [NSUUID UUID];
     NSError *archiveError = nil;
-    NSData *payload = archivePollPayloadEnvelope(url, sessionIdentifier, &archiveError);
+    NSData *payload = archivePollMutationEnvelope(url, sessionIdentifier, &archiveError);
     if (!payload && outError) {
         *outError = archiveError.localizedDescription ?: @"Could not archive vote payload";
     }
@@ -2910,7 +2941,14 @@ static NSDictionary *handleSendPollVote(NSInteger requestId, NSDictionary *param
         return errorResponse(requestId, payloadError ?: @"Could not build vote payload");
     }
 
-    NSDictionary *summary = @{ @"amc": @0, @"ust": @YES };
+    NSDictionary *summary = @{
+        @"amc": @9,
+        @"enc": @YES,
+        @"amd": @"Polls",
+        @"ust": @YES,
+        @"ams": @"Sent a vote",
+        @"amb": pollsBalloonBundleIdentifier()
+    };
     NSAttributedString *body = buildPollBreadcrumbAttributed();
 
     @try {

@@ -15,6 +15,7 @@ struct ChatPayload: Codable {
   let accountID: String?
   let accountLogin: String?
   let lastAddressedHandle: String?
+  let unreadCount: Int?
 
   init(
     chat: Chat, chatInfo: ChatInfo? = nil, participants: [String]? = nil, contactName: String? = nil
@@ -34,6 +35,7 @@ struct ChatPayload: Codable {
     self.accountID = chatInfo?.accountID ?? chat.accountID
     self.accountLogin = chatInfo?.accountLogin ?? chat.accountLogin
     self.lastAddressedHandle = chatInfo?.lastAddressedHandle ?? chat.lastAddressedHandle
+    self.unreadCount = chat.unreadCount
   }
 
   enum CodingKeys: String, CodingKey {
@@ -50,6 +52,7 @@ struct ChatPayload: Codable {
     case accountID = "account_id"
     case accountLogin = "account_login"
     case lastAddressedHandle = "last_addressed_handle"
+    case unreadCount = "unread_count"
   }
 }
 
@@ -108,6 +111,8 @@ struct MessagePayload: Codable {
   let reactionEmoji: String?
   let isReactionAdd: Bool?
   let reactedToGUID: String?
+  let isRead: Bool?
+  let dateRead: String?
 
   init(
     message: Message,
@@ -137,6 +142,16 @@ struct MessagePayload: Codable {
     self.balloonBundleID = message.balloonBundleID
     self.urlPreview = message.urlPreview.map { URLPreviewPayload(preview: $0) }
     self.poll = message.poll
+    if message.isFromMe {
+      self.isRead = nil
+      self.dateRead = nil
+    } else {
+      self.isRead = message.isRead
+      self.dateRead =
+        message.isRead == true
+        ? message.dateRead.map { CLIISO8601.format($0) }
+        : nil
+    }
 
     // Reaction event metadata
     if message.isReaction {
@@ -179,6 +194,8 @@ struct MessagePayload: Codable {
     case reactionEmoji = "reaction_emoji"
     case isReactionAdd = "is_reaction_add"
     case reactedToGUID = "reacted_to_guid"
+    case isRead = "is_read"
+    case dateRead = "date_read"
   }
 }
 

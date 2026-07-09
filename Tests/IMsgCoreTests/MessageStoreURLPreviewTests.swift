@@ -16,6 +16,7 @@ func makeURLPreviewTestDB() throws -> Connection {
       associated_message_guid TEXT,
       associated_message_type INTEGER,
       balloon_bundle_id TEXT,
+      is_read INTEGER, date_read INTEGER,
       date INTEGER,
       is_from_me INTEGER,
       service TEXT
@@ -40,15 +41,17 @@ func insertURLPreviewTestMessage(
   associatedMessageType: Int? = nil,
   balloonBundleID: String? = nil,
   date: Date,
-  isFromMe: Bool = false
+  isFromMe: Bool = false,
+  isRead: Bool = false,
+  dateRead: Date? = nil
 ) throws {
   try db.run(
     """
     INSERT INTO message(
       ROWID, handle_id, text, guid, associated_message_guid, associated_message_type,
-      balloon_bundle_id, date, is_from_me, service
+      balloon_bundle_id, is_read, date_read, date, is_from_me, service
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'iMessage')
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'iMessage')
     """,
     rowID,
     handleID,
@@ -57,6 +60,8 @@ func insertURLPreviewTestMessage(
     associatedMessageGUID,
     associatedMessageType,
     balloonBundleID,
+    isRead ? 1 : 0,
+    dateRead.map(TestDatabase.appleEpoch) ?? 0,
     TestDatabase.appleEpoch(date),
     isFromMe ? 1 : 0
   )
@@ -105,13 +110,16 @@ func messagesAfterSkipsPreviewOnlyBatchForPublicCursorlessAPI() throws {
 func messagesByChatCoalescesURLPreviewSplitSend() throws {
   let db = try makeURLPreviewTestDB()
   let now = Date()
+  let readAt = Date(timeIntervalSince1970: 1_700_000_000)
   try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
   try insertURLPreviewTestMessage(
     db,
     rowID: 1,
     text: "Dump https://example.com",
     guid: "text-guid",
-    date: now
+    date: now,
+    isRead: true,
+    dateRead: readAt
   )
   try insertURLPreviewTestMessage(
     db,
@@ -132,6 +140,8 @@ func messagesByChatCoalescesURLPreviewSplitSend() throws {
   #expect(messages.first?.urlPreview?.rowID == 2)
   #expect(messages.first?.urlPreview?.guid == "preview-guid")
   #expect(messages.first?.urlPreview?.balloonBundleID == MessageStore.urlPreviewBalloonBundleID)
+  #expect(messages.first?.isRead == true)
+  #expect(messages.first?.dateRead == readAt)
 }
 
 @Test

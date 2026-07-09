@@ -27,9 +27,9 @@ Use this before scripting a send. It returns identifier, GUID, service, particip
 
 `imsg group` works for direct chats too, despite the name. Treat it as "chat detail," not "groups only."
 
-## Chat object
+## Chat list object
 
-Every chat object — from `chats`, `group`, or any nested chat metadata in `history`/`watch` — includes:
+Objects returned by `imsg chats --json` and JSON-RPC `chats.list` include:
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -46,6 +46,7 @@ Every chat object — from `chats`, `group`, or any nested chat metadata in `his
 | `account_id` | string | Routing diagnostic. Read-only. |
 | `account_login` | string | Routing diagnostic. Read-only. |
 | `last_addressed_handle` | string | Routing diagnostic. Read-only. |
+| `unread_count` | int | Count of unread inbound messages in the chat. Omitted on older database schemas without read state. |
 
 ## Routing identifiers — which one to use
 
@@ -70,7 +71,15 @@ To distinguish your own messages from others':
 
 ## Filtering tips
 
-`imsg chats` does not take filter flags — it's designed to be cheap. Pipe through `jq` or `grep` for ad-hoc filtering:
+`imsg chats` takes one filter flag, `--unread-only`, which returns only chats with unread inbound messages:
+
+```bash
+imsg chats --unread-only --json
+```
+
+On an older Messages database without a read-state column, `--unread-only` fails clearly instead of reporting an empty inbox.
+
+For anything else, pipe through `jq` or `grep` for ad-hoc filtering:
 
 ```bash
 imsg chats --json | jq -s 'map(select(.is_group == true))'
