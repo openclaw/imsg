@@ -9,6 +9,8 @@ func rpcStatusAdvertisesBridgeMessageMethods() {
   let methods = Set(kSupportedRPCMethods)
 
   for method in [
+    "chats.setBackground",
+    "chats.removeBackground",
     "send.rich",
     "send.attachment",
     "poll.send",
@@ -329,32 +331,41 @@ func rpcChatBackgroundRemoveInvokesBridge() async throws {
 }
 
 @Test
-func rpcChatBackgroundSetReturnsUnsupported() async throws {
+func rpcChatBackgroundSetStagesPackageAndInvokesBridge() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()
-  var invokedBridge = false
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
+  let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString,
+    isDirectory: true
+  )
+  try FileManager.default.createDirectory(at: fixtureRoot, withIntermediateDirectories: true)
+  let package = fixtureRoot.appendingPathComponent("bg")
+  let watchPackage = fixtureRoot.appendingPathComponent("bg-watchBackground")
+  try Data("package".utf8).write(to: package)
+  try Data("watch".utf8).write(to: watchPackage)
+
   let server = RPCServer(
     store: store,
     verbose: false,
     output: output,
-    invokeBridge: { _, _ in
-      invokedBridge = true
-      return [:]
-    },
-    stageAttachment: { _ in
-      Issue.record("set should not stage files")
-      return "/tmp/staged-bg.png"
+    invokeBridge: { action, params in
+      capturedAction = action
+      capturedParams = params
+      return ["backgroundGuid": "background-guid"]
     }
   )
 
   let line =
     #"{"jsonrpc":"2.0","id":"bg","method":"chats.setBackground","params":{"#
-    + #""chat_id":1,"file":"~/Desktop/bg.png"}}"#
+    + #""chat_id":1,"file":"\#(package.path)"}}"#
   await server.handleLineForTesting(line)
 
-  #expect(invokedBridge == false)
-  #expect(output.responses.isEmpty)
-  let error = output.errors.first?["error"] as? [String: Any]
-  #expect((error?["code"] as? Int) == -32602)
-  #expect((error?["data"] as? String)?.contains("PosterKit channel state") == true)
+  #expect(capturedAction == .setChatBackground)
+  #expect(capturedParams["chatGuid"] as? String == "iMessage;+;chat123")
+  let stagedPath = try #require(capturedParams["filePath"] as? String)
+  #expect(FileManager.default.fileExists(atPath: stagedPath))
+  #expect(FileManager.default.fileExists(atPath: stagedPath + "-watchBackground"))
+  #expect(output.errors.isEmpty)
 }

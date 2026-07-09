@@ -3,17 +3,16 @@ import Foundation
 import IMsgCore
 
 enum ChatBackgroundCommand {
-  static let unsupportedSetMessage =
-    "chat-background set is not implemented: native backgrounds require PosterKit channel state; use status or clear"
-
   static let spec = CommandSpec(
     name: "chat-background",
-    abstract: "Inspect or clear a macOS 26 Messages chat background",
+    abstract: "Inspect, set, or clear a macOS 26 Messages chat background",
     discussion: """
       Requires `imsg launch` on macOS 26+. This is a guarded private-API probe:
       the helper reports an error unless the running Messages classes expose a
-      known chat-background selector. Setting a new background is intentionally
-      unsupported until the native PosterKit channel creation path is implemented.
+      known chat-background selector. Setting a background expects the same
+      PosterKit package shape Messages.app uses internally: `--file` points to
+      the transcript background package and a sibling path ending in
+      `-watchBackground` must exist.
       """,
     signature: CommandSignatures.withRuntimeFlags(
       CommandSignature(
@@ -23,12 +22,17 @@ enum ChatBackgroundCommand {
         options: CommandSignatures.baseOptions() + [
           .make(label: "chat", names: [.long("chat")], help: "chat guid"),
           .make(label: "chatID", names: [.long("chat-id")], help: "local chat ROWID"),
-          .make(label: "file", names: [.long("file")], help: "set: path to image"),
+          .make(
+            label: "file",
+            names: [.long("file")],
+            help: "set: path to PosterKit background package"
+          ),
         ]
       )
     ),
     usageExamples: [
       "imsg chat-background status --chat 'iMessage;+;chat0000' --json",
+      "imsg chat-background set --chat 'iMessage;+;chat0000' --file /tmp/bg-package",
       "imsg chat-background clear --chat 'iMessage;+;chat0000'",
     ]
   ) { values, runtime in
@@ -39,8 +43,8 @@ enum ChatBackgroundCommand {
     values: ParsedValues,
     runtime: RuntimeOptions,
     storeFactory: (String) throws -> MessageStore = { try MessageStore(path: $0) },
-    stageAttachment: @escaping (String) throws -> String = MessageSender
-      .stageAttachmentForMessagesApp,
+    stageBackgroundPackage: @escaping (String) throws -> String = MessageSender
+      .stageChatBackgroundPackageForMessagesApp,
     invokeBridge: @escaping (BridgeAction, [String: Any]) async throws -> [String: Any] = {
       action, params in
       try await IMsgBridgeClient.shared.invoke(action: action, params: params)
@@ -51,7 +55,28 @@ enum ChatBackgroundCommand {
       try emitStatus(values: values, runtime: runtime, storeFactory: storeFactory)
       return
     case "set":
-      throw ChatBackgroundError.unsupportedSet
+      guard let chat = values.option("chat"), !chat.isEmpty else {
+        throw ParsedValuesError.missingOption("chat")
+      }
+      guard let file = values.option("file"), !file.isEmpty else {
+        throw ParsedValuesError.missingOption("file")
+      }
+      let expanded = (file as NSString).expandingTildeInPath
+      _ = try await BridgeOutput.invokeAndEmit(
+        action: .setChatBackground,
+        params: [
+          "chatGuid": chat,
+          "filePath": try stageBackgroundPackage(expanded),
+        ],
+        runtime: runtime,
+        invokeBridge: invokeBridge
+      ) { data in
+        let backgroundGuid = (data["backgroundGuid"] as? String) ?? ""
+        return backgroundGuid.isEmpty
+          ? "chat-background: set"
+          : "chat-background: set (background_guid=\(backgroundGuid))"
+      }
+      return
     case "clear":
       guard let chat = values.option("chat"), !chat.isEmpty else {
         throw ParsedValuesError.missingOption("chat")
@@ -67,7 +92,6 @@ enum ChatBackgroundCommand {
     default:
       throw ParsedValuesError.invalidOption("action")
     }
-    _ = stageAttachment
   }
 
   private static func emitStatus(
@@ -141,13 +165,10 @@ enum ChatBackgroundCommand {
 }
 
 enum ChatBackgroundError: LocalizedError, CustomStringConvertible {
-  case unsupportedSet
   case chatNotFound
 
   var errorDescription: String? {
     switch self {
-    case .unsupportedSet:
-      return ChatBackgroundCommand.unsupportedSetMessage
     case .chatNotFound:
       return "chat not found"
     }

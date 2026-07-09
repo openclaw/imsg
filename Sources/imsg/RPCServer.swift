@@ -31,6 +31,7 @@ let kSupportedRPCMethods: [String] = [
   "chats.create",
   "chats.delete",
   "chats.markUnread",
+  "chats.setBackground",
   "chats.removeBackground",
   "messages.history",
   "watch.subscribe",

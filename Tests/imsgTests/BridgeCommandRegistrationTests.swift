@@ -102,34 +102,35 @@ func chatBackgroundStatusReadsLocalDatabase() async throws {
 }
 
 @Test
-func chatBackgroundSetFailsUnsupportedBeforeBridge() async throws {
+func chatBackgroundSetForwardsBridgeAction() async throws {
   let values = ParsedValues(
     positional: ["set"],
     options: ["chat": ["iMessage;+;chat0000"], "file": ["/tmp/bg.png"]],
     flags: []
   )
   let runtime = RuntimeOptions(parsedValues: values)
-  var invokedBridge = false
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
 
-  do {
+  _ = try await StdoutCapture.capture {
     try await ChatBackgroundCommand.run(
       values: values,
       runtime: runtime,
-      stageAttachment: { _ in
-        Issue.record("set should not stage files")
-        return "/tmp/staged-bg.png"
+      stageBackgroundPackage: { path in
+        #expect(path == "/tmp/bg.png")
+        return "/tmp/staged-bg-package"
       },
-      invokeBridge: { _, _ in
-        invokedBridge = true
-        return [:]
+      invokeBridge: { action, params in
+        capturedAction = action
+        capturedParams = params
+        return ["backgroundGuid": "background-guid"]
       }
     )
-    Issue.record("set should throw")
-  } catch let error as ChatBackgroundError {
-    #expect(error == .unsupportedSet)
   }
 
-  #expect(invokedBridge == false)
+  #expect(capturedAction == .setChatBackground)
+  #expect(capturedParams["chatGuid"] as? String == "iMessage;+;chat0000")
+  #expect(capturedParams["filePath"] as? String == "/tmp/staged-bg-package")
 }
 
 @Test
@@ -148,7 +149,7 @@ func injectedHelperWiresChatBackgroundActions() throws {
   #expect(source.contains("chatBackgroundSelectorStatus"))
   #expect(source.contains("Chat backgrounds require macOS 26 or later"))
   #expect(source.contains("setTranscriptBackgroundAndSendToChat:transferID:"))
-  #expect(source.contains("native backgrounds require PosterKit channel state"))
+  #expect(source.contains("Chat background watch package not found"))
 }
 
 @Test

@@ -49,9 +49,18 @@ extension RPCServer {
   }
 
   func handleChatsSetBackground(params: [String: Any], id: Any?) async throws {
-    _ = params
-    _ = id
-    throw RPCError.invalidParams(ChatBackgroundCommand.unsupportedSetMessage)
+    let chatGUID = try await resolveChatGUIDParam(params)
+    guard let file = stringParam(params["file"]), !file.isEmpty else {
+      throw RPCError.invalidParams("file is required")
+    }
+    let stagedFile = try MessageSender.stageChatBackgroundPackageForMessagesApp(
+      at: (file as NSString).expandingTildeInPath
+    )
+    let result = try await invokeBridge(
+      action: .setChatBackground,
+      params: ["chatGuid": chatGUID, "filePath": stagedFile]
+    )
+    respond(id: id, result: ["ok": true, "data": result])
   }
 
   func handleChatsRemoveBackground(params: [String: Any], id: Any?) async throws {

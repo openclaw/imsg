@@ -4083,9 +4083,44 @@ static BOOL invokeChatBackgroundSelector(
 }
 
 static NSDictionary *handleSetChatBackground(NSInteger requestId, NSDictionary *params) {
-    (void)params;
-    return errorResponse(requestId,
-        @"chat-background set is not implemented: native backgrounds require PosterKit channel state; use status or clear");
+    if (!isMacOS26OrLater()) {
+        return errorResponse(requestId, @"Chat backgrounds require macOS 26 or later");
+    }
+    NSString *chatGuid = params[@"chatGuid"];
+    NSString *filePath = params[@"filePath"];
+    if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
+    if (!filePath.length) return errorResponse(requestId, @"Missing filePath");
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if (![fm fileExistsAtPath:filePath]) {
+        return errorResponse(requestId, @"Chat background package not found");
+    }
+    NSString *watchPath = [filePath stringByAppendingString:@"-watchBackground"];
+    if (![fm fileExistsAtPath:watchPath]) {
+        return errorResponse(requestId,
+            @"Chat background watch package not found; expected sibling -watchBackground file");
+    }
+    IMChat *chat = resolveChatByGuid(chatGuid);
+    if (!chat) return errorResponse(requestId, @"Chat not found");
+
+    NSString *backgroundGuid = [[NSUUID UUID] UUIDString];
+    NSURL *fileURL = [NSURL fileURLWithPath:filePath];
+    NSString *backgroundURL = [fileURL absoluteString];
+    for (NSString *name in chatBackgroundSetSelectors()) {
+        SEL sel = NSSelectorFromString(name);
+        if (![chat respondsToSelector:sel]) continue;
+        NSString *invokeErr = nil;
+        if (invokeChatBackgroundSelector(chat, sel, backgroundURL, backgroundGuid, &invokeErr)) {
+            return successResponse(requestId, @{
+                @"chatGuid": chatGuid,
+                @"background_set": @YES,
+                @"selector": name,
+                @"backgroundGuid": backgroundGuid,
+                @"backgroundURL": backgroundURL
+            });
+        }
+        return errorResponse(requestId, invokeErr ?: @"chat-background set failed");
+    }
+    return errorResponse(requestId, @"No chat-background set selector available");
 }
 
 static NSDictionary *handleClearChatBackground(NSInteger requestId, NSDictionary *params) {

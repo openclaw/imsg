@@ -115,6 +115,35 @@ public struct MessageSender {
     try stageAttachment(at: path, destinationRoot: defaultAttachmentsSubdirectory())
   }
 
+  public static func stageChatBackgroundPackageForMessagesApp(at path: String) throws -> String {
+    let expandedPath = (path as NSString).expandingTildeInPath
+    let sourceURL = URL(fileURLWithPath: expandedPath)
+    let watchSourceURL = URL(fileURLWithPath: expandedPath + "-watchBackground")
+    let fileManager = FileManager.default
+    guard fileManager.fileExists(atPath: sourceURL.path) else {
+      throw IMsgError.appleScriptFailure("Chat background package not found at \(sourceURL.path)")
+    }
+    guard fileManager.fileExists(atPath: watchSourceURL.path) else {
+      throw IMsgError.appleScriptFailure(
+        "Chat background watch package not found at \(watchSourceURL.path)"
+      )
+    }
+
+    let stagingRoot = defaultChatBackgroundSubdirectory()
+    try fileManager.createDirectory(at: stagingRoot, withIntermediateDirectories: true)
+    let baseName = UUID().uuidString
+    let destinationDir = stagingRoot.appendingPathComponent(baseName, isDirectory: true)
+    try fileManager.createDirectory(at: destinationDir, withIntermediateDirectories: true)
+    let destination = destinationDir.appendingPathComponent(baseName, isDirectory: false)
+    let watchDestination = destinationDir.appendingPathComponent(
+      "\(baseName)-watchBackground",
+      isDirectory: false
+    )
+    try fileManager.copyItem(at: sourceURL, to: destination)
+    try fileManager.copyItem(at: watchSourceURL, to: watchDestination)
+    return destination.path
+  }
+
   private func stageAttachment(at path: String) throws -> String {
     try Self.stageAttachment(at: path, destinationRoot: attachmentsSubdirectoryProvider())
   }
@@ -149,6 +178,15 @@ public struct MessageSender {
       isDirectory: true
     )
     return messagesRoot.appendingPathComponent("imsg", isDirectory: true)
+  }
+
+  private static func defaultChatBackgroundSubdirectory() -> URL {
+    let fileManager = FileManager.default
+    let home = fileManager.homeDirectoryForCurrentUser
+    return
+      home
+      .appendingPathComponent("Library/Containers/com.apple.MobileSMS/Data/tmp", isDirectory: true)
+      .appendingPathComponent("imsg-chat-background", isDirectory: true)
   }
 
   private func sendViaAppleScript(
