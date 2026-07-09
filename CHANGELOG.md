@@ -2,6 +2,9 @@
 
 ## 0.12.4 - Unreleased
 
+### Native Polls
+- fix: match native poll vote envelopes, participant handles, and summary metadata so votes render participant markers and correct notifications (#162, thanks @omarshahine).
+
 ## 0.12.3 - 2026-07-06
 
 ### Native Polls
