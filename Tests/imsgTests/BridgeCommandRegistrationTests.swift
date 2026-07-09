@@ -111,8 +111,7 @@ func injectedHelperWiresStickerSendAction() throws {
   #expect(source.contains("setStickerUserInfo:"))
   #expect(source.contains("setAttributionInfo:"))
   #expect(source.contains(#""p:%ld/%@""#))
-  #expect(
-    sendStickerBody.contains("prepareOutgoingTransfer(fileURL, filename, chatGuid"))
+  #expect(sendStickerBody.contains("prepareOutgoingTransfer(fileURL, filename, chatGuid"))
   #expect(sendStickerBody.contains("YES, &prepErr"))
   #expect(sendStickerBody.contains("selectedMessageGuid.length ? 1000 : 0"))
   #expect(sendStickerBody.contains(#"@{@"eogcd": @3, @"ust": @YES}"#))
@@ -147,8 +146,7 @@ func bridgeAttachmentStagingUsesChatGuid() throws {
     prepareBody.contains(
       "_persistentPathForTransfer:filename:highQuality:chatGUID:storeAtExternalPath:"))
   #expect(prepareBody.contains("[inv setArgument:&cg atIndex:5];"))
-  #expect(
-    sendAttachmentBody.contains("prepareOutgoingTransfer(fileURL, filename, chatGuid"))
+  #expect(sendAttachmentBody.contains("prepareOutgoingTransfer(fileURL, filename, chatGuid"))
   #expect(sendAttachmentBody.contains("NO, &prepErr"))
 }
 
