@@ -2,9 +2,6 @@
 
 ## 0.12.4 - Unreleased
 
-### Scheduled Messages
-- feat: add bridge-backed Send Later creation via `send-rich --schedule`, scheduled message listing, cancellation, and JSON-RPC scheduled message methods.
-
 ## 0.12.3 - 2026-07-06
 
 ### Native Polls

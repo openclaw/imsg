@@ -218,31 +218,6 @@ func rpcScheduledCreateRequiresAndForwardsSchedule() async throws {
 }
 
 @Test
-func rpcScheduledCancelInvokesBridge() async throws {
-  let store = try CommandTestDatabase.makeStoreForRPC()
-  let output = TestRPCOutput()
-  var capturedAction: BridgeAction?
-  var capturedParams: [String: Any] = [:]
-  let server = RPCServer(
-    store: store,
-    verbose: false,
-    output: output,
-    invokeBridge: { action, params in
-      capturedAction = action
-      capturedParams = params
-      return ["cancelled": true]
-    }
-  )
-
-  await server.handleLineForTesting(
-    #"{"jsonrpc":"2.0","id":"cancel","method":"scheduledMessages.cancelScheduledMessage","params":{"guid":"scheduled-guid"}}"#
-  )
-
-  #expect(capturedAction == .cancelScheduledMessage)
-  #expect(capturedParams["messageGuid"] as? String == "scheduled-guid")
-}
-
-@Test
 func rpcSendRichSuppressesQueuedBridgeGuid() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()

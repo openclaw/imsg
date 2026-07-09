@@ -2707,104 +2707,6 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
     }
 }
 
-static BOOL invokeSingleObjectSelector(id target, SEL selector, id argument) {
-    if (!target || ![target respondsToSelector:selector]) return NO;
-    NSMethodSignature *sig = [target methodSignatureForSelector:selector];
-    if (!sig || sig.numberOfArguments < 3) return NO;
-    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
-    [inv setSelector:selector];
-    [inv setTarget:target];
-    __unsafe_unretained id arg = argument;
-    [inv setArgument:&arg atIndex:2];
-    [inv invoke];
-    return YES;
-}
-
-static NSArray<IMChat *> *allExistingIMChats(void) {
-    Class registryClass = NSClassFromString(@"IMChatRegistry");
-    if (!registryClass) return @[];
-    id registry = [registryClass performSelector:@selector(sharedInstance)];
-    if (!registry || ![registry respondsToSelector:@selector(allExistingChats)]) return @[];
-    id chats = [registry performSelector:@selector(allExistingChats)];
-    return [chats isKindOfClass:[NSArray class]] ? chats : @[];
-}
-
-static IMChat *findChatForMessageGuid(NSString *messageGuid, id *outMessageItem) {
-    for (IMChat *chat in allExistingIMChats()) {
-        id item = findMessageItem(chat, messageGuid);
-        if (item) {
-            if (outMessageItem) *outMessageItem = item;
-            return chat;
-        }
-    }
-    return nil;
-}
-
-static NSDictionary *handleCancelScheduledMessage(NSInteger requestId, NSDictionary *params) {
-    NSString *messageGuid = trimmedPollString(params[@"messageGuid"]);
-    NSString *chatGuid = params[@"chatGuid"];
-    if (!messageGuid.length) return errorResponse(requestId, @"Missing messageGuid");
-
-    id item = nil;
-    IMChat *chat = chatGuid.length ? resolveChatByGuid(chatGuid) : nil;
-    if (chat) {
-        item = findMessageItem(chat, messageGuid);
-    } else {
-        chat = findChatForMessageGuid(messageGuid, &item);
-    }
-    if (!chat) {
-        return errorResponse(requestId,
-            [NSString stringWithFormat:@"Could not resolve chat for scheduled message: %@", messageGuid]);
-    }
-    if (!item) {
-        item = findMessageItem(chat, messageGuid);
-    }
-    id messageItem = item;
-    if (item && [item respondsToSelector:@selector(messageItem)]) {
-        @try { messageItem = [item performSelector:@selector(messageItem)] ?: item; }
-        @catch (__unused NSException *e) {}
-    }
-
-    NSArray<NSString *> *selectorNames = @[
-        @"cancelScheduledMessage:",
-        @"deleteScheduledMessage:",
-        @"removeScheduledMessage:"
-    ];
-    @try {
-        for (NSString *name in selectorNames) {
-            SEL selector = NSSelectorFromString(name);
-            if (invokeSingleObjectSelector(chat, selector, messageItem ?: messageGuid)
-                || invokeSingleObjectSelector(chat, selector, messageGuid)) {
-                return successResponse(requestId, @{
-                    @"messageGuid": messageGuid,
-                    @"selector": name,
-                    @"cancelled": @YES
-                });
-            }
-        }
-
-        Class registryClass = NSClassFromString(@"IMChatRegistry");
-        id registry = registryClass ? [registryClass performSelector:@selector(sharedInstance)] : nil;
-        for (NSString *name in selectorNames) {
-            SEL selector = NSSelectorFromString(name);
-            if (invokeSingleObjectSelector(registry, selector, messageItem ?: messageGuid)
-                || invokeSingleObjectSelector(registry, selector, messageGuid)) {
-                return successResponse(requestId, @{
-                    @"messageGuid": messageGuid,
-                    @"selector": name,
-                    @"cancelled": @YES
-                });
-            }
-        }
-    } @catch (NSException *exception) {
-        return errorResponse(requestId,
-            [NSString stringWithFormat:@"cancel-scheduled-message failed: %@", exception.reason]);
-    }
-
-    return errorResponse(requestId,
-        @"Scheduled-message cancel selector unavailable on this macOS");
-}
-
 /// `send-poll`: construct a native Messages Polls extension balloon and send
 /// it via IMCore. Payload shape mirrors Apple's Polls extension envelope:
 /// archived layout metadata plus a data URL carrying the JSON poll definition.
@@ -4440,7 +4342,6 @@ static NSDictionary* dispatchAction(NSInteger legacyId, NSString *action,
     if ([action isEqualToString:@"send-message"]) return handleSendMessage(legacyId, params);
     if ([action isEqualToString:@"send-multipart"]) return handleSendMultipart(legacyId, params);
     if ([action isEqualToString:@"send-attachment"]) return handleSendAttachment(legacyId, params);
-    if ([action isEqualToString:@"cancel-scheduled-message"]) return handleCancelScheduledMessage(legacyId, params);
     if ([action isEqualToString:@"send-poll"]) return handleSendPoll(legacyId, params);
     if ([action isEqualToString:@"send-poll-vote"]) return handleSendPollVote(legacyId, params);
     if ([action isEqualToString:@"send-reaction"]) return handleSendReaction(legacyId, params);

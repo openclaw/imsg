@@ -121,30 +121,25 @@ func sendRichScheduledMessagePassesScheduleToBridge() async throws {
 }
 
 @Test
-func scheduledCancelInvokesBridge() async throws {
+func sendRichRejectsScheduledAttachments() async throws {
+  let scheduledAt = CLIISO8601.format(Date().addingTimeInterval(3600))
   let values = ParsedValues(
-    positional: ["cancel", "scheduled-guid"],
-    options: [:],
+    positional: [],
+    options: [
+      "chat": ["iMessage;-;+15551234567"],
+      "file": ["/tmp/photo.jpg"],
+      "schedule": [scheduledAt],
+    ],
     flags: ["jsonOutput"]
   )
   let runtime = RuntimeOptions(parsedValues: values)
-  var capturedAction: BridgeAction?
-  var capturedParams: [String: Any] = [:]
 
-  _ = try await StdoutCapture.capture {
-    try await ScheduledCommand.run(
+  await #expect(throws: ParsedValuesError.self) {
+    try await SendRichCommand.run(
       values: values,
-      runtime: runtime,
-      invokeBridge: { action, params in
-        capturedAction = action
-        capturedParams = params
-        return ["cancelled": true]
-      }
+      runtime: runtime
     )
   }
-
-  #expect(capturedAction == .cancelScheduledMessage)
-  #expect(capturedParams["messageGuid"] as? String == "scheduled-guid")
 }
 
 @Test

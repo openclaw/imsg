@@ -176,6 +176,9 @@ enum SendRichCommand {
       guard scheduledAt > Date() else {
         throw ParsedValuesError.invalidOption("schedule must be in the future")
       }
+      guard file.isEmpty else {
+        throw ParsedValuesError.invalidOption("schedule cannot be combined with file")
+      }
       params["scheduledAt"] = CLIISO8601.format(scheduledAt)
     }
 
@@ -260,7 +263,8 @@ enum SendRichCommand {
         let store = try storeFactory(dbPath)
         if let scheduledMessage = try store.scheduledMessage(
           chatGUID: chat,
-          scheduledAt: scheduledAt)
+          scheduledAt: scheduledAt,
+          text: text)
         {
           enriched["id"] = scheduledMessage.rowID
           enriched["guid"] = scheduledMessage.guid

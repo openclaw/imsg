@@ -39,8 +39,6 @@ let kSupportedRPCMethods: [String] = [
   "send.attachment",
   "scheduledMessages.createScheduledMessage",
   "scheduledMessages.getScheduledMessages",
-  "scheduledMessages.cancelScheduledMessage",
-  "scheduledMessages.deleteScheduledMessage",
   "poll.send",
   "messages.poll.send",
   "poll.vote",
@@ -162,8 +160,6 @@ final class RPCServer {
         try await handleScheduledCreate(params: params, id: id)
       case "scheduledMessages.getScheduledMessages":
         try await handleScheduledList(params: params, id: id)
-      case "scheduledMessages.cancelScheduledMessage", "scheduledMessages.deleteScheduledMessage":
-        try await handleScheduledCancel(params: params, id: id)
       case "poll.send", "messages.poll.send":
         try await handlePollSend(params: params, id: id)
       case "poll.vote", "messages.poll.vote":

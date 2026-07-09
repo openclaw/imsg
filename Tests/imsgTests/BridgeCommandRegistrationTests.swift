@@ -150,8 +150,7 @@ func injectedHelperWiresNativePollSend() throws {
   #expect(source.contains("scheduledMessageInitializerAvailable"))
   #expect(source.contains("scheduleType = 2"))
   #expect(source.contains("scheduleState = 1"))
-  #expect(source.contains("cancel-scheduled-message"))
-  #expect(source.contains("cancelScheduledMessage:"))
+  #expect(!source.contains("cancel-scheduled-message"))
 }
 
 @Test

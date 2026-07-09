@@ -91,14 +91,20 @@ extension MessageStore {
     }
   }
 
-  public func scheduledMessage(chatGUID: String, scheduledAt: Date) throws -> ScheduledMessage? {
+  public func scheduledMessage(
+    chatGUID: String,
+    scheduledAt: Date,
+    text: String? = nil
+  ) throws -> ScheduledMessage? {
     let target = chatGUID.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !target.isEmpty else { return nil }
     let scheduledRows = try scheduledMessages(limit: 100)
-    return scheduledRows.first { message in
+    let matches = scheduledRows.filter { message in
       let sameChat = message.chatGUID == target || message.chatIdentifier == target
       let sameTime = abs(message.scheduledAt.timeIntervalSince(scheduledAt)) < 2
-      return sameChat && sameTime
+      let sameText = text.map { message.text == $0 } ?? true
+      return sameChat && sameTime && sameText
     }
+    return matches.count == 1 ? matches[0] : nil
   }
 }

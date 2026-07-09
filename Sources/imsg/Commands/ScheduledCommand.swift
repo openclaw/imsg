@@ -5,13 +5,12 @@ import IMsgCore
 enum ScheduledCommand {
   static let spec = CommandSpec(
     name: "scheduled",
-    abstract: "List or cancel scheduled messages",
-    discussion: "Requires the IMCore bridge for cancel. Listing is read-only from chat.db.",
+    abstract: "List scheduled messages",
+    discussion: "Lists future scheduled rows read-only from chat.db.",
     signature: CommandSignatures.withRuntimeFlags(
       CommandSignature(
         arguments: [
-          .make(label: "action", help: "list|cancel", isOptional: false),
-          .make(label: "guid", help: "message guid for cancel", isOptional: true),
+          .make(label: "action", help: "list", isOptional: false)
         ],
         options: CommandSignatures.baseOptions() + [
           .make(label: "limit", names: [.long("limit")], help: "max rows for list")
@@ -19,8 +18,7 @@ enum ScheduledCommand {
       )
     ),
     usageExamples: [
-      "imsg scheduled list --json",
-      "imsg scheduled cancel MESSAGE-GUID",
+      "imsg scheduled list --json"
     ]
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
@@ -38,8 +36,6 @@ enum ScheduledCommand {
     switch values.argument(0) {
     case "list":
       try runList(values: values, runtime: runtime, storeFactory: storeFactory)
-    case "cancel":
-      try await runCancel(values: values, runtime: runtime, invokeBridge: invokeBridge)
     default:
       throw ParsedValuesError.invalidOption("action")
     }
@@ -63,26 +59,6 @@ enum ScheduledCommand {
       StdoutWriter.writeLine(
         "\(CLIISO8601.format(message.scheduledAt)) \(message.guid) [\(message.chatID)] \(message.text)"
       )
-    }
-  }
-
-  private static func runCancel(
-    values: ParsedValues,
-    runtime: RuntimeOptions,
-    invokeBridge: @escaping (BridgeAction, [String: Any]) async throws -> [String: Any]
-  ) async throws {
-    guard let guid = values.argument(1)?.trimmingCharacters(in: .whitespacesAndNewlines),
-      !guid.isEmpty
-    else {
-      throw ParsedValuesError.missingOption("guid")
-    }
-    _ = try await BridgeOutput.invokeAndEmit(
-      action: .cancelScheduledMessage,
-      params: ["messageGuid": guid],
-      runtime: runtime,
-      invokeBridge: invokeBridge
-    ) { _ in
-      "scheduled: canceled (guid=\(guid))"
     }
   }
 }

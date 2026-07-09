@@ -59,7 +59,8 @@ extension RPCServer {
       let scheduledAt = CLIISO8601.parse(rawScheduledAt),
       let scheduledMessage = try? store.scheduledMessage(
         chatGUID: chatGUID,
-        scheduledAt: scheduledAt)
+        scheduledAt: scheduledAt,
+        text: text)
     {
       result["guid"] = scheduledMessage.guid
       result["message_id"] = scheduledMessage.guid
@@ -130,29 +131,6 @@ extension RPCServer {
       return try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
     }
     respond(id: id, result: ["messages": payloads])
-  }
-
-  func handleScheduledCancel(params: [String: Any], id: Any?) async throws {
-    guard
-      let guid = stringParam(params["guid"] ?? params["message_guid"] ?? params["messageGuid"]),
-      !guid.isEmpty
-    else {
-      throw RPCError.invalidParams("guid is required")
-    }
-    var bridgeParams: [String: Any] = ["messageGuid": guid]
-    if let chatGUID = stringParam(params["chat_guid"] ?? params["chatGuid"]), !chatGUID.isEmpty {
-      bridgeParams["chatGuid"] = chatGUID
-    } else if let chatID = int64Param(params["chat_id"]),
-      let info = try await cache.info(chatID: chatID)
-    {
-      bridgeParams["chatGuid"] = info.guid.isEmpty ? info.identifier : info.guid
-    }
-    let data = try await invokeBridge(action: .cancelScheduledMessage, params: bridgeParams)
-    var result: [String: Any] = ["ok": true, "guid": guid]
-    for (key, value) in data {
-      result[key] = value
-    }
-    respond(id: id, result: result)
   }
 
   func handlePollSend(params: [String: Any], id: Any?) async throws {
