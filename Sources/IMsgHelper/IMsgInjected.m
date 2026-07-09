@@ -2802,17 +2802,16 @@ static NSData *buildPollVotePayloadData(NSString *optionIdentifier,
                                         NSString *voterHandle,
                                         BOOL removed,
                                         NSString **outError) {
-    NSMutableDictionary *vote = [NSMutableDictionary dictionaryWithDictionary:@{
-        @"voteOptionIdentifier": optionIdentifier,
-        @"participantHandle": pollParticipantHandle(voterHandle) ?: @""
-    }];
-    if (removed) {
-        vote[@"eventType"] = @"removed";
-        vote[@"removed"] = @YES;
+    NSArray *votes = @[];
+    if (!removed) {
+        votes = @[@{
+            @"voteOptionIdentifier": optionIdentifier,
+            @"participantHandle": pollParticipantHandle(voterHandle) ?: @""
+        }];
     }
     NSDictionary *root = @{
         @"version": @1,
-        @"item": @{ @"votes": @[vote] }
+        @"item": @{ @"votes": votes }
     };
     NSError *jsonError = nil;
     NSData *jsonData = [NSJSONSerialization dataWithJSONObject:root options:0 error:&jsonError];

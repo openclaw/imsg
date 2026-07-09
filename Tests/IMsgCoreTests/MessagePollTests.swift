@@ -267,6 +267,33 @@ func decodesPollVotePayloadFromAppleDataURLEnvelope() throws {
 }
 
 @Test
+func decodesPollUnvotePayloadFromEmptyVotesArray() throws {
+  let response: [String: Any] = [
+    "item": [
+      "votes": []
+    ],
+    "version": 1,
+  ]
+  let payload = try applePollEnvelopePayload(jsonObject: response)
+
+  let poll = MessagePollDecoder.decode(
+    balloonBundleID: testPollBundleID,
+    payloadData: payload,
+    messageSummaryInfo: Data(),
+    associatedMessageType: 4000,
+    associatedMessageGUID: "original-poll-guid",
+    messageGUID: "vote-row-guid",
+    sender: "+15550002000"
+  )
+
+  #expect(poll?.kind == .vote)
+  #expect(poll?.event == "imessage.poll.voted")
+  #expect(poll?.pollGUID == "original-poll-guid")
+  #expect(poll?.vote == nil)
+  #expect(poll?.votes == [])
+}
+
+@Test
 func malformedPollPayloadEmitsUnknownWithoutRawPayload() throws {
   let poll = MessagePollDecoder.decode(
     balloonBundleID: testPollBundleID,
