@@ -3086,7 +3086,67 @@ static NSAttributedString *buildAttachmentAttributed(NSString *transferGuid,
     return [[NSAttributedString alloc] initWithString:@"￼" attributes:attrs];
 }
 
-static BOOL markTransferAsSticker(IMFileTransfer *transfer, NSString **outErr) {
+static void setIntegerProperty(id object, SEL selector, NSInteger value) {
+    if (!object || ![object respondsToSelector:selector]) return;
+    NSMethodSignature *sig = [object methodSignatureForSelector:selector];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    [inv setSelector:selector];
+    [inv setTarget:object];
+    [inv setArgument:&value atIndex:2];
+    [inv invoke];
+}
+
+static NSDictionary *stickerUserInfo(NSString *filename, NSString *transferGuid) {
+    NSString *sid = filename.length ? filename : @"sticker.png";
+    NSString *base = [[sid stringByDeletingPathExtension]
+        stringByReplacingOccurrencesOfString:@"-" withString:@""];
+    NSString *fallback = transferGuid.length ? transferGuid : [[NSUUID UUID] UUIDString];
+    NSString *hash = base.length
+        ? base
+        : [fallback stringByReplacingOccurrencesOfString:@"-" withString:@""].lowercaseString;
+    return @{
+        @"pid": @"com.apple.messages.MSMessageExtensionBalloonPlugin:0000000000:com.apple.Stickers.UserGenerated.MessagesExtension",
+        @"safi": @0,
+        @"sai": @"0",
+        @"shash": hash,
+        @"sid": sid,
+        @"sli": @"0",
+        @"spv": @0,
+        @"spw": @"163.73095703",
+        @"sro": @"0.00000000",
+        @"ssa": @"1.00000000",
+        @"stickerEffectType": @(-1),
+        @"suri": [NSString stringWithFormat:@"sticker:///imsg/%@", hash],
+        @"sxs": @"0.50000000",
+        @"sys": @"0.50000000"
+    };
+}
+
+static NSDictionary *stickerAttributionInfo(NSString *filename) {
+    NSString *label = [[filename.lastPathComponent stringByDeletingPathExtension]
+        stringByReplacingOccurrencesOfString:@"-" withString:@" "];
+    if (!label.length) label = @"Sticker";
+    return @{
+        @"accessl": label,
+        @"bundle-id": @"com.apple.messages.MSMessageExtensionBalloonPlugin:0000000000:com.apple.Stickers.UserGenerated.MessagesExtension",
+        @"name": @"Stickers",
+        @"pgensh": @420,
+        @"pgensw": @420,
+        @"pgenszc": @{
+            @"gm": @NO,
+            @"iaig": @NO,
+            @"mpw": @"600.000000",
+            @"mth": @"100.000000",
+            @"mtw": @"100.000000",
+            @"s": @"1.000000",
+            @"st": @NO
+        }
+    };
+}
+
+static BOOL markTransferAsSticker(IMFileTransfer *transfer,
+                                  NSString *filename,
+                                  NSString **outErr) {
     if (!transfer) {
         if (outErr) *outErr = @"Missing transfer";
         return NO;
@@ -3102,6 +3162,22 @@ static BOOL markTransferAsSticker(IMFileTransfer *transfer, NSString **outErr) {
         [inv invoke];
         marked = YES;
     }
+    NSString *transferGuid = [transfer respondsToSelector:@selector(guid)]
+        ? [transfer performSelector:@selector(guid)]
+        : nil;
+    NSDictionary *stickerInfo = stickerUserInfo(filename, transferGuid);
+    if ([transfer respondsToSelector:@selector(setStickerUserInfo:)]) {
+        [transfer performSelector:@selector(setStickerUserInfo:)
+                       withObject:stickerInfo];
+        marked = YES;
+    }
+    if ([transfer respondsToSelector:@selector(setAttributionInfo:)]) {
+        [transfer performSelector:@selector(setAttributionInfo:)
+                       withObject:stickerAttributionInfo(filename)];
+        marked = YES;
+    }
+    setIntegerProperty(transfer, @selector(setPreviewGenerationState:), 1);
+    setIntegerProperty(transfer, @selector(setPreviewGenerationVersion:), 1);
     if ([transfer respondsToSelector:@selector(setUserInfo:)]) {
         NSMutableDictionary *userInfo = [NSMutableDictionary dictionary];
         if ([transfer respondsToSelector:@selector(userInfo)]) {
@@ -3156,7 +3232,8 @@ static void retargetPreparedTransfer(id ftc, IMFileTransfer *transfer,
 }
 
 static IMFileTransfer *prepareOutgoingTransfer(NSURL *originalURL, NSString *filename,
-                                               NSString *chatGuid, NSString **outErr) {
+                                               NSString *chatGuid, BOOL stickerTransfer,
+                                               NSString **outErr) {
     Class ftcClass = NSClassFromString(@"IMFileTransferCenter");
     if (!ftcClass) {
         if (outErr) *outErr = @"IMFileTransferCenter not available";
@@ -3280,6 +3357,14 @@ static IMFileTransfer *prepareOutgoingTransfer(NSURL *originalURL, NSString *fil
         }
     }
 
+    if (stickerTransfer) {
+        NSString *stickerErr = nil;
+        if (!markTransferAsSticker(transfer, filename, &stickerErr)) {
+            if (outErr) *outErr = stickerErr ?: @"Could not mark transfer as sticker";
+            return nil;
+        }
+    }
+
     // Register the transfer so imagent picks it up. BB notes this can warn
     // silently on failure; we still try because skipping it leaves the
     // attachment unsendable.
@@ -3338,7 +3423,8 @@ static NSDictionary *handleSendAttachment(NSInteger requestId, NSDictionary *par
 
     @try {
         NSString *prepErr = nil;
-        IMFileTransfer *transfer = prepareOutgoingTransfer(fileURL, filename, chatGuid, &prepErr);
+        IMFileTransfer *transfer = prepareOutgoingTransfer(fileURL, filename, chatGuid,
+                                                           NO, &prepErr);
         if (!transfer) {
             return errorResponse(requestId,
                 prepErr.length ? prepErr : @"Could not register attachment transfer");
@@ -3454,14 +3540,11 @@ static NSDictionary *handleSendSticker(NSInteger requestId, NSDictionary *params
 
     @try {
         NSString *prepErr = nil;
-        IMFileTransfer *transfer = prepareOutgoingTransfer(fileURL, filename, chatGuid, &prepErr);
+        IMFileTransfer *transfer = prepareOutgoingTransfer(fileURL, filename, chatGuid,
+                                                           YES, &prepErr);
         if (!transfer) {
             return errorResponse(requestId,
                 prepErr.length ? prepErr : @"Could not register sticker transfer");
-        }
-        NSString *stickerErr = nil;
-        if (!markTransferAsSticker(transfer, &stickerErr)) {
-            return errorResponse(requestId, stickerErr ?: @"Could not mark transfer as sticker");
         }
         NSString *transferGuid = [transfer guid];
         if (!transferGuid.length) {
@@ -3469,39 +3552,41 @@ static NSDictionary *handleSendSticker(NSInteger requestId, NSDictionary *params
         }
 
         NSAttributedString *body = buildAttachmentAttributed(transferGuid, filename, partIndex);
-        long long associatedType = selectedMessageGuid.length ? 100 : 0;
-        id parentMessage = nil;
-        id parentItem = nil;
-        NSString *threadIdentifier = nil;
+        long long associatedType = selectedMessageGuid.length ? 1000 : 0;
+        NSString *associatedRef = selectedMessageGuid;
+        NSRange targetRange = NSMakeRange(0, body.length);
         if (selectedMessageGuid.length) {
-            threadIdentifier = deriveThreadIdentifier(selectedMessageGuid,
-                                                      &parentMessage,
-                                                      &parentItem);
-            debugLog(@"handleSendSticker: parent=%@ threadId=%@",
-                     selectedMessageGuid, threadIdentifier ?: @"(none)");
-        } else {
-            clearThreadContextForChat(chat, nil);
+            associatedRef = [selectedMessageGuid hasPrefix:@"p:"]
+                ? selectedMessageGuid
+                : [NSString stringWithFormat:@"p:%ld/%@",
+                                             (long)partIndex, selectedMessageGuid];
+            id parentMsg = nil;
+            id parentChatItem = loadParentFirstChatItem(selectedMessageGuid, &parentMsg);
+            if (parentChatItem
+                && [parentChatItem respondsToSelector:@selector(messagePartRange)]) {
+                targetRange = [(IMMessagePartChatItem *)parentChatItem messagePartRange];
+                if (targetRange.length == 0) targetRange = NSMakeRange(0, body.length);
+            }
         }
+        NSDictionary *summaryInfo = selectedMessageGuid.length
+            ? @{@"eogcd": @3, @"ust": @YES}
+            : nil;
+        clearThreadContextForChat(chat, nil);
 
-        id imMessage = buildIMMessage(body, nil, nil, threadIdentifier,
-                                      parentItem,
-                                      selectedMessageGuid, associatedType,
-                                      NSMakeRange(0, body.length), nil,
+        id imMessage = buildIMMessage(body, nil, nil, nil,
+                                      nil,
+                                      associatedRef, associatedType,
+                                      targetRange, summaryInfo,
                                       @[transferGuid], NO, NO);
         if (!imMessage) {
             return errorResponse(requestId, @"Could not build sticker IMMessage");
         }
-        if (parentMessage
-            && [imMessage respondsToSelector:@selector(setThreadOriginator:)]) {
-            [imMessage performSelector:@selector(setThreadOriginator:)
-                            withObject:parentMessage];
+        if (selectedMessageGuid.length
+            && [imMessage respondsToSelector:@selector(setReplyToGUID:)]) {
+            [imMessage performSelector:@selector(setReplyToGUID:)
+                            withObject:selectedMessageGuid];
         }
-        if (threadIdentifier
-            && [imMessage respondsToSelector:@selector(setThreadIdentifier:)]) {
-            [imMessage performSelector:@selector(setThreadIdentifier:)
-                            withObject:threadIdentifier];
-        }
-        dispatchIMMessageInChat(chat, imMessage, threadIdentifier, parentItem);
+        [chat performSelector:@selector(sendMessage:) withObject:imMessage];
         NSString *guid = lastSentMessageGuid(chat);
         return successResponse(requestId, @{
             @"chatGuid": chatGuid,
@@ -4140,7 +4225,7 @@ static NSDictionary *handleUpdateGroupPhoto(NSInteger requestId, NSDictionary *p
         NSURL *fileURL = [NSURL fileURLWithPath:filePath];
         NSString *prepErr = nil;
         IMFileTransfer *transfer = prepareOutgoingTransfer(fileURL,
-            [fileURL lastPathComponent], chatGuid, &prepErr);
+            [fileURL lastPathComponent], chatGuid, NO, &prepErr);
         if (!transfer || ![transfer guid].length) {
             return errorResponse(requestId,
                 prepErr.length ? prepErr : @"Could not prepare group-photo transfer");

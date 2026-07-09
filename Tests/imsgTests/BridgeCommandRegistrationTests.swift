@@ -108,9 +108,14 @@ func injectedHelperWiresStickerSendAction() throws {
   #expect(source.contains("send-sticker"))
   #expect(source.contains("markTransferAsSticker"))
   #expect(source.contains("stickerTransfer"))
+  #expect(source.contains("setStickerUserInfo:"))
+  #expect(source.contains("setAttributionInfo:"))
+  #expect(source.contains(#""p:%ld/%@""#))
   #expect(
-    sendStickerBody.contains("prepareOutgoingTransfer(fileURL, filename, chatGuid, &prepErr)"))
-  #expect(sendStickerBody.contains("selectedMessageGuid.length ? 100 : 0"))
+    sendStickerBody.contains("prepareOutgoingTransfer(fileURL, filename, chatGuid"))
+  #expect(sendStickerBody.contains("YES, &prepErr"))
+  #expect(sendStickerBody.contains("selectedMessageGuid.length ? 1000 : 0"))
+  #expect(sendStickerBody.contains(#"@{@"eogcd": @3, @"ust": @YES}"#))
   #expect(sendStickerBody.contains("buildAttachmentAttributed(transferGuid, filename, partIndex)"))
 }
 
@@ -135,17 +140,16 @@ func bridgeAttachmentStagingUsesChatGuid() throws {
       in: source
     ))
 
-  #expect(
-    source.range(
-      of: #"prepareOutgoingTransfer\s*\([^)]*NSString\s*\*chatGuid\s*,\s*NSString\s*\*\*outErr\)"#,
-      options: .regularExpression
-    ) != nil)
+  let prepareSignature =
+    #"prepareOutgoingTransfer\s*\([^)]*NSString\s*\*chatGuid\s*,\s*BOOL\s+stickerTransfer\s*,\s*NSString\s*\*\*outErr\)"#
+  #expect(source.range(of: prepareSignature, options: .regularExpression) != nil)
   #expect(
     prepareBody.contains(
       "_persistentPathForTransfer:filename:highQuality:chatGUID:storeAtExternalPath:"))
   #expect(prepareBody.contains("[inv setArgument:&cg atIndex:5];"))
   #expect(
-    sendAttachmentBody.contains("prepareOutgoingTransfer(fileURL, filename, chatGuid, &prepErr)"))
+    sendAttachmentBody.contains("prepareOutgoingTransfer(fileURL, filename, chatGuid"))
+  #expect(sendAttachmentBody.contains("NO, &prepErr"))
 }
 
 @Test

@@ -94,6 +94,7 @@ struct IMsgBridgeProtocolTests {
       BridgeAction.sendMessage,
       .sendMultipart,
       .sendAttachment,
+      .sendSticker,
       .sendPoll,
       .sendReaction,
       .createChat,
