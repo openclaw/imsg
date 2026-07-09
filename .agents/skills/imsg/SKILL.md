@@ -11,8 +11,8 @@ description: "iMessage/SMS: local history, contacts, live watch, and requested s
 
 - Every read command supports `--json` and emits **NDJSON** (one object per line). Pipe to `jq -s` to get an array. Stdout carries only JSON; progress and warnings go to stderr.
 - Two capability tiers:
-  - **Standard** (normal permissions): `chats`, `group`, `history`, `watch`, `search`, `send`, `react`, `nickname --local`, `account --local`, `whois --local`.
-  - **Bridge** (SIP disabled + `imsg launch` dylib injection): `send-rich`, `send-multipart`, `send-attachment`, `tapback`, `poll`, `edit`, `unsend`, `delete-message`, `read`, `typing`, `notify-anyways`, `chat-*`, and default-mode `account`/`whois`/`nickname`.
+  - **Standard** (normal permissions): `chats`, `group`, `history`, `watch`, `search`, `stats`, `send`, `react`, `nickname --local`, `account --local`, `whois --local`.
+  - **Bridge** (SIP disabled + `imsg launch` dylib injection): `send-rich`, `send-multipart`, `send-attachment`, `sticker`, `tapback`, `poll`, `scheduled`, `edit`, `unsend`, `delete-message`, `read`, `typing`, `notify-anyways`, `chat-*`, `chat-background`, `contact-card`, and default-mode `account`/`whois`/`nickname`.
 - Check availability with `imsg status --json` before using bridge commands. If the bridge is down, use a standard command only when it preserves the requested semantics; otherwise stop and explain. Never turn a reply/effect/subject into a plain send or a GUID-targeted tapback into `react`, and never suggest disabling SIP unprompted.
 - Full command and flag reference: `imsg completions llm`.
 
@@ -37,12 +37,15 @@ Then inspect and read the chat by rowid:
 imsg group --chat-id ID --json                 # identity + participants; check before automating
 imsg history --chat-id ID --limit 50 --json | jq -s
 imsg history --chat-id ID --start 2025-01-01T00:00:00Z --end 2025-02-01T00:00:00Z --json
+imsg stats --chat-id ID --json                 # read-only message/media aggregates
 ```
 
 - Chat `id` is the `chat.db` rowid: stable on one machine, the preferred `--chat-id` handle. `identifier` and `guid` are portable across machines.
 - `--start` is inclusive, `--end` exclusive; both take ISO8601. Use absolute timestamps for date-scoped questions.
 - `--attachments` adds attachment metadata; `--convert-attachments` converts CAF→M4A / GIF→PNG for model consumption.
 - `imsg search --query "pizza tonight" --json` searches message bodies only (`--match contains` default, `exact` available).
+- `imsg stats --json` is read-only and aggregates messages by chat, handle, service, and day. It excludes tapback/reaction rows; add the command's media options when attachment totals by UTI/MIME or chat are needed.
+- Stats are also available over RPC as `server.getMessageStats`, `getMediaStatistics`, and `getMediaStatisticsByChat`.
 - SIP-free lookups: `imsg whois --address "+15551234567" --type phone --local`, `imsg nickname --address "+15551234567" --local --json`, `imsg account --local --json`. Note `nickname --local` returns *your* AddressBook label for the handle; the iMessage-shared nickname needs default-mode `nickname` via the bridge.
 - Direct `sqlite3` queries are a last resort; the `handle` table lacks the resolved names `imsg chats` provides.
 
@@ -72,12 +75,34 @@ Only after `imsg status` confirms the bridge is loaded (`imsg launch` injects it
 
 ```bash
 imsg send-rich --chat 'iMessage;-;+15551234567' --text 'hi' --reply-to MSG_GUID   # replies, effects, subjects
+imsg send-rich --chat GUID --url 'https://example.com/' --rich-link               # native URL preview balloon
+imsg send-rich --chat GUID --text 'later' --schedule 2026-07-10T20:00:00Z         # Send Later text only
+imsg scheduled list --json                                                        # pending future Send Later rows
+imsg sticker --chat GUID --file ~/Desktop/sticker.png --attach-to MSG_GUID        # optional sticker reply
 imsg poll send --chat GUID --question 'Dinner?' --option 'Pizza' --option 'Sushi' --comment 'Vote by 5pm'
+imsg poll unvote --chat GUID --message POLL_GUID --option OPTION_ID
+imsg chat-background clear --chat GUID
+imsg chat-background set --chat GUID --file /path/to/poster-package               # requires sibling -watchBackground
+imsg contact-card status --chat GUID                                              # guarded availability probe
 imsg edit --chat GUID --message MSG_GUID --new-text 'updated'                     # macOS 13+
 imsg chat-create --addresses '+15551234567,+15559876543' --name 'Crew'
 ```
 
 `poll send` echoes `--question` as a best-effort plain caption after the Polls balloon; `--comment` overrides that caption. Do not retry automatically when only the caption fails: the poll may already be delivered. `history` and `watch` backfill a title-less inbound native poll's `poll.question` from its clean caption row.
+
+`poll unvote` sends the native minimal Polls update with `votes: []`. Do not use or suggest poll add-option: visual append behavior was not proven and that surface is intentionally not exposed.
+
+`send-rich --schedule` creates text-only Send Later rows. Do not combine it with `--file` or `--reply-to`, and do not claim scheduled cancel/delete support: native cancel remains unexposed because DB deletion paths produced false positives in live proof.
+
+`send-rich --url URL --rich-link` sends a native URL preview balloon. Use it only when the user explicitly wants a rich URL preview; a normal URL text send remains the simpler and safer path.
+
+`sticker` stages an image as native sticker metadata, optionally attached to a target message via `--attach-to`. Sticker sends are bridge-only and depend on private IMCore transfer metadata, so report failures exactly rather than falling back to a plain image attachment.
+
+`chat-background set` accepts native PosterKit transcript-background packages only. The package path must have a sibling path ending in `-watchBackground`; arbitrary PNG/JPEG images are not valid inputs. `chat-background status` is read-only and can inspect cache/watch-background presence.
+
+`contact-card status` is a guarded probe. `contact-card share` currently fails closed on lobster/macOS proof because private controller probing can block Messages.app; do not present contact-card sharing as supported unless `status` reports it available.
+
+JSON-RPC bridge aliases exist for these surfaces: `polls.unvote`/`poll.unvote`/`messages.poll.unvote`, `scheduledMessages.createScheduledMessage`, `scheduledMessages.getScheduledMessages`, `attachments.sendSticker`/`sticker.send`, `contacts.shouldShareContact`, `contacts.shareContactCard`, `chats.setBackground`, and `chats.removeBackground`.
 
 Destructive bridge commands — `unsend`, `delete-message`, `chat-delete`, `chat-leave`, `chat-remove-member` — need per-action user confirmation.
 
