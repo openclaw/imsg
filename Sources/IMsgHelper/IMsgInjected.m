@@ -4094,10 +4094,16 @@ static NSDictionary *handleSetChatBackground(NSInteger requestId, NSDictionary *
     if (![fm fileExistsAtPath:filePath]) {
         return errorResponse(requestId, @"Chat background package not found");
     }
+    if (pathHasSymlinkComponent(filePath)) {
+        return errorResponse(requestId, @"Chat background package path traverses a symlink");
+    }
     NSString *watchPath = [filePath stringByAppendingString:@"-watchBackground"];
     if (![fm fileExistsAtPath:watchPath]) {
         return errorResponse(requestId,
             @"Chat background watch package not found; expected sibling -watchBackground file");
+    }
+    if (pathHasSymlinkComponent(watchPath)) {
+        return errorResponse(requestId, @"Chat background watch package path traverses a symlink");
     }
     IMChat *chat = resolveChatByGuid(chatGuid);
     if (!chat) return errorResponse(requestId, @"Chat not found");

@@ -123,9 +123,19 @@ public struct MessageSender {
     guard fileManager.fileExists(atPath: sourceURL.path) else {
       throw IMsgError.appleScriptFailure("Chat background package not found at \(sourceURL.path)")
     }
+    if SecurePath.hasSymlinkComponent(sourceURL.path) {
+      throw IMsgError.appleScriptFailure(
+        "Chat background package path traverses a symlink"
+      )
+    }
     guard fileManager.fileExists(atPath: watchSourceURL.path) else {
       throw IMsgError.appleScriptFailure(
         "Chat background watch package not found at \(watchSourceURL.path)"
+      )
+    }
+    if SecurePath.hasSymlinkComponent(watchSourceURL.path) {
+      throw IMsgError.appleScriptFailure(
+        "Chat background watch package path traverses a symlink"
       )
     }
 
@@ -141,6 +151,16 @@ public struct MessageSender {
     )
     try fileManager.copyItem(at: sourceURL, to: destination)
     try fileManager.copyItem(at: watchSourceURL, to: watchDestination)
+    if SecurePath.hasSymlinkComponent(destination.path) {
+      throw IMsgError.appleScriptFailure(
+        "Staged chat background package path traverses a symlink"
+      )
+    }
+    if SecurePath.hasSymlinkComponent(watchDestination.path) {
+      throw IMsgError.appleScriptFailure(
+        "Staged chat background watch package path traverses a symlink"
+      )
+    }
     return destination.path
   }
 

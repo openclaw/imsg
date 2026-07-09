@@ -150,6 +150,8 @@ func injectedHelperWiresChatBackgroundActions() throws {
   #expect(source.contains("Chat backgrounds require macOS 26 or later"))
   #expect(source.contains("setTranscriptBackgroundAndSendToChat:transferID:"))
   #expect(source.contains("Chat background watch package not found"))
+  #expect(source.contains("Chat background package path traverses a symlink"))
+  #expect(source.contains("Chat background watch package path traverses a symlink"))
 }
 
 @Test
