@@ -59,6 +59,7 @@ static NSString *kDebugLogFile = nil; // .imsg-bridge.log
 
 static NSTimer *fileWatchTimer = nil;
 static NSTimer *rpcInboxTimer = nil;
+static dispatch_source_t rpcInboxDispatchTimer = nil;
 static NSMutableSet *processedRpcIds = nil;
 static os_unfair_lock eventsLock = OS_UNFAIR_LOCK_INIT;
 static int lockFd = -1;
@@ -4255,12 +4256,15 @@ static NSDictionary *contactCardSelectorStatus(void) {
 static NSDictionary *handleContactCardSharingStatus(NSInteger requestId, NSDictionary *params) {
     NSString *chatGuid = params[@"chatGuid"];
     if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
+    debugLog(@"contact-card status enter chat=%@", chatGuid);
     IMChat *chat = resolveChatByGuid(chatGuid);
     if (!chat) {
         return errorResponse(requestId,
             [NSString stringWithFormat:@"Chat not found: %@", chatGuid]);
     }
+    debugLog(@"contact-card status resolved chat");
     NSMutableDictionary *info = [contactCardSelectorStatus() mutableCopy];
+    debugLog(@"contact-card status selector map ready");
     info[@"chatGuid"] = chatGuid;
     info[@"should_share"] = [NSNull null];
     info[@"status_probe_invoked"] = @NO;
@@ -4429,6 +4433,7 @@ static NSDictionary* processV2Envelope(NSDictionary *envelope) {
     }
 
     NSLog(@"[imsg-bridge v2] action=%@ id=%@", action, uuid);
+    debugLog(@"v2 action=%@ id=%@", action, uuid);
 
     NSDictionary *legacy = dispatchAction(0, action, params);
     if (![legacy isKindOfClass:[NSDictionary class]]) {
@@ -4473,6 +4478,7 @@ static void processCommandFile(void) {
             return;
         }
 
+        debugLog(@"legacy action=%@", command[@"action"] ?: @"(missing)");
         NSDictionary *result = processCommand(command);
 
         if (result != nil) {
@@ -4660,6 +4666,7 @@ static void scanV2Inbox(void) {
 
 static void startV2InboxWatcher(void) {
     initFilePaths();
+    debugLog(@"v2 watcher starting dir=%@", kRpcInDir);
 
     // Ensure the queue dirs exist (CLI also pre-creates them, but be defensive
     // in case a v2-only run happened). Mode 0700 keeps other UIDs / sandboxed
@@ -4672,6 +4679,7 @@ static void startV2InboxWatcher(void) {
         !ensureSecureDirectory(kRpcOutDir, &secureDirError)) {
         NSLog(@"[imsg-bridge v2] Refusing insecure RPC queue path: %@",
               secureDirError.localizedDescription);
+        debugLog(@"v2 watcher refused: %@", secureDirError.localizedDescription);
         return;
     }
 
@@ -4684,7 +4692,19 @@ static void startV2InboxWatcher(void) {
     [[NSRunLoop mainRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
     rpcInboxTimer = timer;
 
+    rpcInboxDispatchTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
+                                                   dispatch_get_main_queue());
+    dispatch_source_set_timer(rpcInboxDispatchTimer,
+                              dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC),
+                              100 * NSEC_PER_MSEC,
+                              20 * NSEC_PER_MSEC);
+    dispatch_source_set_event_handler(rpcInboxDispatchTimer, ^{
+        scanV2Inbox();
+    });
+    dispatch_resume(rpcInboxDispatchTimer);
+
     NSLog(@"[imsg-bridge v2] Inbox watcher started");
+    debugLog(@"v2 watcher started");
 }
 
 #pragma mark - Dylib Entry Point
@@ -4774,6 +4794,10 @@ static void injectedCleanup(void) {
     if (rpcInboxTimer) {
         [rpcInboxTimer invalidate];
         rpcInboxTimer = nil;
+    }
+    if (rpcInboxDispatchTimer) {
+        dispatch_source_cancel(rpcInboxDispatchTimer);
+        rpcInboxDispatchTimer = nil;
     }
 
     if (lockFd >= 0) {
