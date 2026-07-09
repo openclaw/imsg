@@ -29,6 +29,7 @@ Resolve a person visible in the Messages.app UI from `chats`, not `search`. The 
 
 ```bash
 imsg chats --limit 200 --json | jq -s '.[] | select((.contact_name // .display_name // .name // .identifier // "" | ascii_downcase) | contains("beatrix"))'
+imsg chats --unread-only --json | jq -s
 ```
 
 Then inspect and read the chat by rowid:
@@ -43,6 +44,7 @@ imsg history --chat-id ID --start 2025-01-01T00:00:00Z --end 2025-02-01T00:00:00
 - `--start` is inclusive, `--end` exclusive; both take ISO8601. Use absolute timestamps for date-scoped questions.
 - `--attachments` adds attachment metadata; `--convert-attachments` converts CAF→M4A / GIF→PNG for model consumption.
 - `imsg search --query "pizza tonight" --json` searches message bodies only (`--match contains` default, `exact` available).
+- Chat-list JSON includes `unread_count`. Inbound message payloads include `is_read` and, when read, `date_read`; outbound payloads omit both.
 - SIP-free lookups: `imsg whois --address "+15551234567" --type phone --local`, `imsg nickname --address "+15551234567" --local --json`, `imsg account --local --json`. Note `nickname --local` returns *your* AddressBook label for the handle; the iMessage-shared nickname needs default-mode `nickname` via the bridge.
 - Direct `sqlite3` queries are a last resort; the `handle` table lacks the resolved names `imsg chats` provides.
 

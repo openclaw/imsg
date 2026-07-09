@@ -29,6 +29,7 @@ The pattern intentionally mirrors language servers and the way `imsg`'s parent g
 Params:
 
 - `limit` (int, default 20)
+- `unread_only` (bool, default `false`) — when true, return only chats with `unread_count > 0`; unavailable database schemas return an invalid-params error rather than an empty list
 
 Result:
 
@@ -230,7 +231,7 @@ Response:
 
 ### Chat
 
-See [JSON output → Chat](json.md#chat). Every field documented there appears in the RPC `chats.list` response.
+See [JSON output → Chat list item](json.md#chat-list-item). Every field documented there appears in the RPC `chats.list` response.
 
 ### Message
 

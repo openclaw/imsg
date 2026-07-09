@@ -2,6 +2,9 @@
 
 ## 0.12.4 - Unreleased
 
+### Read Commands
+- feat: expose per-chat unread counts and inbound message read timestamps across JSON, JSON-RPC, search, history, and watch, with an unread-only chat filter (#160, thanks @chiedo).
+
 ### Native Polls
 - fix: match native poll vote envelopes, participant handles, and summary metadata so votes render participant markers and correct notifications (#162, thanks @omarshahine).
 

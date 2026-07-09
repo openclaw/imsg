@@ -43,7 +43,9 @@ extension Message {
         isReactionAdd: isReactionAdd,
         reactedToGUID: reactedToGUID
       ),
-      poll: poll
+      poll: poll,
+      isRead: isRead,
+      dateRead: dateRead
     )
   }
 }
