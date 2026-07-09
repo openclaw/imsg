@@ -32,7 +32,7 @@ enum PollCommand {
             help:
               "poll question. Messages does not render the poll title on the balloon, so imsg "
               + "sends this as a plain caption message right after the poll (the visible text) "
-              + "and also stores it as the payload title for agent readback"
+              + "and history/watch backfill the poll question from that caption"
           ),
           .make(
             label: "comment", names: [.long("comment")],

@@ -177,7 +177,7 @@ public enum MessagePollDecoder {
 
     let scan = PayloadScan(payloadData: payloadData, summaryData: messageSummaryInfo)
     let facts = PollFacts(objects: scan.objects)
-    let hasPollPayloadEvidence = !facts.votes.isEmpty || scan.hasPollURLHint
+    let hasPollPayloadEvidence = !facts.votes.isEmpty || facts.hasEmptyVotes || scan.hasPollURLHint
     guard isPollBundle || hasPollPayloadEvidence else { return nil }
 
     let metadata = MessagePollMetadata(

@@ -593,6 +593,8 @@ func messageStoreDecodesPollVoteRowsWithPayloadGate() throws {
   ]
   let votePayload = try applePollEnvelopePayload(jsonObject: response)
   let voteBlob = Blob(bytes: [UInt8](votePayload))
+  let unvotePayload = try applePollEnvelopePayload(jsonObject: ["votes": []])
+  let unvoteBlob = Blob(bytes: [UInt8](unvotePayload))
   let now = Date(timeIntervalSince1970: 1_700_000_000)
 
   try db.run(
@@ -618,14 +620,28 @@ func messageStoreDecodesPollVoteRowsWithPayloadGate() throws {
     voteBlob,
     TestDatabase.appleEpoch(now.addingTimeInterval(1))
   )
+  try db.run(
+    """
+    INSERT INTO message(
+      ROWID, handle_id, text, guid, associated_message_guid, associated_message_type,
+      balloon_bundle_id, payload_data, message_summary_info, date, is_from_me, service
+    )
+    VALUES (3, 1, '', 'unvote-row-guid', 'p/original-poll-guid', 4000, NULL, ?, NULL, ?, 0, 'iMessage')
+    """,
+    unvoteBlob,
+    TestDatabase.appleEpoch(now.addingTimeInterval(2))
+  )
   try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 1)")
   try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 2)")
+  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 3)")
 
   let store = try MessageStore(connection: db, path: ":memory:")
   let messages = try store.messages(chatID: 1, limit: 10)
   let voteMessage = try #require(messages.first { $0.guid == "vote-row-guid" })
+  let unvoteMessage = try #require(messages.first { $0.guid == "unvote-row-guid" })
   let streamedMessages = try store.messagesAfter(afterRowID: 0, chatID: 1, limit: 10)
   let streamedVote = try #require(streamedMessages.first { $0.guid == "vote-row-guid" })
+  let streamedUnvote = try #require(streamedMessages.first { $0.guid == "unvote-row-guid" })
 
   #expect(voteMessage.poll?.kind == .vote)
   #expect(voteMessage.poll?.originalGUID == "original-poll-guid")
@@ -633,8 +649,13 @@ func messageStoreDecodesPollVoteRowsWithPayloadGate() throws {
   #expect(voteMessage.poll?.vote?.participant == "+15550002000")
   #expect(voteMessage.poll?.vote?.optionID == "choice-a")
   #expect(voteMessage.poll?.vote?.optionText == "A")
+  #expect(unvoteMessage.poll?.kind == .vote)
+  #expect(unvoteMessage.poll?.originalGUID == "original-poll-guid")
+  #expect(unvoteMessage.poll?.votes?.isEmpty == true)
   #expect(streamedVote.poll?.kind == .vote)
   #expect(streamedVote.poll?.vote?.optionText == "A")
+  #expect(streamedUnvote.poll?.kind == .vote)
+  #expect(streamedUnvote.poll?.votes?.isEmpty == true)
 }
 
 @Test
