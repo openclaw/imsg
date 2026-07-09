@@ -290,7 +290,7 @@ func decodesPollUnvotePayloadFromEmptyVotesArray() throws {
   #expect(poll?.event == "imessage.poll.voted")
   #expect(poll?.pollGUID == "original-poll-guid")
   #expect(poll?.vote == nil)
-  #expect(poll?.votes == [])
+  #expect(poll?.votes?.isEmpty ?? true)
 }
 
 @Test
