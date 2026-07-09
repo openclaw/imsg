@@ -73,10 +73,13 @@ Only after `imsg status` confirms the bridge is loaded (`imsg launch` injects it
 ```bash
 imsg send-rich --chat 'iMessage;-;+15551234567' --text 'hi' --reply-to MSG_GUID   # replies, effects, subjects
 imsg chat-background clear --chat GUID
+imsg chat-background set --chat GUID --file /path/to/poster-package               # requires sibling -watchBackground
 imsg poll send --chat GUID --question 'Dinner?' --option 'Pizza' --option 'Sushi' --comment 'Vote by 5pm'
 imsg edit --chat GUID --message MSG_GUID --new-text 'updated'                     # macOS 13+
 imsg chat-create --addresses '+15551234567,+15559876543' --name 'Crew'
 ```
+
+`chat-background set` accepts native PosterKit transcript-background packages only. The package path must have a sibling path ending in `-watchBackground`; arbitrary PNG/JPEG images are not valid inputs.
 
 `poll send` echoes `--question` as a best-effort plain caption after the Polls balloon; `--comment` overrides that caption. Do not retry automatically when only the caption fails: the poll may already be delivered. `history` and `watch` backfill a title-less inbound native poll's `poll.question` from its clean caption row.
 
