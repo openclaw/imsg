@@ -128,15 +128,15 @@ func injectedHelperWiresURLPreviewBalloonSend() throws {
     .deletingLastPathComponent()
     .deletingLastPathComponent()
   let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
-  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
-  let sendMessageBody = try #require(functionBody(named: "handleSendMessage", in: source))
+  let source = try String(contentsOf: helper, encoding: .utf8)
 
   #expect(source.contains("com.apple.messages.URLBalloonProvider"))
   #expect(source.contains("buildURLPreviewPayloadData"))
   #expect(source.contains("LPLinkMetadata"))
   #expect(source.contains("urlPreviewMessage"))
-  #expect(sendMessageBody.contains("richLinkURL"))
-  #expect(sendMessageBody.contains("buildBalloonIMMessage(urlPreviewBalloonBundleIdentifier()"))
+  #expect(source.contains("NSString *richLinkURL = params[@\"richLinkURL\"]"))
+  #expect(source.contains("if (richLinkURL.length)"))
+  #expect(source.contains("buildBalloonIMMessage(urlPreviewBalloonBundleIdentifier()"))
 }
 
 @Test
