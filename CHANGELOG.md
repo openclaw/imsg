@@ -8,7 +8,6 @@
 
 ### Native Polls
 - fix: match native poll vote envelopes, participant handles, and summary metadata so votes render participant markers and correct notifications (#162, thanks @omarshahine).
-- feat: add bridge-backed native poll `unvote`, exposed through CLI and JSON-RPC.
 
 ## 0.12.3 - 2026-07-06
 
