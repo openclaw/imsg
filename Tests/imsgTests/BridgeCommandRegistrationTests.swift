@@ -60,11 +60,6 @@ func bridgeAttachmentStagingUsesChatGuid() throws {
     .deletingLastPathComponent()
   let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
   let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
-  let prepareBody = try #require(
-    functionBody(
-      named: "prepareOutgoingTransfer",
-      in: source
-    ))
   let sendAttachmentBody = try #require(
     functionBody(
       named: "handleSendAttachment",
@@ -83,6 +78,94 @@ func bridgeAttachmentStagingUsesChatGuid() throws {
   #expect(
     sendAttachmentBody.contains("prepareOutgoingTransfer(fileURL, filename, chatGuid"))
   #expect(sendAttachmentBody.contains("NO, nil, &prepErr"))
+}
+
+@Test
+func injectedHelperHardensRichLinkImageTransfer() throws {
+  let testFile = URL(fileURLWithPath: #filePath)
+  let repoRoot =
+    testFile
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
+  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
+  let sendBody = try #require(functionBody(named: "handleSendMessage", in: source))
+  let dispatchBody = try #require(functionBody(named: "dispatchAction", in: source))
+  let actualHomeBody = try #require(
+    functionBody(named: "richLinkActualUserHomeDirectory", in: source))
+  let trustedRootBody = try #require(
+    functionBody(named: "trustedRichLinkStagingRoot", in: source))
+  let secureOpenBody = try #require(
+    functionBody(named: "openRichLinkDirectorySecurely", in: source))
+  let readBody = try #require(functionBody(named: "readRichLinkPreviewData", in: source))
+  let validateBody = try #require(
+    functionBody(named: "validateRichLinkPreviewImage", in: source))
+  let snapshotBody = try #require(
+    functionBody(named: "writeRichLinkPreviewSnapshot", in: source))
+  let unregisteredBody = try #require(
+    functionBody(named: "prepareUnregisteredOutgoingTransfer", in: source))
+
+  // Messages.app's sandbox home differs from the login user's home. Resolve
+  // the staging root from the uid, then walk every directory without following
+  // symlinks before opening the image itself.
+  #expect(actualHomeBody.contains("getpwuid(getuid())"))
+  #expect(actualHomeBody.contains("entry->pw_dir"))
+  #expect(trustedRootBody.contains("richLinkActualUserHomeDirectory()"))
+  #expect(trustedRootBody.contains("Library/Messages/Attachments/imsg"))
+  #expect(secureOpenBody.contains(#"open("/", O_RDONLY | O_CLOEXEC | O_DIRECTORY)"#))
+  #expect(secureOpenBody.contains("openat(directoryFD"))
+  #expect(secureOpenBody.contains("O_DIRECTORY | O_NOFOLLOW"))
+  #expect(readBody.contains("openat(directoryFD"))
+  #expect(readBody.contains("O_RDONLY | O_CLOEXEC | O_NOFOLLOW"))
+  #expect(readBody.contains("fstat(fd, &before)"))
+  #expect(readBody.contains("after.st_ino != before.st_ino"))
+
+  // The descriptor is bound to the bytes and decoded shape. The helper then
+  // snapshots those verified bytes into a private, exclusive file so the
+  // eventual IMFileTransfer cannot be retargeted by replacing the input path.
+  #expect(validateBody.contains(#"@"contentHash""#))
+  #expect(validateBody.contains("richLinkSHA256(data)"))
+  #expect(validateBody.contains("CGImageSourceGetCount(source) != 1"))
+  let metadataCheck = try #require(validateBody.range(of: "if (!typeMatches || !properties"))
+  let decode = try #require(validateBody.range(of: "CGImageSourceCreateImageAtIndex"))
+  #expect(metadataCheck.lowerBound < decode.lowerBound)
+  #expect(validateBody.contains("writeRichLinkPreviewSnapshot(data, contentHash"))
+  #expect(snapshotBody.contains("mkdirat(rootFD, \"rich-links\", 0700)"))
+  #expect(snapshotBody.contains("O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600"))
+
+  // Construct the balloon before registering its hidden transfer. This keeps
+  // failed archive/KVC construction from orphaning a daemon transfer.
+  let prepare = try #require(
+    sendBody.range(of: "prepareUnregisteredOutgoingTransfer(previewFile"))
+  let construct = try #require(
+    sendBody.range(of: "buildBalloonIMMessage(urlPreviewBalloonBundleIdentifier()"))
+  let register = try #require(
+    sendBody.range(of: "registerPreparedTransfer(richLinkTransfer"))
+  #expect(prepare.lowerBound < construct.lowerBound)
+  #expect(construct.lowerBound < register.lowerBound)
+  #expect(unregisteredBody.contains("hideAttachment, mimeType, NO, outErr"))
+
+  // URL previews have their own bridge action. Generic send-message rejects a
+  // smuggled descriptor, while send-rich-link requires one before entering the
+  // shared, strictly validated message builder.
+  #expect(dispatchBody.contains(#"[action isEqualToString:@"send-message"]"#))
+  #expect(
+    dispatchBody.contains(
+      #"if (params[@"richLinkPreview"] || params[@"richLinkURL"])"#))
+  #expect(dispatchBody.contains(#"@"Use send-rich-link for URL previews""#))
+  #expect(dispatchBody.contains(#"[action isEqualToString:@"send-rich-link"]"#))
+  #expect(
+    dispatchBody.contains(
+      #"![params[@"richLinkPreview"] isKindOfClass:[NSDictionary class]]"#))
+  #expect(dispatchBody.contains(#"@"Missing rich-link descriptor""#))
+  #expect(dispatchBody.components(separatedBy: "return handleSendMessage").count == 3)
+
+  // Rich-link preparation must not synchronously invoke the private data
+  // detector controller on Messages' main loop.
+  #expect(!source.contains("IMDDController"))
+  #expect(!source.contains("scanOutgoingMessageForDataDetectors"))
+  #expect(!source.contains("waitUntilDone:YES"))
 }
 
 @Test
@@ -115,6 +198,7 @@ func injectedHelperWiresNativePollSend() throws {
   let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
   let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
   let sendPollBody = try #require(functionBody(named: "handleSendPoll", in: source))
+  let buildPollBody = try #require(functionBody(named: "buildPollIMMessage", in: source))
 
   #expect(source.contains("send-poll"))
   #expect(source.contains("com.apple.messages.Polls"))
@@ -128,6 +212,8 @@ func injectedHelperWiresNativePollSend() throws {
   #expect(source.contains("pollPreviewImageData"))
   #expect(sendPollBody.contains("buildPollCreationPayloadData"))
   #expect(sendPollBody.contains("buildPollIMMessage"))
+  #expect(buildPollBody.contains("buildBalloonIMMessage(pollsBalloonBundleIdentifier()"))
+  #expect(buildPollBody.contains("@[]"))
   #expect(sendPollBody.contains("pollPayloadMessageInitializerAvailable()"))
   #expect(!sendPollBody.contains(#"selectedMessageGuid.length ? @"" : question"#))
   #expect(sendPollBody.contains("buildPollCreationPayloadData(question,"))
@@ -144,10 +230,11 @@ func injectedHelperWiresNativePollSend() throws {
     sendPollBody.contains(
       "dispatchIMMessageInChat(chat, imMessage, threadIdentifier, parentItem)"
     ))
-  #expect(
-    source.contains(
-      "initWithSender:time:text:messageSubject:fileTransferGUIDs:flags:error:guid:subject:balloonBundleID:payloadData:expressiveSendStyleID:threadIdentifier:scheduleType:scheduleState:messageSummaryInfo:"
-    ))
+  let modernMessageInitializer =
+    "initWithSender:time:text:messageSubject:fileTransferGUIDs:flags:error:guid:subject:"
+    + "balloonBundleID:payloadData:expressiveSendStyleID:threadIdentifier:scheduleType:"
+    + "scheduleState:messageSummaryInfo:"
+  #expect(source.contains(modernMessageInitializer))
 }
 
 @Test
@@ -243,23 +330,58 @@ private func stripObjectiveCComments(_ source: String) -> String {
 }
 
 private func functionBody(named name: String, in source: String) -> String? {
-  guard let nameRange = source.range(of: name),
-    let openBrace = source[nameRange.upperBound...].firstIndex(of: "{")
-  else {
-    return nil
-  }
-  var depth = 0
-  var index = openBrace
-  while index < source.endIndex {
-    if source[index] == "{" {
-      depth += 1
-    } else if source[index] == "}" {
-      depth -= 1
-      if depth == 0 {
-        return String(source[openBrace...index])
-      }
+  var searchStart = source.startIndex
+  while searchStart < source.endIndex,
+    let nameRange = source.range(
+      of: name,
+      range: searchStart..<source.endIndex)
+  {
+    searchStart = nameRange.upperBound
+    guard let openParenthesis = source[nameRange.upperBound...].firstIndex(of: "(") else {
+      return nil
     }
-    index = source.index(after: index)
+    guard source[nameRange.upperBound..<openParenthesis].allSatisfy(\.isWhitespace) else {
+      continue
+    }
+
+    var parenthesisDepth = 0
+    var index = openParenthesis
+    var closeParenthesis: String.Index?
+    while index < source.endIndex {
+      if source[index] == "(" {
+        parenthesisDepth += 1
+      } else if source[index] == ")" {
+        parenthesisDepth -= 1
+        if parenthesisDepth == 0 {
+          closeParenthesis = index
+          break
+        }
+      }
+      index = source.index(after: index)
+    }
+    guard let closeParenthesis else { return nil }
+
+    index = source.index(after: closeParenthesis)
+    while index < source.endIndex, source[index].isWhitespace {
+      index = source.index(after: index)
+    }
+    guard index < source.endIndex, source[index] == "{" else {
+      continue
+    }
+
+    let openBrace = index
+    var braceDepth = 0
+    while index < source.endIndex {
+      if source[index] == "{" {
+        braceDepth += 1
+      } else if source[index] == "}" {
+        braceDepth -= 1
+        if braceDepth == 0 {
+          return String(source[openBrace...index])
+        }
+      }
+      index = source.index(after: index)
+    }
   }
   return nil
 }

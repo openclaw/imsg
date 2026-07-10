@@ -5,6 +5,13 @@ import Testing
 @testable import IMsgCore
 @testable import imsg
 
+private let preparedRichLinkFixture = PreparedRichLinkPreview(
+  originalURL: "https://imsg.sh",
+  resolvedURL: "https://imsg.sh/",
+  title: "imsg",
+  image: nil
+)
+
 @Test
 func sendRichWithFileAndReplyUsesAttachmentBridge() async throws {
   let values = ParsedValues(
@@ -89,34 +96,48 @@ func sendRichTextOnlyStillUsesMessageBridge() async throws {
 }
 
 @Test
-func sendRichURLWithRichLinkUsesMessageBridgePreviewParam() async throws {
+func sendRichURLUsesPreparedMessageBridgePreviewDescriptor() async throws {
   let values = ParsedValues(
     positional: [],
     options: [
-      "chat": ["iMessage;-;+15551234567"],
+      "chat": ["iMessage;+;chat123"],
       "url": ["https://imsg.sh"],
     ],
-    flags: ["richLink"]
+    flags: []
   )
   let runtime = RuntimeOptions(parsedValues: values)
-  var capturedAction: BridgeAction?
-  var capturedParams: [String: Any] = [:]
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  var calls: [(action: BridgeAction, params: [String: Any])] = []
 
   _ = try await StdoutCapture.capture {
     try await SendRichCommand.run(
       values: values,
       runtime: runtime,
       invokeBridge: { action, params in
-        capturedAction = action
-        capturedParams = params
+        calls.append((action, params))
+        if action == .status {
+          return ["selectors": ["urlPreviewMessage": true, "sendRichLinkAction": true]]
+        }
         return ["messageGuid": "sent-guid"]
+      },
+      storeFactory: { _ in store },
+      prepareRichLink: { rawURL in
+        #expect(rawURL == "https://imsg.sh")
+        return preparedRichLinkFixture
       }
     )
   }
 
-  #expect(capturedAction == .sendMessage)
+  #expect(calls.count == 2)
+  #expect(calls.map(\.action) == [.status, .sendRichLink])
+  #expect(calls.first?.params.isEmpty == true)
+  let capturedParams = try #require(calls.last?.params)
   #expect(capturedParams["message"] as? String == "https://imsg.sh")
-  #expect(capturedParams["richLinkURL"] as? String == "https://imsg.sh")
+  #expect(capturedParams["ddScan"] as? Bool == true)
+  let preview = try #require(capturedParams["richLinkPreview"] as? [String: Any])
+  #expect(preview["version"] as? Int == 1)
+  #expect(preview["originalURL"] as? String == "https://imsg.sh")
+  #expect(preview["title"] as? String == "imsg")
 }
 
 @Test
@@ -133,23 +154,26 @@ func injectedHelperWiresURLPreviewBalloonSend() throws {
   #expect(source.contains("com.apple.messages.URLBalloonProvider"))
   #expect(source.contains("buildURLPreviewPayloadData"))
   #expect(source.contains("LPLinkMetadata"))
-  #expect(source.contains("RichLink"))
+  #expect(source.contains("IMsgRichLinkArchiveProxy"))
   #expect(source.contains("urlPreviewMessage"))
-  #expect(source.contains("NSString *richLinkURL = params[@\"richLinkURL\"]"))
-  #expect(source.contains("if (richLinkURL.length)"))
+  #expect(source.contains("sendRichLinkAction"))
+  #expect(source.contains("params[@\"richLinkPreview\"]"))
+  #expect(source.contains("if (richLinkPreview)"))
   #expect(source.contains("buildBalloonIMMessage(urlPreviewBalloonBundleIdentifier()"))
-  #expect(source.contains("RichLinkImageAttachmentSubstitute"))
+  #expect(source.contains("IMsgRichLinkImageAttachmentArchiveProxy"))
+  #expect(source.contains("setClassName:@\"RichLink\""))
+  #expect(source.contains("setClassName:@\"RichLinkImageAttachmentSubstitute\""))
+  #expect(!source.contains("@interface RichLink :"))
+  #expect(!source.contains("@interface RichLinkImageAttachmentSubstitute :"))
+  #expect(!source.contains("LPMetadataProvider"))
+  #expect(!source.contains("NSURLConnection"))
   #expect(source.contains("[metadata setValue:@[substitute] forKey:@\"contentImages\"]"))
-  #expect(source.contains("prepareOutgoingTransfer(previewFile"))
-  #expect(
-    source.contains(
-      "YES,\n                                                                       previewMimeType"
-    )
-  )
+  #expect(source.contains("prepareUnregisteredOutgoingTransfer(previewFile"))
+  #expect(source.contains("fileTransferGuids.count > 0"))
   #expect(source.contains("fileTransferGuids"))
   #expect(source.contains("\"__kIMLinkIsRichLinkAttributeName\""))
-  #expect(source.contains("IMDDController"))
-  #expect(source.contains("scanOutgoingMessageForDataDetectors(imMessage)"))
+  #expect(!source.contains("IMDDController"))
+  #expect(!source.contains("scanOutgoingMessageForDataDetectors(imMessage)"))
 }
 
 @Test
@@ -201,24 +225,29 @@ func sendRichJsonResolvesQueuedBridgeGuidBeforeEmitting() async throws {
 }
 
 @Test
-func sendRichURLWithRichLinkResolvesQueuedBridgeGuidWithURL() async throws {
+func sendRichURLResolvesQueuedBridgeGuidWithURL() async throws {
   let values = ParsedValues(
     positional: [],
     options: [
       "chat": ["iMessage;+;chat123"],
       "url": ["https://imsg.sh"],
     ],
-    flags: ["jsonOutput", "richLink"]
+    flags: ["jsonOutput"]
   )
   let runtime = RuntimeOptions(parsedValues: values)
   let store = try CommandTestDatabase.makeStoreForRPC()
+  var calls: [(action: BridgeAction, params: [String: Any])] = []
 
   let (output, _) = try await StdoutCapture.capture {
     try await SendRichCommand.run(
       values: values,
       runtime: runtime,
-      invokeBridge: { _, _ in
-        ["messageGuid": "stale-guid", "queued": true]
+      invokeBridge: { action, params in
+        calls.append((action, params))
+        if action == .status {
+          return ["selectors": ["urlPreviewMessage": true, "sendRichLinkAction": true]]
+        }
+        return ["messageGuid": "stale-guid", "queued": true]
       },
       resolveSentMessage: { _, options, chatID, _ in
         #expect(options.text == "https://imsg.sh")
@@ -236,15 +265,59 @@ func sendRichURLWithRichLinkResolvesQueuedBridgeGuidWithURL() async throws {
           guid: "actual-rich-link-guid"
         )
       },
-      storeFactory: { _ in store }
+      storeFactory: { _ in store },
+      prepareRichLink: { _ in preparedRichLinkFixture }
     )
   }
 
+  #expect(calls.map(\.action) == [.status, .sendRichLink])
   let data = output.data(using: .utf8) ?? Data()
   let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
   #expect(object["messageGuid"] as? String == "actual-rich-link-guid")
   #expect(object["guid"] as? String == "actual-rich-link-guid")
   #expect(object["message_id"] as? String == "actual-rich-link-guid")
+}
+
+@Test
+func sendRichURLRejectsStaleHelperBeforePreparationOrSend() async throws {
+  let values = ParsedValues(
+    positional: [],
+    options: [
+      "chat": ["iMessage;+;chat123"],
+      "url": ["https://imsg.sh"],
+    ],
+    flags: []
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  var calls: [(action: BridgeAction, params: [String: Any])] = []
+  var prepared = false
+
+  do {
+    try await SendRichCommand.run(
+      values: values,
+      runtime: runtime,
+      invokeBridge: { action, params in
+        calls.append((action, params))
+        return ["selectors": ["urlPreviewMessage": true]]
+      },
+      storeFactory: { _ in store },
+      prepareRichLink: { _ in
+        prepared = true
+        return preparedRichLinkFixture
+      }
+    )
+    Issue.record("expected an outdated helper to reject rich-link sends")
+  } catch let error as RichLinkPreparationError {
+    #expect(error == .unsupportedBridge)
+  } catch {
+    Issue.record("unexpected error: \(error)")
+  }
+
+  #expect(calls.count == 1)
+  #expect(calls.first?.action == .status)
+  #expect(calls.first?.params.isEmpty == true)
+  #expect(!prepared)
 }
 
 @Test

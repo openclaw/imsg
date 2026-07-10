@@ -43,6 +43,7 @@ build-dylib:
 		-install_name @rpath/imsg-bridge-helper.dylib \
 		-framework Foundation \
 		-framework AppKit \
+		-framework ImageIO \
 		-framework LinkPresentation \
 		-o .build/release/imsg-bridge-helper.dylib \
 		Sources/IMsgHelper/IMsgInjected.m

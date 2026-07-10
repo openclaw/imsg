@@ -21,6 +21,10 @@ func universalBuildScriptShipsArm64eHelperSlice() throws {
   // load an arm64-only dylib, which silently kills the bridge.
   #expect(script.contains(#"HELPER_ARCHES_VALUE=${HELPER_ARCHES:-"arm64e arm64 x86_64"}"#))
   #expect(script.contains("lipo -create"))
+  #expect(script.contains("--scratch-path"))
+  #expect(script.contains("--show-bin-path"))
+  #expect(script.contains(#"for bundle in "${PRODUCT_DIRS[0]}"/*.bundle"#))
+  #expect(!script.contains(#".build/${ARCH}-apple-macosx"#))
   #expect(script.contains("imsg-bridge-helper.dylib"))
   // release.yml ships via this script only, so it must guard every helper slice.
   #expect(
@@ -41,6 +45,10 @@ func signAndNotarizeScriptDefaultsHelperToArm64e() throws {
   // arm64e. Assert the loop and its lipo check as one contiguous block so this
   // can't pass by matching the separate clang-args HELPER_ARCH_LIST loop.
   #expect(script.contains(#"HELPER_ARCHES_VALUE=${HELPER_ARCHES:-"arm64e arm64 x86_64"}"#))
+  #expect(script.contains("--scratch-path"))
+  #expect(script.contains("--show-bin-path"))
+  #expect(script.contains(#"for bundle in "${PRODUCT_DIRS[0]}"/*.bundle"#))
+  #expect(!script.contains(#".build/${ARCH}-apple-macosx"#))
   #expect(
     script.contains(
       """
@@ -66,6 +74,15 @@ func bridgeHelperBuildsUseRelocatableInstallName() throws {
   #expect(developmentBuild.contains("-install_name @rpath/imsg-bridge-helper.dylib"))
   for script in [universalBuild, notarizedBuild] {
     #expect(script.contains(#"-install_name "@rpath/${HELPER_NAME}""#))
+  }
+}
+
+@Test
+func bridgeHelperBuildsLinkRichLinkFrameworks() throws {
+  for path in ["Makefile", "scripts/build-universal.sh", "scripts/sign-and-notarize.sh"] {
+    let contents = try readRepositoryFile(path)
+    #expect(contents.contains("-framework ImageIO"))
+    #expect(contents.contains("-framework LinkPresentation"))
   }
 }
 

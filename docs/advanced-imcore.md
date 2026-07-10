@@ -17,11 +17,19 @@ You almost certainly do not need any of this for normal use.
 - `imsg status` — read-only IMCore bridge status.
 - `imsg send-rich --chat <guid> --reply-to <message-guid> --file <path>` —
   sends a threaded reply with an attachment through the bridge.
-- `imsg send-rich --chat <guid> --url <url> --rich-link` — sends a URL
-  preview balloon through the bridge.
+- `imsg send-rich --chat <guid> --url <url>` — sends an Apple URL
+  preview balloon through the bridge. URL mode is iMessage-only and does not
+  combine with text, files, effects, subjects, replies, or formatting.
 - `imsg send-attachment --chat <guid> --file <path> [--reply-to <message-guid>]` —
   prefers the bridge for private attachment sends, with AppleScript fallback
   for normal files when no reply target is requested.
+
+Rich-link metadata and preview images are fetched from the local Mac by the
+`imsg` process before the bridge request; the injected Messages helper performs
+no network access. Preparation has one eight-second deadline, and accepted image
+decode/staging is capped at 2 MiB, 4096×4096, and 16 megapixels. Lookup failure
+degrades to a metadata-only card. If the bridge cannot construct the card, the
+command fails without sending the URL as a plain message.
 
 ## Why they're separate
 

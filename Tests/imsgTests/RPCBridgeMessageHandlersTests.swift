@@ -4,6 +4,22 @@ import Testing
 @testable import IMsgCore
 @testable import imsg
 
+private let rpcPreparedRichLinkFixture = PreparedRichLinkPreview(
+  originalURL: "https://imsg.sh",
+  resolvedURL: "https://imsg.sh/",
+  title: "imsg",
+  image: nil
+)
+
+private func rpcRichLinkCapableStatus() -> [String: Any] {
+  [
+    "selectors": [
+      "urlPreviewMessage": true,
+      "sendRichLinkAction": true,
+    ] as [String: Any]
+  ]
+}
+
 @Test
 func rpcStatusAdvertisesBridgeMessageMethods() {
   let methods = Set(kSupportedRPCMethods)
@@ -255,6 +271,7 @@ func rpcSendRichResolvesQueuedBridgeGuidBeforeResponding() async throws {
 func rpcSendRichWithRichLinkResolvesQueuedBridgeGuidWithURL() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()
+  var actions: [BridgeAction] = []
   let server = RPCServer(
     store: store,
     verbose: false,
@@ -275,19 +292,23 @@ func rpcSendRichWithRichLinkResolvesQueuedBridgeGuidWithURL() async throws {
         guid: "actual-rich-link-guid"
       )
     },
-    invokeBridge: { _, _ in
-      ["messageGuid": "previous-guid", "queued": true]
-    }
+    invokeBridge: { action, _ in
+      actions.append(action)
+      if action == .status { return rpcRichLinkCapableStatus() }
+      return ["messageGuid": "previous-guid", "queued": true]
+    },
+    prepareRichLink: { _ in rpcPreparedRichLinkFixture }
   )
 
   await server.handleLineForTesting(
-    #"{"jsonrpc":"2.0","id":"rich","method":"send.rich","params":{"chat_id":1,"url":"https://imsg.sh","rich_link":true}}"#
+    #"{"jsonrpc":"2.0","id":"rich","method":"send.rich","params":{"chat_id":1,"url":"https://imsg.sh"}}"#
   )
 
   let result = output.responses.first?["result"] as? [String: Any]
   #expect(result?["queued"] as? Bool == true)
   #expect(result?["guid"] as? String == "actual-rich-link-guid")
   #expect(result?["message_id"] as? String == "actual-rich-link-guid")
+  #expect(actions == [.status, .sendRichLink])
 }
 
 @Test
@@ -334,19 +355,86 @@ func rpcSendRichForwardsRichLinkURL() async throws {
     verbose: false,
     output: output,
     invokeBridge: { action, params in
+      if action == .status { return rpcRichLinkCapableStatus() }
       capturedAction = action
       capturedParams = params
       return ["messageGuid": "rich-link-guid"]
+    },
+    prepareRichLink: { rawURL in
+      #expect(rawURL == "https://imsg.sh")
+      return rpcPreparedRichLinkFixture
     }
   )
 
   await server.handleLineForTesting(
-    #"{"jsonrpc":"2.0","id":"rich","method":"send.rich","params":{"chat_id":1,"url":"https://imsg.sh","rich_link":true}}"#
+    #"{"jsonrpc":"2.0","id":"rich","method":"send.rich","params":{"chat_id":1,"url":"https://imsg.sh"}}"#
   )
 
-  #expect(capturedAction == .sendMessage)
+  #expect(capturedAction == .sendRichLink)
   #expect(capturedParams["message"] as? String == "https://imsg.sh")
-  #expect(capturedParams["richLinkURL"] as? String == "https://imsg.sh")
+  let preview = capturedParams["richLinkPreview"] as? [String: Any]
+  #expect(preview?["version"] as? Int == 1)
+  #expect(preview?["title"] as? String == "imsg")
+  let result = output.responses.first?["result"] as? [String: Any]
+  #expect(result?["message_id"] as? String == "rich-link-guid")
+}
+
+@Test
+func rpcSendRichURLRejectsBridgeWithoutPreviewSupportBeforePreparation() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  var actions: [BridgeAction] = []
+  var prepared = false
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, _ in
+      actions.append(action)
+      return ["selectors": ["urlPreviewMessage": true] as [String: Any]]
+    },
+    prepareRichLink: { _ in
+      prepared = true
+      return rpcPreparedRichLinkFixture
+    }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"rich","method":"send.rich","params":{"chat_id":1,"url":"https://imsg.sh"}}"#
+  )
+
+  #expect(actions == [.status])
+  #expect(!prepared)
+  let error = output.errors.first?["error"] as? [String: Any]
+  #expect(error?["code"] as? Int == -32603)
+  #expect((error?["data"] as? String)?.contains("does not support rich links") == true)
+}
+
+@Test
+func rpcSendRichURLPrefersIMessageChatForSharedIdentifier() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPCWithSharedIdentifier()
+  let output = TestRPCOutput()
+  var actions: [BridgeAction] = []
+  var sentParams: [String: Any] = [:]
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, params in
+      actions.append(action)
+      if action == .status { return rpcRichLinkCapableStatus() }
+      sentParams = params
+      return ["messageGuid": "rich-link-guid"]
+    },
+    prepareRichLink: { _ in rpcPreparedRichLinkFixture }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"rich","method":"send.rich","params":{"chat_identifier":"+123","url":"https://imsg.sh"}}"#
+  )
+
+  #expect(actions == [.status, .sendRichLink])
+  #expect(sentParams["chatGuid"] as? String == "iMessage;-;+123")
   let result = output.responses.first?["result"] as? [String: Any]
   #expect(result?["message_id"] as? String == "rich-link-guid")
 }

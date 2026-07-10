@@ -31,7 +31,7 @@ public enum IMsgBridgeProtocol {
 
   public static func defaultResponseTimeout(for action: BridgeAction) -> TimeInterval {
     switch action {
-    case .sendMessage, .sendMultipart, .sendAttachment, .sendPoll, .sendPollVote,
+    case .sendMessage, .sendRichLink, .sendMultipart, .sendAttachment, .sendPoll, .sendPollVote,
       .sendReaction, .createChat:
       return defaultSendResponseTimeout
     default:
@@ -62,6 +62,7 @@ public enum BridgeAction: String, Sendable, CaseIterable {
 
   // Send
   case sendMessage = "send-message"
+  case sendRichLink = "send-rich-link"
   case sendMultipart = "send-multipart"
   case sendAttachment = "send-attachment"
   case sendPoll = "send-poll"

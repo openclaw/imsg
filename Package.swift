@@ -36,6 +36,9 @@ let package = Package(
           "Resources/Info.plist"
         ],
         linkerSettings: [
+          .linkedFramework("ImageIO", .when(platforms: [.macOS])),
+          .linkedFramework("LinkPresentation", .when(platforms: [.macOS])),
+          .linkedFramework("UniformTypeIdentifiers", .when(platforms: [.macOS])),
           .unsafeFlags(
             [
               "-Xlinker", "-sectcreate",
@@ -44,7 +47,7 @@ let package = Package(
               "-Xlinker", "Sources/imsg/Resources/Info.plist",
             ],
             .when(platforms: [.macOS])
-          )
+          ),
         ]
       ),
     ]

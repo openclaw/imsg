@@ -69,6 +69,7 @@ final class RPCServer {
   let resolveSentMessage: SentMessageResolver
   let bridgeInvoker: BridgeInvoker
   let stageAttachment: AttachmentStager
+  let prepareRichLink: RichLinkPrepare
   let isBridgeReady: () -> Bool
   let startTyping: (String) throws -> Void
   let stopTyping: (String) throws -> Void
@@ -84,6 +85,9 @@ final class RPCServer {
       try await IMsgBridgeClient.shared.invoke(action: action, params: params)
     },
     stageAttachment: @escaping AttachmentStager = MessageSender.stageAttachmentForMessagesApp,
+    prepareRichLink: @escaping RichLinkPrepare = { rawURL in
+      try await RichLinkPreparer.prepare(rawURL)
+    },
     isBridgeReady: @escaping () -> Bool = { IMsgBridgeClient.shared.isReady() },
     startTyping: @escaping (String) throws -> Void = {
       try TypingIndicator.startTyping(chatIdentifier: $0)
@@ -102,6 +106,7 @@ final class RPCServer {
     self.resolveSentMessage = resolveSentMessage
     self.bridgeInvoker = invokeBridge
     self.stageAttachment = stageAttachment
+    self.prepareRichLink = prepareRichLink
     self.isBridgeReady = isBridgeReady
     self.startTyping = startTyping
     self.stopTyping = stopTyping

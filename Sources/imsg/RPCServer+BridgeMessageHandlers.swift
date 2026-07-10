@@ -1,11 +1,19 @@
+import CoreFoundation
 import Foundation
 import IMsgCore
 
 extension RPCServer {
   func handleSendRich(params: [String: Any], id: Any?) async throws {
+    let retiredRichLinkKeys = ["link", "rich_link", "richLink", "rich_link_url"]
+    if let key = retiredRichLinkKeys.first(where: { params.keys.contains($0) }) {
+      throw RPCError.invalidParams("\(key) is not supported; pass url without rich-link modifiers")
+    }
+    if params.keys.contains("url") {
+      try await handleSendRichLink(params: params, id: id)
+      return
+    }
     let chatGUID = try await resolveChatGUIDParam(params)
     let text = stringParam(params["text"]) ?? stringParam(params["message"]) ?? ""
-    var effectiveText = text
     var bridgeParams: [String: Any] = [
       "chatGuid": chatGUID,
       "message": text,
@@ -28,19 +36,6 @@ extension RPCServer {
     if let formatting = params["text_formatting"] ?? params["textFormatting"] {
       bridgeParams["textFormatting"] = formatting
     }
-    if boolParam(params["rich_link"] ?? params["richLink"]) == true {
-      guard
-        let url = stringParam(params["url"] ?? params["link"] ?? params["rich_link_url"]),
-        !url.isEmpty
-      else {
-        throw RPCError.invalidParams("url is required when rich_link is true")
-      }
-      bridgeParams["richLinkURL"] = url
-      if text.isEmpty {
-        effectiveText = url
-        bridgeParams["message"] = effectiveText
-      }
-    }
 
     let sentAt = Date()
     let data = try await invokeBridge(action: .sendMessage, params: bridgeParams)
@@ -53,12 +48,12 @@ extension RPCServer {
       ?? (try? store.chatInfo(matchingTarget: chatGUID)?.id)
     let options = MessageSendOptions(
       recipient: "",
-      text: effectiveText,
+      text: text,
       service: .auto,
       chatGUID: chatGUID
     )
     if data["queued"] as? Bool == true,
-      !effectiveText.isEmpty,
+      !text.isEmpty,
       let sentMessage = try? await resolveSentMessage(store, options, chatID, sentAt),
       !sentMessage.guid.isEmpty
     {
@@ -71,6 +66,120 @@ extension RPCServer {
       result["message_id"] = guid
     }
     respond(id: id, result: result)
+  }
+
+  private func handleSendRichLink(params: [String: Any], id: Any?) async throws {
+    let allowedKeys: Set<String> = ["chat_id", "chat_identifier", "chat_guid", "url"]
+    if let unsupported = params.keys.sorted().first(where: { !allowedKeys.contains($0) }) {
+      throw RPCError.invalidParams("\(unsupported) is not supported with url")
+    }
+    guard let rawURL = params["url"] as? String else {
+      throw RPCError.invalidParams("url must be a string")
+    }
+
+    let chatInfo = try await strictRichLinkChatInfo(params)
+    let chatGUID = chatInfo.guid
+    let status = try await invokeBridge(action: .status, params: [:])
+    guard bridgeSupportsRichLinks(status) else {
+      throw RPCError.internalError(
+        "running bridge does not support rich links; restart Messages with the current imsg bridge"
+      )
+    }
+
+    let prepared: PreparedRichLinkPreview
+    do {
+      prepared = try await prepareRichLink(rawURL)
+    } catch let error as RichLinkPreparationError {
+      throw RPCError.invalidParams(error.localizedDescription)
+    }
+    defer { prepared.removeStagedImage() }
+
+    let sentAt = Date()
+    let data: [String: Any]
+    do {
+      data = try await invokeBridge(
+        action: .sendRichLink,
+        params: [
+          "chatGuid": chatGUID,
+          "message": prepared.originalURL,
+          "partIndex": 0,
+          "ddScan": true,
+          "richLinkPreview": prepared.bridgePayload,
+        ]
+      )
+    } catch {
+      throw error
+    }
+    var result: [String: Any] = ["ok": true]
+    if let queued = data["queued"] as? Bool {
+      result["queued"] = queued
+    }
+    let options = MessageSendOptions(
+      recipient: "",
+      text: prepared.originalURL,
+      service: .imessage,
+      chatGUID: chatGUID
+    )
+    if data["queued"] as? Bool == true,
+      let sentMessage = try? await resolveSentMessage(store, options, chatInfo.id, sentAt),
+      !sentMessage.guid.isEmpty
+    {
+      result["guid"] = sentMessage.guid
+      result["message_id"] = sentMessage.guid
+    } else if data["queued"] as? Bool != true,
+      let guid = data["messageGuid"] as? String, !guid.isEmpty
+    {
+      result["guid"] = guid
+      result["message_id"] = guid
+    }
+    respond(id: id, result: result)
+  }
+
+  private func strictRichLinkChatInfo(_ params: [String: Any]) async throws -> ChatInfo {
+    let targetKeys = ["chat_id", "chat_identifier", "chat_guid"]
+    let supplied = targetKeys.filter { params.keys.contains($0) }
+    guard supplied.count == 1, let key = supplied.first else {
+      throw RPCError.invalidParams(
+        "exactly one of chat_id, chat_identifier, or chat_guid is required")
+    }
+
+    let info: ChatInfo?
+    switch key {
+    case "chat_id":
+      guard
+        let number = params[key] as? NSNumber,
+        CFGetTypeID(number) != CFBooleanGetTypeID(),
+        !["f", "d", "D"].contains(String(cString: number.objCType)),
+        let chatID = Int64(number.stringValue),
+        chatID > 0
+      else {
+        throw RPCError.invalidParams("chat_id must be a positive integer")
+      }
+      info = try await cache.info(chatID: chatID)
+    case "chat_identifier", "chat_guid":
+      guard let target = params[key] as? String, !target.isEmpty else {
+        throw RPCError.invalidParams("\(key) must be a non-empty string")
+      }
+      if key == "chat_identifier" {
+        info = try store.chatInfo(
+          matchingExactIdentifier: target,
+          preferredServices: ["iMessage", "iMessageLite"]
+        )
+      } else {
+        info = try store.chatInfo(matchingExactGUID: target)
+      }
+    default:
+      info = nil
+    }
+
+    guard let info, !info.guid.isEmpty else {
+      throw RPCError.invalidParams("rich links require an existing chat")
+    }
+    let service = info.service.lowercased()
+    guard service == "imessage" || service == "imessagelite" else {
+      throw RPCError.invalidParams("rich links require an iMessage chat")
+    }
+    return info
   }
 
   func handleSendAttachment(params: [String: Any], id: Any?) async throws {
