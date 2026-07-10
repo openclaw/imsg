@@ -9,8 +9,6 @@ func rpcStatusAdvertisesBridgeMessageMethods() {
   let methods = Set(kSupportedRPCMethods)
 
   for method in [
-    "chats.setBackground",
-    "chats.removeBackground",
     "send.rich",
     "send.attachment",
     "poll.send",
@@ -306,108 +304,4 @@ func rpcBridgeMessageMethodsResolveDirectChatIdentifierToGUID() async throws {
   )
 
   #expect(capturedParams["chatGuid"] as? String == "iMessage;-;+123")
-}
-
-@Test
-func rpcChatBackgroundRemoveInvokesBridge() async throws {
-  let store = try CommandTestDatabase.makeStoreForRPC()
-  let output = TestRPCOutput()
-  var capturedAction: BridgeAction?
-  let server = RPCServer(
-    store: store,
-    verbose: false,
-    output: output,
-    invokeBridge: { action, _ in
-      capturedAction = action
-      return ["background_cleared": true]
-    }
-  )
-
-  await server.handleLineForTesting(
-    #"{"jsonrpc":"2.0","id":"bg","method":"chats.removeBackground","params":{"chat_id":1}}"#
-  )
-
-  #expect(capturedAction == .clearChatBackground)
-}
-
-@Test
-func rpcChatBackgroundSetStagesPackageAndInvokesBridge() async throws {
-  let store = try CommandTestDatabase.makeStoreForRPC()
-  let output = TestRPCOutput()
-  var capturedAction: BridgeAction?
-  var capturedParams: [String: Any] = [:]
-  let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent(
-    UUID().uuidString,
-    isDirectory: true
-  )
-  try FileManager.default.createDirectory(at: fixtureRoot, withIntermediateDirectories: true)
-  let package = fixtureRoot.appendingPathComponent("bg")
-  let watchPackage = fixtureRoot.appendingPathComponent("bg-watchBackground")
-  try Data("package".utf8).write(to: package)
-  try Data("watch".utf8).write(to: watchPackage)
-
-  let server = RPCServer(
-    store: store,
-    verbose: false,
-    output: output,
-    invokeBridge: { action, params in
-      capturedAction = action
-      capturedParams = params
-      return ["backgroundGuid": "background-guid"]
-    }
-  )
-
-  let line =
-    #"{"jsonrpc":"2.0","id":"bg","method":"chats.setBackground","params":{"#
-    + #""chat_id":1,"file":"\#(package.path)"}}"#
-  await server.handleLineForTesting(line)
-
-  #expect(capturedAction == .setChatBackground)
-  #expect(capturedParams["chatGuid"] as? String == "iMessage;+;chat123")
-  let stagedPath = try #require(capturedParams["filePath"] as? String)
-  #expect(FileManager.default.fileExists(atPath: stagedPath))
-  #expect(FileManager.default.fileExists(atPath: stagedPath + "-watchBackground"))
-  #expect(output.errors.isEmpty)
-}
-
-@Test
-func rpcChatBackgroundSetRejectsSymlinkedPackage() async throws {
-  let store = try CommandTestDatabase.makeStoreForRPC()
-  let output = TestRPCOutput()
-  var bridgeInvoked = false
-  let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent(
-    UUID().uuidString,
-    isDirectory: true
-  )
-  try FileManager.default.createDirectory(at: fixtureRoot, withIntermediateDirectories: true)
-  let realPackage = fixtureRoot.appendingPathComponent("real-bg")
-  let realWatchPackage = fixtureRoot.appendingPathComponent("real-bg-watchBackground")
-  let linkedPackage = fixtureRoot.appendingPathComponent("linked-bg")
-  let linkedWatchPackage = fixtureRoot.appendingPathComponent("linked-bg-watchBackground")
-  try Data("package".utf8).write(to: realPackage)
-  try Data("watch".utf8).write(to: realWatchPackage)
-  try FileManager.default.createSymbolicLink(at: linkedPackage, withDestinationURL: realPackage)
-  try FileManager.default.createSymbolicLink(
-    at: linkedWatchPackage,
-    withDestinationURL: realWatchPackage
-  )
-
-  let server = RPCServer(
-    store: store,
-    verbose: false,
-    output: output,
-    invokeBridge: { _, _ in
-      bridgeInvoked = true
-      return [:]
-    }
-  )
-
-  let line =
-    #"{"jsonrpc":"2.0","id":"bg","method":"chats.setBackground","params":{"#
-    + #""chat_id":1,"file":"\#(linkedPackage.path)"}}"#
-  await server.handleLineForTesting(line)
-
-  #expect(bridgeInvoked == false)
-  let error = output.errors.first?["error"] as? [String: Any]
-  #expect((error?["data"] as? String)?.contains("symlink") == true)
 }

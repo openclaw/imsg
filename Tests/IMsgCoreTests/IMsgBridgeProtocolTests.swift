@@ -13,8 +13,6 @@ struct IMsgBridgeProtocolTests {
     #expect(BridgeAction.editMessage.rawValue == "edit-message")
     #expect(BridgeAction.unsendMessage.rawValue == "unsend-message")
     #expect(BridgeAction.createChat.rawValue == "create-chat")
-    #expect(BridgeAction.setChatBackground.rawValue == "set-chat-background")
-    #expect(BridgeAction.clearChatBackground.rawValue == "clear-chat-background")
     #expect(BridgeAction.searchMessages.rawValue == "search-messages")
     #expect(BridgeAction.checkImessageAvailability.rawValue == "check-imessage-availability")
     // Legacy compat: the integer-id v1 protocol still uses these names.

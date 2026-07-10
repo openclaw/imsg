@@ -79,8 +79,6 @@ public enum BridgeAction: String, Sendable, CaseIterable {
   case removeParticipant = "remove-participant"
   case setDisplayName = "set-display-name"
   case updateGroupPhoto = "update-group-photo"
-  case setChatBackground = "set-chat-background"
-  case clearChatBackground = "clear-chat-background"
   case leaveChat = "leave-chat"
   case deleteChat = "delete-chat"
   case createChat = "create-chat"

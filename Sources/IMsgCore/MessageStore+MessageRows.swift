@@ -26,6 +26,8 @@ struct MessageRowColumns {
   let balloonBundleID: String
   let payloadData: String
   let messageSummaryInfo: String
+  let isRead: String
+  let dateRead: String
 
   static func message(chatID: String?) -> MessageRowColumns {
     MessageRowColumns(
@@ -49,7 +51,9 @@ struct MessageRowColumns {
       replyToGUID: "reply_to_guid",
       balloonBundleID: MessageRowColumns.balloonBundleID,
       payloadData: MessageRowColumns.payloadData,
-      messageSummaryInfo: MessageRowColumns.messageSummaryInfo
+      messageSummaryInfo: MessageRowColumns.messageSummaryInfo,
+      isRead: "is_read",
+      dateRead: "date_read"
     )
   }
 }
@@ -73,6 +77,8 @@ struct DecodedMessageRow {
   let databaseReplyToGUID: String
   let balloonBundleID: String
   let poll: MessagePollEvent?
+  let isRead: Bool?
+  let dateRead: Date?
 }
 
 struct PollOptionTextCache {
@@ -112,6 +118,8 @@ struct MessageRowSelection {
     let summaryInfoColumn =
       schema.hasMessageSummaryInfoColumn
       ? "CASE WHEN \(pollCandidatePredicate) THEN m.message_summary_info ELSE NULL END" : "NULL"
+    let isReadColumn = schema.hasIsReadColumn ? "m.is_read" : "NULL"
+    let dateReadColumn = schema.hasDateReadColumn ? "m.date_read" : "NULL"
     let chatColumn = includeChatID ? ", cmj.chat_id AS \(columns.chatID!)" : ""
 
     let selectList = """
@@ -130,7 +138,9 @@ struct MessageRowSelection {
              \(replyToColumn) AS \(columns.replyToGUID),
              \(balloonColumn) AS \(columns.balloonBundleID),
              \(payloadDataColumn) AS \(columns.payloadData),
-             \(summaryInfoColumn) AS \(columns.messageSummaryInfo)
+             \(summaryInfoColumn) AS \(columns.messageSummaryInfo),
+             \(isReadColumn) AS \(columns.isRead),
+             \(dateReadColumn) AS \(columns.dateRead)
       """
     self.selectList = selectList
     self.columns = columns

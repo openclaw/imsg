@@ -27,14 +27,9 @@ public struct ChatBackgroundEvent: Sendable, Equatable {
 }
 
 extension MessageStore {
-  public func chatBackgroundInfo(matchingTarget target: String) throws -> ChatBackgroundInfo? {
-    guard let chat = try chatInfo(matchingTarget: target) else { return nil }
-    return try chatBackgroundInfo(chatID: chat.id)
-  }
-
   public func chatBackgroundInfo(chatID: Int64) throws -> ChatBackgroundInfo? {
-    let chatColumns = chatBackgroundConnectionColumns(table: "chat")
-    let messageColumns = chatBackgroundConnectionColumns(table: "message")
+    let chatColumns = chatBackgroundColumns(table: "chat")
+    let messageColumns = chatBackgroundColumns(table: "message")
     let propertiesColumn = chatColumns.contains("properties") ? "c.properties" : "NULL"
     let sql = """
       SELECT c.ROWID AS chat_rowid, IFNULL(c.guid, '') AS guid, \(propertiesColumn) AS properties
@@ -75,7 +70,7 @@ extension MessageStore {
     }
   }
 
-  private func chatBackgroundConnectionColumns(table: String) -> Set<String> {
+  private func chatBackgroundColumns(table: String) -> Set<String> {
     (try? withConnection { db in
       MessageStore.tableColumns(connection: db, table: table)
     }) ?? []
@@ -96,10 +91,13 @@ extension MessageStore {
   private func transcriptBackgroundCachePaths(
     channelGUID: String?
   ) -> (cache: String?, watch: String?) {
-    guard let channelGUID, !channelGUID.isEmpty else { return (nil, nil) }
+    guard let channelGUID, !channelGUID.isEmpty, path != ":memory:" else {
+      return (nil, nil)
+    }
     let root =
-      FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent("Library/Messages/TranscriptBackgroundCache")
+      URL(fileURLWithPath: path)
+      .deletingLastPathComponent()
+      .appendingPathComponent("TranscriptBackgroundCache", isDirectory: true)
     return (
       root.appendingPathComponent(channelGUID).path,
       root.appendingPathComponent("\(channelGUID)-watchBackground").path
@@ -113,7 +111,8 @@ extension MessageStore {
   ) throws -> ChatBackgroundEvent? {
     guard messageColumns.contains("guid"),
       messageColumns.contains("item_type"),
-      messageColumns.contains("group_action_type")
+      messageColumns.contains("group_action_type"),
+      messageColumns.contains("date")
     else { return nil }
     let sql = """
       SELECT m.ROWID AS message_rowid, IFNULL(m.guid, '') AS guid,
@@ -123,7 +122,7 @@ extension MessageStore {
       WHERE cmj.chat_id = ?
         AND m.item_type = 3
         AND m.group_action_type IN (4, 6)
-      ORDER BY m.ROWID DESC
+      ORDER BY m.date DESC, m.ROWID DESC
       LIMIT 1
       """
     let rows = try db.prepareRowIterator(sql, bindings: [chatID])

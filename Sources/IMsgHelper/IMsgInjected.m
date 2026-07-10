@@ -209,7 +209,6 @@ static BOOL gHasSendMessageReason = NO;      // sendMessage:reason:
 
 static BOOL pollPayloadMessageInitializerAvailable(void);
 static BOOL pollVoteMessageInitializerAvailable(void);
-static NSDictionary *chatBackgroundSelectorStatus(void);
 
 static void probeSelectors(void) {
     Class chatClass = NSClassFromString(@"IMChat");
@@ -816,7 +815,6 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"sendMessageReason": @(gHasSendMessageReason),
         @"pollPayloadMessage": @(pollPayloadMessageInitializerAvailable()),
         @"pollVoteMessage": @(pollVoteMessageInitializerAvailable()),
-        @"chatBackground": @([chatBackgroundSelectorStatus()[@"available"] boolValue]),
         @"deleteChat": @(hasRegistry &&
             [registryClass instancesRespondToSelector:NSSelectorFromString(@"deleteChat:")]),
         @"removeChat": @(hasRegistry &&
@@ -4014,145 +4012,6 @@ static NSDictionary *handleUpdateGroupPhoto(NSInteger requestId, NSDictionary *p
     } @catch (NSException *ex) { return errorResponse(requestId, ex.reason ?: @"failed"); }
 }
 
-static BOOL isMacOS26OrLater(void) {
-    NSOperatingSystemVersion v = [[NSProcessInfo processInfo] operatingSystemVersion];
-    return v.majorVersion >= 26;
-}
-
-static NSArray<NSString *> *chatBackgroundSetSelectors(void) {
-    return @[
-        @"setTranscriptBackgroundAndSendToChat:transferID:"
-    ];
-}
-
-static NSArray<NSString *> *chatBackgroundClearSelectors(void) {
-    return @[
-        @"setTranscriptBackgroundAndSendToChat:transferID:",
-        @"setTranscriptBackgroundDetails:"
-    ];
-}
-
-static NSDictionary *chatBackgroundSelectorStatus(void) {
-    NSMutableDictionary *selectors = [NSMutableDictionary dictionary];
-    BOOL available = NO;
-    Class chatClass = NSClassFromString(@"IMChat");
-    for (NSString *name in [chatBackgroundSetSelectors()
-            arrayByAddingObjectsFromArray:chatBackgroundClearSelectors()]) {
-        SEL sel = NSSelectorFromString(name);
-        BOOL responds = chatClass && [chatClass instancesRespondToSelector:sel];
-        selectors[name] = @(responds);
-        if (responds) available = YES;
-    }
-    return @{
-        @"available": @(available),
-        @"macos26_or_later": @(isMacOS26OrLater()),
-        @"selectors": selectors
-    };
-}
-
-static BOOL invokeChatBackgroundSelector(
-    IMChat *chat,
-    SEL sel,
-    id backgroundDetails,
-    NSString *transferID,
-    NSString **outErr
-) {
-    @try {
-        NSMethodSignature *sig = [chat methodSignatureForSelector:sel];
-        if (!sig) {
-            if (outErr) *outErr = @"Selector signature unavailable";
-            return NO;
-        }
-        NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
-        [inv setSelector:sel];
-        [inv setTarget:chat];
-        if (sig.numberOfArguments > 2) {
-            __unsafe_unretained id detailsArg = backgroundDetails;
-            [inv setArgument:&detailsArg atIndex:2];
-        }
-        if (sig.numberOfArguments > 3) {
-            __unsafe_unretained NSString *transferArg = transferID;
-            [inv setArgument:&transferArg atIndex:3];
-        }
-        [inv invoke];
-        return YES;
-    } @catch (NSException *exception) {
-        if (outErr) *outErr = exception.reason ?: @"chat-background selector failed";
-        return NO;
-    }
-}
-
-static NSDictionary *handleSetChatBackground(NSInteger requestId, NSDictionary *params) {
-    if (!isMacOS26OrLater()) {
-        return errorResponse(requestId, @"Chat backgrounds require macOS 26 or later");
-    }
-    NSString *chatGuid = params[@"chatGuid"];
-    NSString *filePath = params[@"filePath"];
-    if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
-    if (!filePath.length) return errorResponse(requestId, @"Missing filePath");
-    NSFileManager *fm = [NSFileManager defaultManager];
-    if (![fm fileExistsAtPath:filePath]) {
-        return errorResponse(requestId, @"Chat background package not found");
-    }
-    if (pathHasSymlinkComponent(filePath)) {
-        return errorResponse(requestId, @"Chat background package path traverses a symlink");
-    }
-    NSString *watchPath = [filePath stringByAppendingString:@"-watchBackground"];
-    if (![fm fileExistsAtPath:watchPath]) {
-        return errorResponse(requestId,
-            @"Chat background watch package not found; expected sibling -watchBackground file");
-    }
-    if (pathHasSymlinkComponent(watchPath)) {
-        return errorResponse(requestId, @"Chat background watch package path traverses a symlink");
-    }
-    IMChat *chat = resolveChatByGuid(chatGuid);
-    if (!chat) return errorResponse(requestId, @"Chat not found");
-
-    NSString *backgroundGuid = [[NSUUID UUID] UUIDString];
-    NSURL *fileURL = [NSURL fileURLWithPath:filePath];
-    NSString *backgroundURL = [fileURL absoluteString];
-    for (NSString *name in chatBackgroundSetSelectors()) {
-        SEL sel = NSSelectorFromString(name);
-        if (![chat respondsToSelector:sel]) continue;
-        NSString *invokeErr = nil;
-        if (invokeChatBackgroundSelector(chat, sel, backgroundURL, backgroundGuid, &invokeErr)) {
-            return successResponse(requestId, @{
-                @"chatGuid": chatGuid,
-                @"background_set": @YES,
-                @"selector": name,
-                @"backgroundGuid": backgroundGuid,
-                @"backgroundURL": backgroundURL
-            });
-        }
-        return errorResponse(requestId, invokeErr ?: @"chat-background set failed");
-    }
-    return errorResponse(requestId, @"No chat-background set selector available");
-}
-
-static NSDictionary *handleClearChatBackground(NSInteger requestId, NSDictionary *params) {
-    if (!isMacOS26OrLater()) {
-        return errorResponse(requestId, @"Chat backgrounds require macOS 26 or later");
-    }
-    NSString *chatGuid = params[@"chatGuid"];
-    if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
-    IMChat *chat = resolveChatByGuid(chatGuid);
-    if (!chat) return errorResponse(requestId, @"Chat not found");
-    for (NSString *name in chatBackgroundClearSelectors()) {
-        SEL sel = NSSelectorFromString(name);
-        if (![chat respondsToSelector:sel]) continue;
-        NSString *invokeErr = nil;
-        if (invokeChatBackgroundSelector(chat, sel, nil, nil, &invokeErr)) {
-            return successResponse(requestId, @{
-                @"chatGuid": chatGuid,
-                @"background_cleared": @YES,
-                @"selector": name
-            });
-        }
-        return errorResponse(requestId, invokeErr ?: @"chat-background clear failed");
-    }
-    return errorResponse(requestId, @"No chat-background clear selector available");
-}
-
 static NSDictionary *handleLeaveChat(NSInteger requestId, NSDictionary *params) {
     NSString *chatGuid = params[@"chatGuid"];
     if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
@@ -4459,8 +4318,6 @@ static NSDictionary* dispatchAction(NSInteger legacyId, NSString *action,
     if ([action isEqualToString:@"remove-participant"]) return handleRemoveParticipant(legacyId, params);
     if ([action isEqualToString:@"set-display-name"]) return handleSetDisplayName(legacyId, params);
     if ([action isEqualToString:@"update-group-photo"]) return handleUpdateGroupPhoto(legacyId, params);
-    if ([action isEqualToString:@"set-chat-background"]) return handleSetChatBackground(legacyId, params);
-    if ([action isEqualToString:@"clear-chat-background"]) return handleClearChatBackground(legacyId, params);
     if ([action isEqualToString:@"leave-chat"]) return handleLeaveChat(legacyId, params);
     if ([action isEqualToString:@"delete-chat"]) return handleDeleteChat(legacyId, params);
     if ([action isEqualToString:@"create-chat"]) return handleCreateChat(legacyId, params);

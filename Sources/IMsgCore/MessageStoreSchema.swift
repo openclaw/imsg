@@ -12,10 +12,14 @@ struct MessageStoreSchema: Sendable {
   let hasPayloadDataColumn: Bool
   let hasMessageSummaryInfoColumn: Bool
   let hasReplyToGUIDColumn: Bool
+  let hasScheduleTypeColumn: Bool
+  let hasScheduleStateColumn: Bool
   let hasChatMessageJoinMessageDateColumn: Bool
   let hasChatAccountIDColumn: Bool
   let hasChatAccountLoginColumn: Bool
   let hasChatLastAddressedHandleColumn: Bool
+  let hasIsReadColumn: Bool
+  let hasDateReadColumn: Bool
 
   init(connection: Connection) {
     let messageColumns = MessageStore.tableColumns(connection: connection, table: "message")
@@ -37,10 +41,14 @@ struct MessageStoreSchema: Sendable {
     self.hasPayloadDataColumn = messageColumns.contains("payload_data")
     self.hasMessageSummaryInfoColumn = messageColumns.contains("message_summary_info")
     self.hasReplyToGUIDColumn = messageColumns.contains("reply_to_guid")
+    self.hasScheduleTypeColumn = messageColumns.contains("schedule_type")
+    self.hasScheduleStateColumn = messageColumns.contains("schedule_state")
     self.hasChatMessageJoinMessageDateColumn = chatMessageJoinColumns.contains("message_date")
     self.hasChatAccountIDColumn = chatColumns.contains("account_id")
     self.hasChatAccountLoginColumn = chatColumns.contains("account_login")
     self.hasChatLastAddressedHandleColumn = chatColumns.contains("last_addressed_handle")
+    self.hasIsReadColumn = messageColumns.contains("is_read")
+    self.hasDateReadColumn = messageColumns.contains("date_read")
   }
 
   init(
@@ -59,7 +67,9 @@ struct MessageStoreSchema: Sendable {
     hasChatMessageJoinMessageDateColumn: Bool? = nil,
     hasChatAccountIDColumn: Bool? = nil,
     hasChatAccountLoginColumn: Bool? = nil,
-    hasChatLastAddressedHandleColumn: Bool? = nil
+    hasChatLastAddressedHandleColumn: Bool? = nil,
+    hasIsReadColumn: Bool? = nil,
+    hasDateReadColumn: Bool? = nil
   ) {
     self.hasAttributedBody = hasAttributedBody ?? base.hasAttributedBody
     self.hasReactionColumns = hasReactionColumns ?? base.hasReactionColumns
@@ -75,11 +85,15 @@ struct MessageStoreSchema: Sendable {
     self.hasMessageSummaryInfoColumn =
       hasMessageSummaryInfoColumn ?? base.hasMessageSummaryInfoColumn
     self.hasReplyToGUIDColumn = hasReplyToGUIDColumn ?? base.hasReplyToGUIDColumn
+    self.hasScheduleTypeColumn = base.hasScheduleTypeColumn
+    self.hasScheduleStateColumn = base.hasScheduleStateColumn
     self.hasChatMessageJoinMessageDateColumn =
       hasChatMessageJoinMessageDateColumn ?? base.hasChatMessageJoinMessageDateColumn
     self.hasChatAccountIDColumn = hasChatAccountIDColumn ?? base.hasChatAccountIDColumn
     self.hasChatAccountLoginColumn = hasChatAccountLoginColumn ?? base.hasChatAccountLoginColumn
     self.hasChatLastAddressedHandleColumn =
       hasChatLastAddressedHandleColumn ?? base.hasChatLastAddressedHandleColumn
+    self.hasIsReadColumn = hasIsReadColumn ?? base.hasIsReadColumn
+    self.hasDateReadColumn = hasDateReadColumn ?? base.hasDateReadColumn
   }
 }

@@ -5,35 +5,21 @@ import IMsgCore
 enum ChatBackgroundCommand {
   static let spec = CommandSpec(
     name: "chat-background",
-    abstract: "Inspect, set, or clear a macOS 26 Messages chat background",
-    discussion: """
-      Requires `imsg launch` on macOS 26+. This is a guarded private-API probe:
-      the helper reports an error unless the running Messages classes expose a
-      known chat-background selector. Setting a background expects the same
-      PosterKit package shape Messages.app uses internally: `--file` points to
-      the transcript background package and a sibling path ending in
-      `-watchBackground` must exist.
-      """,
+    abstract: "Inspect a Messages chat background",
+    discussion:
+      "Reads background metadata and cache state from the local Messages database. No bridge or SIP change is required.",
     signature: CommandSignatures.withRuntimeFlags(
       CommandSignature(
         arguments: [
-          .make(label: "action", help: "status|clear|set", isOptional: false)
+          .make(label: "action", help: "status", isOptional: false)
         ],
         options: CommandSignatures.baseOptions() + [
-          .make(label: "chat", names: [.long("chat")], help: "chat guid"),
-          .make(label: "chatID", names: [.long("chat-id")], help: "local chat ROWID"),
-          .make(
-            label: "file",
-            names: [.long("file")],
-            help: "set: path to PosterKit background package"
-          ),
+          .make(label: "chatID", names: [.long("chat-id")], help: "local chat ROWID")
         ]
       )
     ),
     usageExamples: [
-      "imsg chat-background status --chat 'iMessage;+;chat0000' --json",
-      "imsg chat-background set --chat 'iMessage;+;chat0000' --file /tmp/bg-package",
-      "imsg chat-background clear --chat 'iMessage;+;chat0000'",
+      "imsg chat-background status --chat-id 42 --json"
     ]
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
@@ -42,129 +28,122 @@ enum ChatBackgroundCommand {
   static func run(
     values: ParsedValues,
     runtime: RuntimeOptions,
-    storeFactory: (String) throws -> MessageStore = { try MessageStore(path: $0) },
-    stageBackgroundPackage: @escaping (String) throws -> String = MessageSender
-      .stageChatBackgroundPackageForMessagesApp,
-    invokeBridge: @escaping (BridgeAction, [String: Any]) async throws -> [String: Any] = {
-      action, params in
-      try await IMsgBridgeClient.shared.invoke(action: action, params: params)
-    }
+    storeFactory: (String) throws -> MessageStore = { try MessageStore(path: $0) }
   ) async throws {
-    switch values.argument(0) {
-    case "status":
-      try emitStatus(values: values, runtime: runtime, storeFactory: storeFactory)
-      return
-    case "set":
-      guard let chat = values.option("chat"), !chat.isEmpty else {
-        throw ParsedValuesError.missingOption("chat")
-      }
-      guard let file = values.option("file"), !file.isEmpty else {
-        throw ParsedValuesError.missingOption("file")
-      }
-      let expanded = (file as NSString).expandingTildeInPath
-      _ = try await BridgeOutput.invokeAndEmit(
-        action: .setChatBackground,
-        params: [
-          "chatGuid": chat,
-          "filePath": try stageBackgroundPackage(expanded),
-        ],
-        runtime: runtime,
-        invokeBridge: invokeBridge
-      ) { data in
-        let backgroundGuid = (data["backgroundGuid"] as? String) ?? ""
-        return backgroundGuid.isEmpty
-          ? "chat-background: set"
-          : "chat-background: set (background_guid=\(backgroundGuid))"
-      }
-      return
-    case "clear":
-      guard let chat = values.option("chat"), !chat.isEmpty else {
-        throw ParsedValuesError.missingOption("chat")
-      }
-      _ = try await BridgeOutput.invokeAndEmit(
-        action: .clearChatBackground,
-        params: ["chatGuid": chat],
-        runtime: runtime,
-        invokeBridge: invokeBridge
-      ) { _ in
-        "chat-background: cleared"
-      }
-    default:
+    guard values.argument(0) == "status" else {
       throw ParsedValuesError.invalidOption("action")
     }
-  }
-
-  private static func emitStatus(
-    values: ParsedValues,
-    runtime: RuntimeOptions,
-    storeFactory: (String) throws -> MessageStore
-  ) throws {
-    let dbPath = values.option("db") ?? MessageStore.defaultPath
-    let store = try storeFactory(dbPath)
-    let info: ChatBackgroundInfo?
-    if let chatIDString = values.option("chatID"), let chatID = Int64(chatIDString) {
-      info = try store.chatBackgroundInfo(chatID: chatID)
-    } else if let chat = values.option("chat"), !chat.isEmpty {
-      info = try store.chatBackgroundInfo(matchingTarget: chat)
-    } else {
-      throw ParsedValuesError.missingOption("chat")
+    let rawChatID = try values.optionRequired("chatID")
+    guard let chatID = Int64(rawChatID), chatID > 0 else {
+      throw ParsedValuesError.invalidOption("chat-id")
     }
-    guard let info else {
+
+    let dbPath = values.option("db") ?? MessageStore.defaultPath
+    guard let info = try storeFactory(dbPath).chatBackgroundInfo(chatID: chatID) else {
       throw ChatBackgroundError.chatNotFound
     }
-    let payload = statusPayload(info)
-    if runtime.jsonOutput {
-      try JSONLines.printObject(payload)
-    } else {
-      let state = info.backgroundChannelGUID == nil ? "none" : "set"
-      StdoutWriter.writeLine("chat-background: \(state)")
-      StdoutWriter.writeLine("chat_id: \(info.chatID)")
-      StdoutWriter.writeLine("chat_guid: \(info.chatGUID)")
-      if let channelGUID = info.backgroundChannelGUID {
-        StdoutWriter.writeLine("background_channel_guid: \(channelGUID)")
-        StdoutWriter.writeLine("cache_exists: \(info.cacheExists)")
-        StdoutWriter.writeLine("watch_background_exists: \(info.watchBackgroundExists)")
-      }
-      if let latest = info.latestEvent {
-        StdoutWriter.writeLine("latest_event: \(latest.action) row=\(latest.rowID)")
-      }
-    }
-  }
 
-  private static func statusPayload(_ info: ChatBackgroundInfo) -> [String: Any] {
-    var payload: [String: Any] = [
-      "ok": true,
-      "chat_id": info.chatID,
-      "chat_guid": info.chatGUID,
-      "background_set": info.backgroundChannelGUID != nil,
-      "cache_exists": info.cacheExists,
-      "watch_background_exists": info.watchBackgroundExists,
-    ]
-    payload["background_channel_guid"] = info.backgroundChannelGUID ?? NSNull()
-    payload["asset_url"] = info.assetURL ?? NSNull()
-    payload["asset_id"] = info.assetID ?? NSNull()
-    payload["object_id"] = info.objectID ?? NSNull()
-    payload["file_size"] = info.fileSize ?? NSNull()
-    payload["poster_version"] = info.posterVersion ?? NSNull()
-    payload["communication_safety_state"] = info.communicationSafetyState ?? NSNull()
-    payload["version"] = info.version ?? NSNull()
-    payload["cache_path"] = info.cachePath ?? NSNull()
-    payload["watch_background_path"] = info.watchBackgroundPath ?? NSNull()
-    if let event = info.latestEvent {
-      payload["latest_event"] = [
-        "row_id": event.rowID,
-        "guid": event.guid,
-        "action": event.action,
-        "date": ISO8601DateFormatter().string(from: event.date),
-      ]
-    } else {
-      payload["latest_event"] = NSNull()
+    if runtime.jsonOutput {
+      try JSONLines.print(ChatBackgroundPayload(info))
+      return
     }
-    return payload
+
+    let state = info.backgroundChannelGUID == nil ? "none" : "set"
+    StdoutWriter.writeLine("chat-background: \(state)")
+    StdoutWriter.writeLine("chat_id: \(info.chatID)")
+    StdoutWriter.writeLine("chat_guid: \(info.chatGUID)")
+    if let channelGUID = info.backgroundChannelGUID {
+      StdoutWriter.writeLine("background_channel_guid: \(channelGUID)")
+      StdoutWriter.writeLine("cache_exists: \(info.cacheExists)")
+      StdoutWriter.writeLine("watch_background_exists: \(info.watchBackgroundExists)")
+    }
+    if let latest = info.latestEvent {
+      StdoutWriter.writeLine("latest_event: \(latest.action) row=\(latest.rowID)")
+    }
   }
 }
 
-enum ChatBackgroundError: LocalizedError, CustomStringConvertible {
+struct ChatBackgroundPayload: Encodable {
+  let ok = true
+  let chatID: Int64
+  let chatGUID: String
+  let backgroundSet: Bool
+  let backgroundChannelGUID: String?
+  let assetURL: String?
+  let assetID: String?
+  let objectID: String?
+  let fileSize: Int64?
+  let posterVersion: Int64?
+  let communicationSafetyState: Int64?
+  let version: Int64?
+  let cachePath: String?
+  let cacheExists: Bool?
+  let watchBackgroundPath: String?
+  let watchBackgroundExists: Bool?
+  let latestEvent: ChatBackgroundEventPayload?
+
+  init(_ info: ChatBackgroundInfo) {
+    self.chatID = info.chatID
+    self.chatGUID = info.chatGUID
+    self.backgroundSet = info.backgroundChannelGUID != nil
+    self.backgroundChannelGUID = info.backgroundChannelGUID
+    self.assetURL = info.assetURL
+    self.assetID = info.assetID
+    self.objectID = info.objectID
+    self.fileSize = info.fileSize
+    self.posterVersion = info.posterVersion
+    self.communicationSafetyState = info.communicationSafetyState
+    self.version = info.version
+    self.cachePath = info.cachePath
+    self.cacheExists = info.cachePath == nil ? nil : info.cacheExists
+    self.watchBackgroundPath = info.watchBackgroundPath
+    self.watchBackgroundExists = info.watchBackgroundPath == nil ? nil : info.watchBackgroundExists
+    self.latestEvent = info.latestEvent.map(ChatBackgroundEventPayload.init)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case ok
+    case chatID = "chat_id"
+    case chatGUID = "chat_guid"
+    case backgroundSet = "background_set"
+    case backgroundChannelGUID = "background_channel_guid"
+    case assetURL = "asset_url"
+    case assetID = "asset_id"
+    case objectID = "object_id"
+    case fileSize = "file_size"
+    case posterVersion = "poster_version"
+    case communicationSafetyState = "communication_safety_state"
+    case version
+    case cachePath = "cache_path"
+    case cacheExists = "cache_exists"
+    case watchBackgroundPath = "watch_background_path"
+    case watchBackgroundExists = "watch_background_exists"
+    case latestEvent = "latest_event"
+  }
+}
+
+struct ChatBackgroundEventPayload: Encodable {
+  let rowID: Int64
+  let guid: String
+  let action: String
+  let date: String
+
+  init(_ event: ChatBackgroundEvent) {
+    self.rowID = event.rowID
+    self.guid = event.guid
+    self.action = event.action
+    self.date = CLIISO8601.format(event.date)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case rowID = "row_id"
+    case guid
+    case action
+    case date
+  }
+}
+
+enum ChatBackgroundError: LocalizedError, CustomStringConvertible, Equatable {
   case chatNotFound
 
   var errorDescription: String? {

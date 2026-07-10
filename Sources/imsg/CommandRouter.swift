@@ -11,6 +11,7 @@ struct CommandRouter {
     self.version = CommandRouter.resolveVersion()
     self.specs = [
       ChatsCommand.spec,
+      StatsCommand.spec,
       GroupCommand.spec,
       HistoryCommand.spec,
       WatchCommand.spec,
@@ -22,6 +23,8 @@ struct CommandRouter {
       StatusCommand.spec,
       RpcCommand.spec,
       CompletionsCommand.spec,
+      ScheduledCommand.spec,
+      ChatBackgroundCommand.spec,
       // Bridge-backed (require `imsg launch` + SIP off)
       SendRichCommand.spec,
       SendMultipartCommand.spec,
@@ -35,7 +38,6 @@ struct CommandRouter {
       ChatCreateCommand.spec,
       ChatNameCommand.spec,
       ChatPhotoCommand.spec,
-      ChatBackgroundCommand.spec,
       ChatAddMemberCommand.spec,
       ChatRemoveMemberCommand.spec,
       ChatLeaveCommand.spec,

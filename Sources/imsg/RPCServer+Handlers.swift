@@ -18,7 +18,12 @@ private enum RPCSendTransport: String {
 extension RPCServer {
   func handleChatsList(id: Any?, params: [String: Any]) async throws {
     let limit = intParam(params["limit"]) ?? 20
-    let chats = try store.listChats(limit: max(limit, 1))
+    let unreadOnly = boolParam(params["unread_only"] ?? params["unreadOnly"]) ?? false
+    guard !unreadOnly || store.supportsUnreadState else {
+      throw RPCError.invalidParams(
+        "unread_only is unavailable because this Messages database has no read-state column")
+    }
+    let chats = try store.listChats(limit: max(limit, 1), unreadOnly: unreadOnly)
     var payloads: [[String: Any]] = []
     payloads.reserveCapacity(chats.count)
 
@@ -41,7 +46,8 @@ extension RPCServer {
           service: service,
           lastMessageAt: chat.lastMessageAt,
           participants: participants,
-          contactName: contactName
+          contactName: contactName,
+          unreadCount: chat.unreadCount
         ))
     }
 

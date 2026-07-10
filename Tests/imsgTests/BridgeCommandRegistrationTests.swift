@@ -15,7 +15,6 @@ func commandRouterIncludesAllBridgeCommands() {
     "send-rich", "send-multipart", "send-attachment", "tapback",
     "poll", "edit", "unsend", "delete-message", "notify-anyways",
     "chat-create", "chat-name", "chat-photo",
-    "chat-background",
     "chat-add-member", "chat-remove-member",
     "chat-leave", "chat-delete", "chat-mark",
     "account", "whois", "nickname",
@@ -41,7 +40,6 @@ func bridgeMessagingCommandsExposeChatRequirement() async {
     ("unsend", ["--message", "message-guid"]),
     ("delete-message", ["--message", "message-guid"]),
     ("tapback", ["--message", "message-guid", "--kind", "love"]),
-    ("chat-background", ["clear"]),
   ]
   for testCase in cases {
     let (output, status) = await StdoutCapture.capture {
@@ -50,108 +48,6 @@ func bridgeMessagingCommandsExposeChatRequirement() async {
     #expect(status == 1, "\(testCase.name) should require --chat")
     #expect(output.contains("Missing required option: --chat"))
   }
-}
-
-@Test
-func chatBackgroundClearForwardsBridgeAction() async throws {
-  let values = ParsedValues(
-    positional: ["clear"],
-    options: ["chat": ["iMessage;+;chat0000"]],
-    flags: []
-  )
-  let runtime = RuntimeOptions(parsedValues: values)
-  var capturedAction: BridgeAction?
-  var capturedParams: [String: Any] = [:]
-
-  _ = try await StdoutCapture.capture {
-    try await ChatBackgroundCommand.run(
-      values: values,
-      runtime: runtime,
-      invokeBridge: { action, params in
-        capturedAction = action
-        capturedParams = params
-        return ["background_cleared": true]
-      }
-    )
-  }
-
-  #expect(capturedAction == .clearChatBackground)
-  #expect(capturedParams["chatGuid"] as? String == "iMessage;+;chat0000")
-}
-
-@Test
-func chatBackgroundStatusReadsLocalDatabase() async throws {
-  let values = ParsedValues(
-    positional: ["status"],
-    options: ["chatID": ["1"]],
-    flags: ["jsonOutput"]
-  )
-  let runtime = RuntimeOptions(parsedValues: values)
-  let store = try CommandTestDatabase.makeStoreForRPC()
-
-  let (output, _) = try await StdoutCapture.capture {
-    try await ChatBackgroundCommand.run(
-      values: values,
-      runtime: runtime,
-      storeFactory: { _ in store }
-    )
-  }
-
-  #expect(output.contains(#""chat_id":1"#))
-  #expect(output.contains(#""background_set":false"#))
-}
-
-@Test
-func chatBackgroundSetForwardsBridgeAction() async throws {
-  let values = ParsedValues(
-    positional: ["set"],
-    options: ["chat": ["iMessage;+;chat0000"], "file": ["/tmp/bg.png"]],
-    flags: []
-  )
-  let runtime = RuntimeOptions(parsedValues: values)
-  var capturedAction: BridgeAction?
-  var capturedParams: [String: Any] = [:]
-
-  _ = try await StdoutCapture.capture {
-    try await ChatBackgroundCommand.run(
-      values: values,
-      runtime: runtime,
-      stageBackgroundPackage: { path in
-        #expect(path == "/tmp/bg.png")
-        return "/tmp/staged-bg-package"
-      },
-      invokeBridge: { action, params in
-        capturedAction = action
-        capturedParams = params
-        return ["backgroundGuid": "background-guid"]
-      }
-    )
-  }
-
-  #expect(capturedAction == .setChatBackground)
-  #expect(capturedParams["chatGuid"] as? String == "iMessage;+;chat0000")
-  #expect(capturedParams["filePath"] as? String == "/tmp/staged-bg-package")
-}
-
-@Test
-func injectedHelperWiresChatBackgroundActions() throws {
-  let testFile = URL(fileURLWithPath: #filePath)
-  let repoRoot =
-    testFile
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
-  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
-
-  #expect(source.contains("set-chat-background"))
-  #expect(source.contains("clear-chat-background"))
-  #expect(source.contains("chatBackgroundSelectorStatus"))
-  #expect(source.contains("Chat backgrounds require macOS 26 or later"))
-  #expect(source.contains("setTranscriptBackgroundAndSendToChat:transferID:"))
-  #expect(source.contains("Chat background watch package not found"))
-  #expect(source.contains("Chat background package path traverses a symlink"))
-  #expect(source.contains("Chat background watch package path traverses a symlink"))
 }
 
 @Test

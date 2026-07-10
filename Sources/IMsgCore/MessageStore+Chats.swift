@@ -19,8 +19,9 @@ private struct ListChatsQuery {
   let sql: String
   let bindings: [Binding?]
 
-  init(limit: Int, schema: MessageStoreSchema) {
+  init(limit: Int, offset: Int = 0, unreadOnly: Bool, schema: MessageStoreSchema) {
     let routing = ChatRoutingSelection(schema: schema)
+    let unreadSelection = UnreadChatSelection(enabled: unreadOnly)
     if schema.hasChatMessageJoinMessageDateColumn {
       self.sql = """
         SELECT c.ROWID AS chat_rowid, IFNULL(c.display_name, c.chat_identifier) AS name,
@@ -31,9 +32,10 @@ private struct ListChatsQuery {
                \(routing.lastAddressedHandleColumn) AS last_addressed_handle
         FROM chat c
         JOIN chat_message_join cmj ON c.ROWID = cmj.chat_id
+        \(unreadSelection.joinClause)
         GROUP BY c.ROWID
-        ORDER BY last_date DESC
-        LIMIT ?
+        ORDER BY last_date DESC, c.ROWID DESC
+        LIMIT ? OFFSET ?
         """
     } else {
       self.sql = """
@@ -46,13 +48,75 @@ private struct ListChatsQuery {
         FROM chat c
         JOIN chat_message_join cmj ON c.ROWID = cmj.chat_id
         JOIN message m ON m.ROWID = cmj.message_id
+        \(unreadSelection.joinClause)
         GROUP BY c.ROWID
-        ORDER BY last_date DESC
-        LIMIT ?
+        ORDER BY last_date DESC, c.ROWID DESC
+        LIMIT ? OFFSET ?
         """
     }
-    self.bindings = [limit]
+    self.bindings = [limit, offset]
   }
+}
+
+private struct UnreadChatSelection {
+  let joinClause: String
+
+  init(enabled: Bool) {
+    guard enabled else {
+      self.joinClause = ""
+      return
+    }
+    self.joinClause = """
+      JOIN (
+        SELECT DISTINCT cmj_unread.chat_id
+        FROM chat_message_join cmj_unread
+        JOIN message m_unread ON m_unread.ROWID = cmj_unread.message_id
+        WHERE m_unread.is_from_me = 0 AND m_unread.is_read = 0
+      ) unread ON unread.chat_id = c.ROWID
+      """
+  }
+}
+
+private struct UnreadMessagesQuery {
+  let sql: String
+  let bindings: [Binding?]
+  let selection: MessageRowSelection
+
+  init(store: MessageStore, chatIDs: [Int64]) {
+    let selection = MessageRowSelection(store: store, includeChatID: true)
+    self.selection = selection
+    let placeholders = Array(repeating: "?", count: chatIDs.count).joined(separator: ", ")
+    self.sql = """
+      SELECT \(selection.selectList)
+      FROM message m
+      JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+      LEFT JOIN handle h ON m.handle_id = h.ROWID
+      WHERE cmj.chat_id IN (\(placeholders))
+        AND m.is_from_me = 0
+        AND m.is_read = 0
+      ORDER BY cmj.chat_id, m.ROWID
+      """
+    self.bindings = chatIDs.map { $0 as Binding? }
+  }
+}
+
+private struct ChatRow {
+  let id: Int64
+  let identifier: String
+  let name: String
+  let service: String
+  let lastMessageAt: Date
+  let accountID: String?
+  let accountLogin: String?
+  let lastAddressedHandle: String?
+}
+
+private struct UnreadStateUnavailableError: LocalizedError, CustomStringConvertible {
+  private let message =
+    "Unread filtering is unavailable because this Messages database has no message.is_read column"
+
+  var errorDescription: String? { message }
+  var description: String { message }
 }
 
 private struct ChatInfoQuery {
@@ -91,26 +155,137 @@ private struct ParticipantsQuery {
 }
 
 extension MessageStore {
-  public func listChats(limit: Int) throws -> [Chat] {
-    let query = ListChatsQuery(limit: limit, schema: schema)
-    return try withConnection { db in
-      var chats: [Chat] = []
-      let rows = try db.prepareRowIterator(query.sql, bindings: query.bindings)
-      while let row = try rows.failableNext() {
-        chats.append(
-          Chat(
-            id: try int64Value(row, "chat_rowid") ?? 0,
-            identifier: try stringValue(row, "chat_identifier"),
-            name: try stringValue(row, "name"),
-            service: try stringValue(row, "service_name"),
-            lastMessageAt: try appleDate(from: int64Value(row, "last_date")),
-            accountID: try stringValue(row, "account_id").nilIfEmpty,
-            accountLogin: try stringValue(row, "account_login").nilIfEmpty,
-            lastAddressedHandle: try stringValue(row, "last_addressed_handle").nilIfEmpty
-          ))
-      }
-      return chats
+  public var supportsUnreadState: Bool { schema.hasIsReadColumn }
+
+  public func listChats(limit: Int, unreadOnly: Bool = false) throws -> [Chat] {
+    guard limit > 0 else { return [] }
+    if unreadOnly && !supportsUnreadState {
+      throw UnreadStateUnavailableError()
     }
+    return try withConnection { db in
+      if !unreadOnly {
+        let query = ListChatsQuery(limit: limit, unreadOnly: false, schema: schema)
+        let rows = try chatRows(for: query, db: db)
+        let counts = try unreadCounts(for: rows.map(\.id), db: db)
+        return rows.map { chat(from: $0, unreadCount: counts[$0.id]) }
+      }
+
+      // The SQL predicate narrows the candidate set cheaply, then logical-message counting
+      // rejects false positives such as unread URL-preview rows attached to read text rows.
+      let batchLimit = max(limit, 50)
+      var offset = 0
+      var result: [Chat] = []
+      while result.count < limit {
+        let query = ListChatsQuery(
+          limit: batchLimit,
+          offset: offset,
+          unreadOnly: true,
+          schema: schema
+        )
+        let rows = try chatRows(for: query, db: db)
+        guard !rows.isEmpty else { break }
+        let counts = try unreadCounts(for: rows.map(\.id), db: db)
+        for row in rows {
+          guard let count = counts[row.id], count > 0 else { continue }
+          result.append(chat(from: row, unreadCount: count))
+          if result.count == limit { break }
+        }
+        guard rows.count == batchLimit else { break }
+        offset += rows.count
+      }
+      return result
+    }
+  }
+
+  private func chatRows(for query: ListChatsQuery, db: Connection) throws -> [ChatRow] {
+    var result: [ChatRow] = []
+    let rows = try db.prepareRowIterator(query.sql, bindings: query.bindings)
+    while let row = try rows.failableNext() {
+      result.append(
+        ChatRow(
+          id: try int64Value(row, "chat_rowid") ?? 0,
+          identifier: try stringValue(row, "chat_identifier"),
+          name: try stringValue(row, "name"),
+          service: try stringValue(row, "service_name"),
+          lastMessageAt: try appleDate(from: int64Value(row, "last_date")),
+          accountID: try stringValue(row, "account_id").nilIfEmpty,
+          accountLogin: try stringValue(row, "account_login").nilIfEmpty,
+          lastAddressedHandle: try stringValue(row, "last_addressed_handle").nilIfEmpty
+        ))
+    }
+    return result
+  }
+
+  private func chat(from row: ChatRow, unreadCount: Int?) -> Chat {
+    Chat(
+      id: row.id,
+      identifier: row.identifier,
+      name: row.name,
+      service: row.service,
+      lastMessageAt: row.lastMessageAt,
+      accountID: row.accountID,
+      accountLogin: row.accountLogin,
+      lastAddressedHandle: row.lastAddressedHandle,
+      unreadCount: supportsUnreadState ? unreadCount ?? 0 : nil
+    )
+  }
+
+  private func unreadCounts(for chatIDs: [Int64], db: Connection) throws -> [Int64: Int] {
+    guard supportsUnreadState else { return [:] }
+    var result: [Int64: Int] = [:]
+    // Stay below SQLite builds with the traditional 999-variable limit.
+    var offset = 0
+    while offset < chatIDs.count {
+      let end = min(offset + 500, chatIDs.count)
+      let chunk = Array(chatIDs[offset..<end])
+      let query = UnreadMessagesQuery(store: self, chatIDs: chunk)
+      let rows = try db.prepareRowIterator(query.sql, bindings: query.bindings)
+      var unreadMessageIDsByChat: [Int64: Set<Int64>] = [:]
+      while let row = try rows.failableNext() {
+        let decoded = try decodeMessageRow(
+          row,
+          columns: query.selection.columns,
+          fallbackChatID: nil
+        )
+        let reaction = decodeReaction(
+          associatedType: decoded.associatedType,
+          associatedGUID: decoded.associatedGUID,
+          text: decoded.text
+        )
+        let message = Message(
+          rowID: decoded.rowID,
+          chatID: decoded.chatID,
+          sender: decoded.sender,
+          text: decoded.text,
+          date: decoded.date,
+          isFromMe: decoded.isFromMe,
+          service: decoded.service,
+          handleID: decoded.handleID,
+          attachmentsCount: decoded.attachments,
+          guid: decoded.guid,
+          balloonBundleID: decoded.balloonBundleID.nilIfEmpty,
+          reaction: Message.ReactionMetadata(
+            isReaction: reaction.isReaction,
+            reactionType: reaction.reactionType,
+            isReactionAdd: reaction.isReactionAdd,
+            reactedToGUID: reaction.reactedToGUID
+          )
+        )
+        var logicalRowID = message.rowID
+        if isURLPreviewBalloon(message),
+          let textMessage = try precedingTextMessageForURLPreview(message, db: db)
+        {
+          guard textMessage.isRead == false else { continue }
+          logicalRowID = textMessage.rowID
+        }
+        unreadMessageIDsByChat[decoded.chatID, default: []].insert(logicalRowID)
+      }
+      for (chatID, rowIDs) in unreadMessageIDsByChat {
+        result[chatID] = rowIDs.count
+      }
+      offset = end
+    }
+    return result
   }
 
   public func chatInfo(chatID: Int64) throws -> ChatInfo? {

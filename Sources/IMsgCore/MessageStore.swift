@@ -56,7 +56,9 @@ public final class MessageStore: @unchecked Sendable {
     hasChatMessageJoinMessageDateColumn: Bool? = nil,
     hasChatAccountIDColumn: Bool? = nil,
     hasChatAccountLoginColumn: Bool? = nil,
-    hasChatLastAddressedHandleColumn: Bool? = nil
+    hasChatLastAddressedHandleColumn: Bool? = nil,
+    hasIsReadColumn: Bool? = nil,
+    hasDateReadColumn: Bool? = nil
   ) throws {
     self.path = path
     self.queue = DispatchQueue(label: "imsg.db.test", qos: .userInitiated)
@@ -76,7 +78,9 @@ public final class MessageStore: @unchecked Sendable {
       hasChatMessageJoinMessageDateColumn: hasChatMessageJoinMessageDateColumn,
       hasChatAccountIDColumn: hasChatAccountIDColumn,
       hasChatAccountLoginColumn: hasChatAccountLoginColumn,
-      hasChatLastAddressedHandleColumn: hasChatLastAddressedHandleColumn
+      hasChatLastAddressedHandleColumn: hasChatLastAddressedHandleColumn,
+      hasIsReadColumn: hasIsReadColumn,
+      hasDateReadColumn: hasDateReadColumn
     )
   }
 
