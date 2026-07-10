@@ -170,7 +170,7 @@ func injectedHelperBroadcastsFailClosedNativePollVoteMetadata() throws {
   #expect(!sendVoteBody.contains("pollPayloadMessageInitializerAvailable()"))
   #expect(source.contains("archivePollMutationEnvelope"))
   #expect(source.contains("pollParticipantHandle(voterHandle)"))
-  #expect(source.contains(#"votes = @[]"#))
+  #expect(source.contains("remainingOptionIdentifiers"))
   #expect(source.contains(#"@"ams": @"Sent a vote""#))
   #expect(source.contains(#"@"amb": pollsBalloonBundleIdentifier()"#))
   #expect(!source.contains(#"vote[@"eventType"] = @"removed""#))

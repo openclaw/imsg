@@ -173,8 +173,10 @@ enum PollCommand {
     else {
       throw ParsedValuesError.missingOption("poll")
     }
+    let dbPath = values.option("db") ?? MessageStore.defaultPath
+    let store = try storeFactory(dbPath)
     let resolved = try resolveOptionID(
-      values: values, pollGuid: pollGuid, storeFactory: storeFactory)
+      values: values, pollGuid: pollGuid, store: store)
 
     var params: [String: Any] = [
       "chatGuid": chat,
@@ -187,6 +189,14 @@ enum PollCommand {
     // suppress a redundant text reply that just restates the vote.
     if let text = resolved.text, !text.isEmpty {
       params["optionText"] = text
+    }
+    if remove {
+      let selectedOptionIDs = try store.pollSelectedOptionIDs(guid: pollGuid)
+      guard selectedOptionIDs.contains(resolved.id) else {
+        throw ParsedValuesError.invalidOption(
+          "option-id \(resolved.id) is not currently selected")
+      }
+      params["remainingOptionIdentifiers"] = selectedOptionIDs.filter { $0 != resolved.id }
     }
 
     do {
@@ -218,7 +228,7 @@ enum PollCommand {
   private static func resolveOptionID(
     values: ParsedValues,
     pollGuid: String,
-    storeFactory: (String) throws -> MessageStore
+    store: MessageStore
   ) throws -> (id: String, text: String?) {
     let directID = values.option("optionID")?.trimmingCharacters(in: .whitespacesAndNewlines)
     let indexValue = values.optionInt64("optionIndex")
@@ -231,8 +241,6 @@ enum PollCommand {
       throw ParsedValuesError.invalidOption(
         "choose exactly one of --option-id, --option-index, or --option")
     }
-    let dbPath = values.option("db") ?? MessageStore.defaultPath
-    let store = try storeFactory(dbPath)
     let options = try store.pollOptions(guid: pollGuid)
     guard !options.isEmpty else {
       throw ParsedValuesError.invalidOption("poll (could not decode options for \(pollGuid))")

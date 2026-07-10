@@ -29,7 +29,7 @@ func rpcStatusAdvertisesBridgeMessageMethods() {
 
 @Test
 func rpcPollUnvoteValidatesAndResolvesOption() async throws {
-  let store = try CommandTestDatabase.makeStoreForRPCWithPollVote()
+  let store = try CommandTestDatabase.makeStoreForRPCWithOwnPollVoteSnapshot()
   let output = TestRPCOutput()
   var capturedAction: BridgeAction?
   var capturedParams: [String: Any] = [:]
@@ -54,10 +54,27 @@ func rpcPollUnvoteValidatesAndResolvesOption() async throws {
   #expect(capturedParams["pollMessageGuid"] as? String == "poll-guid-6")
   #expect(capturedParams["optionIdentifier"] as? String == "choice-yes")
   #expect(capturedParams["optionText"] as? String == "Yes")
+  #expect(capturedParams["remainingOptionIdentifiers"] as? [String] == ["choice-no"])
   let result = output.responses.first?["result"] as? [String: Any]
   #expect(result?["event"] as? String == "imessage.poll.unvoted")
   #expect(result?["option_text"] as? String == "Yes")
+  #expect(result?["remaining_option_ids"] as? [String] == ["choice-no"])
   #expect(result?["message_id"] as? String == "unvote-guid")
+}
+
+@Test
+func rpcPollUnvoteRejectsUnselectedOption() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPCWithPollVote()
+  let output = TestRPCOutput()
+  let server = RPCServer(store: store, verbose: false, output: output)
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"unvote","method":"polls.unvote","params":{"chat_id":1,"poll_guid":"poll-guid-6","option_id":"choice-no"}}"#
+  )
+
+  let error = output.errors.first?["error"] as? [String: Any]
+  #expect((error?["code"] as? Int) == -32602)
+  #expect((error?["data"] as? String)?.contains("not currently selected") == true)
 }
 
 @Test

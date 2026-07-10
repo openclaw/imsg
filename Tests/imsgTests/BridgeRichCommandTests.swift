@@ -290,7 +290,7 @@ func pollCommandUnvoteResolvesOptionText() async throws {
     flags: ["jsonOutput"]
   )
   let runtime = RuntimeOptions(parsedValues: values)
-  let store = try CommandTestDatabase.makeStoreForRPCWithPollVote()
+  let store = try CommandTestDatabase.makeStoreForRPCWithOwnPollVoteSnapshot()
   var capturedAction: BridgeAction?
   var capturedParams: [String: Any] = [:]
 
@@ -311,6 +311,7 @@ func pollCommandUnvoteResolvesOptionText() async throws {
   #expect(capturedParams["pollMessageGuid"] as? String == "poll-guid-6")
   #expect(capturedParams["optionIdentifier"] as? String == "choice-yes")
   #expect(capturedParams["optionText"] as? String == "Yes")
+  #expect(capturedParams["remainingOptionIdentifiers"] as? [String] == ["choice-no"])
 }
 
 @Test

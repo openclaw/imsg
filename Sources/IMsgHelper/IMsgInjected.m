@@ -2797,13 +2797,23 @@ static NSDictionary *handleSendPoll(NSInteger requestId, NSDictionary *params) {
 /// creation the data URL carries no `?src=p&c=` suffix.
 static NSData *buildPollVotePayloadData(NSString *optionIdentifier,
                                         NSString *voterHandle,
+                                        NSArray<NSString *> *remainingOptionIdentifiers,
                                         BOOL removed,
                                         NSString **outError) {
-    NSArray *votes = @[];
-    if (!removed) {
-        votes = @[@{
-            @"voteOptionIdentifier": optionIdentifier,
-            @"participantHandle": pollParticipantHandle(voterHandle) ?: @""
+    NSArray<NSString *> *voteOptionIdentifiers = removed
+        ? (remainingOptionIdentifiers ?: @[])
+        : @[(optionIdentifier ?: @"")];
+    NSMutableArray *votes = [NSMutableArray arrayWithCapacity:voteOptionIdentifiers.count];
+    NSString *participantHandle = pollParticipantHandle(voterHandle) ?: @"";
+    for (NSString *identifierValue in voteOptionIdentifiers) {
+        NSString *identifier = trimmedPollString(identifierValue);
+        if (!identifier.length) {
+            if (outError) *outError = @"Poll vote payload contains an empty option identifier";
+            return nil;
+        }
+        [votes addObject:@{
+            @"voteOptionIdentifier": identifier,
+            @"participantHandle": participantHandle
         }];
     }
     NSDictionary *root = @{
@@ -2918,10 +2928,29 @@ static NSDictionary *handleSendPollVoteMutation(NSInteger requestId,
     NSString *pollMessageGuid = trimmedPollString(params[@"pollMessageGuid"]);
     NSString *optionIdentifier = trimmedPollString(params[@"optionIdentifier"]);
     NSString *optionText = trimmedPollString(params[@"optionText"]);
+    NSArray *remainingOptionIdentifiers = @[];
 
     if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
     if (!pollMessageGuid.length) return errorResponse(requestId, @"Missing pollMessageGuid");
     if (!optionIdentifier.length) return errorResponse(requestId, @"Missing optionIdentifier");
+    if (removed) {
+        id rawRemaining = params[@"remainingOptionIdentifiers"];
+        if (rawRemaining && ![rawRemaining isKindOfClass:[NSArray class]]) {
+            return errorResponse(requestId, @"remainingOptionIdentifiers must be an array");
+        }
+        NSMutableArray *normalizedRemaining = [NSMutableArray array];
+        for (id rawIdentifier in (NSArray *)(rawRemaining ?: @[])) {
+            if (![rawIdentifier isKindOfClass:[NSString class]]) {
+                return errorResponse(requestId, @"remainingOptionIdentifiers must contain strings");
+            }
+            NSString *identifier = trimmedPollString(rawIdentifier);
+            if (!identifier.length) {
+                return errorResponse(requestId, @"remainingOptionIdentifiers must not contain empty values");
+            }
+            [normalizedRemaining addObject:identifier];
+        }
+        remainingOptionIdentifiers = [normalizedRemaining copy];
+    }
     if (!pollVoteMessageInitializerAvailable()) {
         return errorResponse(requestId, @"Poll vote IMMessage initializer unavailable on this macOS");
     }
@@ -2941,6 +2970,7 @@ static NSDictionary *handleSendPollVoteMutation(NSInteger requestId,
     NSString *payloadError = nil;
     NSData *payloadData = buildPollVotePayloadData(optionIdentifier,
                                                    voterHandle,
+                                                   remainingOptionIdentifiers,
                                                    removed,
                                                    &payloadError);
     if (!payloadData) {
@@ -2971,6 +3001,7 @@ static NSDictionary *handleSendPollVoteMutation(NSInteger requestId,
             @"pollMessageGuid": pollMessageGuid,
             @"optionIdentifier": optionIdentifier,
             @"optionText": optionText ?: @"",
+            @"remainingOptionIdentifiers": remainingOptionIdentifiers,
             @"removed": @(removed),
             @"balloonBundleID": pollsBalloonBundleIdentifier()
         });
@@ -2988,8 +3019,8 @@ static NSDictionary *handleSendPollVote(NSInteger requestId, NSDictionary *param
     return handleSendPollVoteMutation(requestId, params, NO);
 }
 
-/// `send-poll-unvote`: remove a vote on an existing poll by sending the same
-/// native vote payload shape with an empty votes array.
+/// `send-poll-unvote`: remove one selected option by sending the same native
+/// vote payload shape with the sender's remaining selected options.
 static NSDictionary *handleSendPollUnvote(NSInteger requestId, NSDictionary *params) {
     return handleSendPollVoteMutation(requestId, params, YES);
 }

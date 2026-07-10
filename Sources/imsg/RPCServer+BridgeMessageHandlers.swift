@@ -189,6 +189,13 @@ extension RPCServer {
     if !matchedOption.text.isEmpty {
       bridgeParams["optionText"] = matchedOption.text
     }
+    if remove {
+      let selectedOptionIDs = try store.pollSelectedOptionIDs(guid: pollGUID)
+      guard selectedOptionIDs.contains(optionID) else {
+        throw RPCError.invalidParams("option_id \(optionID) is not currently selected")
+      }
+      bridgeParams["remainingOptionIdentifiers"] = selectedOptionIDs.filter { $0 != optionID }
+    }
 
     let data = try await invokeBridge(
       action: remove ? .sendPollUnvote : .sendPollVote,
@@ -202,6 +209,9 @@ extension RPCServer {
       "option_id": matchedOption.id,
       "option_text": matchedOption.text,
     ]
+    if let remaining = bridgeParams["remainingOptionIdentifiers"] as? [String] {
+      result["remaining_option_ids"] = remaining
+    }
     if let guid = data["messageGuid"] as? String, !guid.isEmpty {
       result["guid"] = guid
       result["message_id"] = guid
