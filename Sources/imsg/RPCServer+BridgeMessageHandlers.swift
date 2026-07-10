@@ -395,6 +395,7 @@ extension RPCServer {
 private func strictStickerInt(_ value: Any) -> Int? {
   guard let number = value as? NSNumber else { return nil }
   guard CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+  // Keep JSON integers distinct from integral floats/exponents on Darwin and Linux.
   let type = String(cString: number.objCType)
   guard type != "f", type != "d", type != "D" else { return nil }
   guard let parsed = Int(number.stringValue) else { return nil }
