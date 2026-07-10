@@ -107,13 +107,16 @@ func injectedHelperHardensRichLinkImageTransfer() throws {
     functionBody(named: "prepareUnregisteredOutgoingTransfer", in: source))
 
   // Messages.app's sandbox home differs from the login user's home. Resolve
-  // the staging root from the uid, then walk every directory without following
-  // symlinks before opening the image itself.
+  // the staging root from the uid, verify that trusted root, then walk only
+  // descendant directories without following symlinks before opening the image.
   #expect(actualHomeBody.contains("getpwuid(getuid())"))
   #expect(actualHomeBody.contains("entry->pw_dir"))
   #expect(trustedRootBody.contains("richLinkActualUserHomeDirectory()"))
   #expect(trustedRootBody.contains("Library/Messages/Attachments/imsg"))
-  #expect(secureOpenBody.contains(#"open("/", O_RDONLY | O_CLOEXEC | O_DIRECTORY)"#))
+  #expect(secureOpenBody.contains("trustedRichLinkStagingRoot()"))
+  #expect(secureOpenBody.contains("rootStat.st_uid != getuid()"))
+  #expect(secureOpenBody.contains("rootStat.st_mode & S_IWOTH"))
+  #expect(secureOpenBody.contains("substringFromIndex:rootPrefix.length"))
   #expect(secureOpenBody.contains("openat(directoryFD"))
   #expect(secureOpenBody.contains("O_DIRECTORY | O_NOFOLLOW"))
   #expect(readBody.contains("openat(directoryFD"))

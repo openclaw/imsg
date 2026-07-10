@@ -2830,9 +2830,25 @@ static BOOL richLinkPathIsTrusted(NSString *path) {
 }
 
 static int openRichLinkDirectorySecurely(NSString *directoryPath) {
-    NSArray<NSString *> *components = directoryPath.stringByStandardizingPath.pathComponents;
-    int directoryFD = open("/", O_RDONLY | O_CLOEXEC | O_DIRECTORY);
+    NSString *root = trustedRichLinkStagingRoot();
+    NSString *candidate = directoryPath.stringByStandardizingPath;
+    if (!root.length || !candidate.length) return -1;
+    BOOL isRoot = [candidate isEqualToString:root];
+    NSString *rootPrefix = [root stringByAppendingString:@"/"];
+    if (!isRoot && ![candidate hasPrefix:rootPrefix]) return -1;
+
+    int directoryFD = open(root.fileSystemRepresentation, O_RDONLY | O_CLOEXEC | O_DIRECTORY);
     if (directoryFD < 0) return -1;
+    struct stat rootStat = {0};
+    if (fstat(directoryFD, &rootStat) != 0 || !S_ISDIR(rootStat.st_mode) ||
+        rootStat.st_uid != getuid() || (rootStat.st_mode & S_IWOTH) != 0) {
+        close(directoryFD);
+        return -1;
+    }
+    if (isRoot) return directoryFD;
+
+    NSString *relative = [candidate substringFromIndex:rootPrefix.length];
+    NSArray<NSString *> *components = relative.pathComponents;
     for (NSString *component in components) {
         if ([component isEqualToString:@"/"] || component.length == 0) continue;
         int nextFD = openat(directoryFD, component.fileSystemRepresentation,
