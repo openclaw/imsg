@@ -147,10 +147,6 @@ func injectedHelperWiresNativePollSend() throws {
     source.contains(
       "initWithSender:time:text:messageSubject:fileTransferGUIDs:flags:error:guid:subject:balloonBundleID:payloadData:expressiveSendStyleID:threadIdentifier:scheduleType:scheduleState:messageSummaryInfo:"
     ))
-  #expect(source.contains("scheduledMessageInitializerAvailable"))
-  #expect(source.contains("scheduleType = 2"))
-  #expect(source.contains("scheduleState = 1"))
-  #expect(!source.contains("cancel-scheduled-message"))
 }
 
 @Test
@@ -171,6 +167,10 @@ func injectedHelperBroadcastsFailClosedNativePollVoteMetadata() throws {
   #expect(source.contains(#"@"pollVoteMessage": @(pollVoteMessageInitializerAvailable())"#))
   #expect(sendVoteBody.contains("pollVoteMessageInitializerAvailable()"))
   #expect(!sendVoteBody.contains("pollPayloadMessageInitializerAvailable()"))
+  #expect(source.contains("archivePollMutationEnvelope"))
+  #expect(source.contains("pollParticipantHandle(voterHandle)"))
+  #expect(source.contains(#"@"ams": @"Sent a vote""#))
+  #expect(source.contains(#"@"amb": pollsBalloonBundleIdentifier()"#))
   #expect(voteBody.contains("associatedMessageType"))
   #expect(voteBody.contains("BOOL balloonStamped = NO;"))
   #expect(voteBody.contains("BOOL payloadStamped = NO;"))

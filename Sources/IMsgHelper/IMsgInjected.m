@@ -105,17 +105,6 @@ static void debugLog(NSString *fmt, ...) {
     if (fp) { fputs(line.UTF8String, fp); fclose(fp); }
 }
 
-static NSISO8601DateFormatter *bridgeISO8601Formatter(void) {
-    static NSISO8601DateFormatter *formatter;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        formatter = [NSISO8601DateFormatter new];
-        formatter.formatOptions = NSISO8601DateFormatWithInternetDateTime
-            | NSISO8601DateFormatWithFractionalSeconds;
-    });
-    return formatter;
-}
-
 #pragma mark - Path Hardening
 
 // Returns YES if any component of `path` (after tilde expansion and CWD
@@ -220,8 +209,6 @@ static BOOL gHasSendMessageReason = NO;      // sendMessage:reason:
 
 static BOOL pollPayloadMessageInitializerAvailable(void);
 static BOOL pollVoteMessageInitializerAvailable(void);
-static BOOL scheduledMessageInitializerAvailable(void);
-static id findMessageItem(id chat, NSString *messageGuid);
 
 static void probeSelectors(void) {
     Class chatClass = NSClassFromString(@"IMChat");
@@ -828,7 +815,6 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"sendMessageReason": @(gHasSendMessageReason),
         @"pollPayloadMessage": @(pollPayloadMessageInitializerAvailable()),
         @"pollVoteMessage": @(pollVoteMessageInitializerAvailable()),
-        @"scheduledMessage": @(scheduledMessageInitializerAvailable()),
         @"deleteChat": @(hasRegistry &&
             [registryClass instancesRespondToSelector:NSSelectorFromString(@"deleteChat:")]),
         @"removeChat": @(hasRegistry &&
@@ -1666,12 +1652,6 @@ static BOOL pollVoteMessageInitializerAvailable(void) {
     return messageClass && [messageClass instancesRespondToSelector:sel];
 }
 
-static BOOL scheduledMessageInitializerAvailable(void) {
-    Class messageClass = NSClassFromString(@"IMMessage");
-    SEL sel = @selector(initWithSender:time:text:messageSubject:fileTransferGUIDs:flags:error:guid:subject:balloonBundleID:payloadData:expressiveSendStyleID:threadIdentifier:scheduleType:scheduleState:messageSummaryInfo:);
-    return messageClass && [messageClass instancesRespondToSelector:sel];
-}
-
 static NSString *trimmedPollString(id value) {
     if (![value isKindOfClass:[NSString class]]) return nil;
     NSString *trimmed = [(NSString *)value stringByTrimmingCharactersInSet:
@@ -1705,6 +1685,16 @@ static NSString *activeIMessageSenderHandle(void) {
         }
     }
     return nil;
+}
+
+static NSString *pollParticipantHandle(NSString *handle) {
+    NSString *trimmed = trimmedPollString(handle);
+    if (!trimmed.length) return nil;
+    if ([trimmed hasPrefix:@"e:"] || [trimmed hasPrefix:@"p:"]) {
+        NSString *stripped = [trimmed substringFromIndex:2];
+        return stripped.length ? stripped : trimmed;
+    }
+    return trimmed;
 }
 
 static NSArray<NSString *> *normalizedPollOptions(NSArray *rawOptions) {
@@ -1841,6 +1831,27 @@ static NSData *archivePollPayloadEnvelope(NSURL *url,
         @"requiredCapabilities": requiredCapabilities,
         @"sendAsText": @YES,
         @"an": @"Polls"
+    };
+    if (@available(macOS 10.13, *)) {
+        return [NSKeyedArchiver archivedDataWithRootObject:envelope
+                                     requiringSecureCoding:NO
+                                                     error:outError];
+    }
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    return [NSKeyedArchiver archivedDataWithRootObject:envelope];
+    #pragma clang diagnostic pop
+}
+
+/// Native vote rows carry only the Polls URL and session identity. Reusing the
+/// creation envelope suppresses participant markers and native notifications.
+static NSData *archivePollMutationEnvelope(NSURL *url,
+                                           NSUUID *sessionIdentifier,
+                                           NSError **outError) {
+    NSDictionary *envelope = @{
+        @"URL": url,
+        @"an": @"Polls",
+        @"sessionIdentifier": sessionIdentifier
     };
     if (@available(macOS 10.13, *)) {
         return [NSKeyedArchiver archivedDataWithRootObject:envelope
@@ -2166,7 +2177,6 @@ static unsigned long long flagsForAssociatedMessagePayload(NSAttributedString *s
 static id buildIMMessage(NSAttributedString *body,
                          NSAttributedString *subject,
                          NSString *effectId,
-                         NSDate *scheduledDate,
                          NSString *threadIdentifier,
                          id threadOriginator,
                          NSString *associatedMessageGuid,
@@ -2186,7 +2196,7 @@ static id buildIMMessage(NSAttributedString *body,
     // attachment payload unfinalized even with the right flags.
     BOOL isReaction = associatedMessageGuid.length && associatedMessageType > 0;
     BOOL hasAttachment = fileTransferGuids.count > 0;
-    if (!scheduledDate && !isReaction && !hasAttachment) {
+    if (!isReaction && !hasAttachment) {
         id viaItem = constructIMMessageViaItem(body, subject, effectId,
                                                 threadIdentifier,
                                                 threadOriginator,
@@ -2293,49 +2303,6 @@ static id buildIMMessage(NSAttributedString *body,
         }
     }
 
-    if (scheduledDate && !isReaction && !hasAttachment) {
-        SEL scheduleSel = @selector(initWithSender:time:text:messageSubject:fileTransferGUIDs:flags:error:guid:subject:balloonBundleID:payloadData:expressiveSendStyleID:threadIdentifier:scheduleType:scheduleState:messageSummaryInfo:);
-        if ([messageClass instancesRespondToSelector:scheduleSel]) {
-            unsigned long long flags = flagsForMessagePayload(subject, fileTransferGuids,
-                                                              isAudioMessage);
-            id m = [[messageClass alloc] init];
-            NSMethodSignature *sig = [messageClass instanceMethodSignatureForSelector:scheduleSel];
-            NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
-            [inv setSelector:scheduleSel];
-            [inv setTarget:m];
-            id nilObj = nil;
-            NSDate *sendTime = scheduledDate;
-            unsigned long long scheduleType = 2;
-            unsigned long long scheduleState = 1;
-            NSString *messageThreadIdentifier = threadIdentifier.length ? threadIdentifier : nil;
-            [inv setArgument:&nilObj atIndex:2];           // sender
-            [inv setArgument:&sendTime atIndex:3];         // time
-            [inv setArgument:&body atIndex:4];             // text
-            [inv setArgument:&subject atIndex:5];          // messageSubject
-            [inv setArgument:&fileTransferGuids atIndex:6];
-            [inv setArgument:&flags atIndex:7];
-            [inv setArgument:&nilObj atIndex:8];           // error
-            [inv setArgument:&nilObj atIndex:9];           // guid
-            [inv setArgument:&nilObj atIndex:10];          // subject string
-            [inv setArgument:&nilObj atIndex:11];          // balloonBundleID
-            [inv setArgument:&nilObj atIndex:12];          // payloadData
-            [inv setArgument:&effectId atIndex:13];        // expressiveSendStyleID
-            [inv setArgument:&messageThreadIdentifier atIndex:14];
-            [inv setArgument:&scheduleType atIndex:15];
-            [inv setArgument:&scheduleState atIndex:16];
-            [inv setArgument:&nilObj atIndex:17];          // messageSummaryInfo
-            [inv retainArguments];
-            id result = invokeReturningObject(inv);
-            if (result) {
-                if (!messageThreadIdentifier.length) {
-                    clearReplyMetadataOnMessage(result);
-                }
-                return result;
-            }
-        }
-        return nil;
-    }
-
     // Normal send / reply path. Try the BB-verified macOS 26 selector
     // (`initWithSender:…:expressiveSendStyleID:`, 12 args, no `IMMessage`
     // prefix) first; fall back to the legacy `initIMMessageWithSender:` for
@@ -2437,7 +2404,7 @@ static id buildIMMessage(NSAttributedString *body,
 /// `chat.chatItems` window. Falls back to the older
 /// `loadedChatItemsForChat:beforeDate:limit:loadIfNeeded:` + sync poll
 /// for OSes that don't expose the block-based load.
-static id findMessageItem(id chat, NSString *messageGuid) {
+static id findMessageItem(IMChat *chat, NSString *messageGuid) {
     if (!chat || !messageGuid.length) {
         return nil;
     }
@@ -2585,7 +2552,6 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
     BOOL ddScan = [ddScanNum boolValue];
     NSString *attributedBodyB64 = params[@"attributedBody"];
     NSArray *textFormatting = params[@"textFormatting"];
-    NSString *scheduledAt = params[@"scheduledAt"];
 
     if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
     if (!message) message = @"";
@@ -2607,16 +2573,6 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
     NSAttributedString *subjectAttr = subject.length
         ? buildPlainAttributed(subject, 0)
         : nil;
-    NSDate *scheduledDate = nil;
-    if (scheduledAt.length) {
-        scheduledDate = [bridgeISO8601Formatter() dateFromString:scheduledAt];
-        if (!scheduledDate) {
-            return errorResponse(requestId, @"Invalid scheduledAt ISO8601 value");
-        }
-        if (selectedMessageGuid.length) {
-            return errorResponse(requestId, @"scheduledAt cannot be combined with selectedMessageGuid");
-        }
-    }
 
     NSRange zeroRange = NSMakeRange(0, body.length);
     long long associatedType = selectedMessageGuid.length ? 100 : 0;
@@ -2641,7 +2597,6 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
     @try {
         id imMessage = buildIMMessage(body, subjectAttr,
                                       effectId,
-                                      scheduledDate,
                                       threadIdentifier,
                                       parentItem,
                                       selectedMessageGuid,
@@ -2650,7 +2605,7 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
                                       /*summaryInfo*/ nil,
                                       /*fileTransferGuids*/ @[],
                                       /*isAudio*/ NO,
-                                      scheduledDate ? NO : ddScan);
+                                      ddScan);
         if (!imMessage) {
             return errorResponse(requestId, @"Could not construct IMMessage");
         }
@@ -2694,13 +2649,8 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
         NSMutableDictionary *response = [@{
             @"chatGuid": chatGuid,
             @"messageGuid": guid ?: @"",
-            @"queued": @(scheduledDate ? YES : ddScan)
+            @"queued": @(ddScan)
         } mutableCopy];
-        if (scheduledDate) {
-            response[@"scheduledAt"] = [bridgeISO8601Formatter() stringFromDate:scheduledDate];
-            response[@"scheduleType"] = @2;
-            response[@"scheduleState"] = @1;
-        }
         NSString *serviceName = serviceNameForChat(chat, chatGuid);
         if (serviceName.length) response[@"service"] = serviceName;
         return successResponse(requestId, response);
@@ -2849,7 +2799,7 @@ static NSData *buildPollVotePayloadData(NSString *optionIdentifier,
                                         NSString **outError) {
     NSDictionary *vote = @{
         @"voteOptionIdentifier": optionIdentifier,
-        @"participantHandle": voterHandle ?: @""
+        @"participantHandle": pollParticipantHandle(voterHandle) ?: @""
     };
     NSDictionary *root = @{
         @"version": @1,
@@ -2874,7 +2824,7 @@ static NSData *buildPollVotePayloadData(NSString *optionIdentifier,
     }
     NSUUID *sessionIdentifier = [NSUUID UUID];
     NSError *archiveError = nil;
-    NSData *payload = archivePollPayloadEnvelope(url, sessionIdentifier, &archiveError);
+    NSData *payload = archivePollMutationEnvelope(url, sessionIdentifier, &archiveError);
     if (!payload && outError) {
         *outError = archiveError.localizedDescription ?: @"Could not archive vote payload";
     }
@@ -2991,7 +2941,14 @@ static NSDictionary *handleSendPollVote(NSInteger requestId, NSDictionary *param
         return errorResponse(requestId, payloadError ?: @"Could not build vote payload");
     }
 
-    NSDictionary *summary = @{ @"amc": @0, @"ust": @YES };
+    NSDictionary *summary = @{
+        @"amc": @9,
+        @"enc": @YES,
+        @"amd": @"Polls",
+        @"ust": @YES,
+        @"ams": @"Sent a vote",
+        @"amb": pollsBalloonBundleIdentifier()
+    };
     NSAttributedString *body = buildPollBreadcrumbAttributed();
 
     @try {
@@ -3075,7 +3032,7 @@ static NSDictionary *handleSendMultipart(NSInteger requestId, NSDictionary *para
         } else {
             clearThreadContextForChat(chat, nil);
         }
-        id imMessage = buildIMMessage(body, subjectAttr, effectId, nil, threadIdentifier,
+        id imMessage = buildIMMessage(body, subjectAttr, effectId, threadIdentifier,
                                       parentItem,
                                       selectedMessageGuid, associatedType,
                                       NSMakeRange(0, body.length),
@@ -3384,7 +3341,7 @@ static NSDictionary *handleSendAttachment(NSInteger requestId, NSDictionary *par
             clearThreadContextForChat(chat, nil);
         }
 
-        id imMessage = buildIMMessage(body, subjectAttr, effectId, nil, threadIdentifier,
+        id imMessage = buildIMMessage(body, subjectAttr, effectId, threadIdentifier,
                                       parentItem,
                                       selectedMessageGuid, associatedType,
                                       NSMakeRange(0, body.length), nil,
@@ -3562,7 +3519,7 @@ static NSDictionary *handleSendReaction(NSInteger requestId, NSDictionary *param
         if (im) free(im);
     });
     @try {
-        id imMessage = buildIMMessage(body, nil, nil, nil, nil,
+        id imMessage = buildIMMessage(body, nil, nil, nil,
                                       nil,
                                       associatedRef,
                                       associatedType,
@@ -4164,7 +4121,7 @@ static NSDictionary *handleCreateChat(NSInteger requestId, NSDictionary *params)
     if (initialMessage.length) {
         NSAttributedString *body = buildPlainAttributed(initialMessage, 0);
         @try {
-            id imMessage = buildIMMessage(body, nil, nil, nil, nil, nil,
+            id imMessage = buildIMMessage(body, nil, nil, nil, nil,
                                           nil, 0,
                                           NSMakeRange(0, body.length),
                                           nil, @[], NO, NO);

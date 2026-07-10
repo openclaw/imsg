@@ -9,7 +9,8 @@ func chatPayload(
   service: String,
   lastMessageAt: Date,
   participants: [String],
-  contactName: String? = nil
+  contactName: String? = nil,
+  unreadCount: Int? = nil
 ) -> [String: Any] {
   var payload: [String: Any] = [
     "id": id,
@@ -21,6 +22,9 @@ func chatPayload(
     "participants": participants,
     "is_group": isGroupHandle(identifier: identifier, guid: guid),
   ]
+  if let unreadCount {
+    payload["unread_count"] = unreadCount
+  }
   if let contactName {
     payload["contact_name"] = contactName
   }

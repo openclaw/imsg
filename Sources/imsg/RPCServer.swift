@@ -31,14 +31,14 @@ let kSupportedRPCMethods: [String] = [
   "chats.create",
   "chats.delete",
   "chats.markUnread",
+  "messages.stats",
   "messages.history",
   "watch.subscribe",
   "watch.unsubscribe",
   "send",
   "send.rich",
   "send.attachment",
-  "scheduledMessages.createScheduledMessage",
-  "scheduledMessages.getScheduledMessages",
+  "messages.scheduled",
   "poll.send",
   "messages.poll.send",
   "poll.vote",
@@ -144,6 +144,11 @@ final class RPCServer {
       switch method {
       case "chats.list":
         try await handleChatsList(id: id, params: params)
+      case "messages.stats":
+        guard request.paramsAreNamed else {
+          throw RPCError.invalidParams("messages.stats params must be an object")
+        }
+        try await handleMessagesStats(id: id, params: params)
       case "messages.history":
         try await handleMessagesHistory(id: id, params: params)
       case "watch.subscribe":
@@ -156,10 +161,11 @@ final class RPCServer {
         try await handleSendRich(params: params, id: id)
       case "send.attachment":
         try await handleSendAttachment(params: params, id: id)
-      case "scheduledMessages.createScheduledMessage":
-        try await handleScheduledCreate(params: params, id: id)
-      case "scheduledMessages.getScheduledMessages":
-        try await handleScheduledList(params: params, id: id)
+      case "messages.scheduled":
+        guard request.paramsAreNamed else {
+          throw RPCError.invalidParams("messages.scheduled params must be an object")
+        }
+        try await handleMessagesScheduled(params: params, id: id)
       case "poll.send", "messages.poll.send":
         try await handlePollSend(params: params, id: id)
       case "poll.vote", "messages.poll.vote":

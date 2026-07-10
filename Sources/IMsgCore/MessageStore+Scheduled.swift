@@ -41,9 +41,31 @@ public struct ScheduledMessage: Sendable, Equatable, Codable {
   }
 }
 
+public enum ScheduledMessagesError: Error, CustomStringConvertible, Equatable, Sendable {
+  case unsupportedSchema
+  case invalidLimit
+
+  public var description: String {
+    switch self {
+    case .unsupportedSchema:
+      return
+        "scheduled messages are unavailable because this Messages database has no schedule columns"
+    case .invalidLimit:
+      return "limit must be a positive integer"
+    }
+  }
+}
+
 extension MessageStore {
-  public func scheduledMessages(limit: Int = 50) throws -> [ScheduledMessage] {
-    guard schema.hasScheduleTypeColumn || schema.hasScheduleStateColumn else { return [] }
+  public var supportsScheduledMessages: Bool {
+    schema.hasScheduleTypeColumn || schema.hasScheduleStateColumn
+  }
+
+  public func scheduledMessages(limit: Int = 50, asOf: Date = Date()) throws
+    -> [ScheduledMessage]
+  {
+    guard supportsScheduledMessages else { throw ScheduledMessagesError.unsupportedSchema }
+    guard limit > 0 else { throw ScheduledMessagesError.invalidLimit }
     let scheduleTypeColumn = schema.hasScheduleTypeColumn ? "IFNULL(m.schedule_type, 0)" : "0"
     let scheduleStateColumn = schema.hasScheduleStateColumn ? "IFNULL(m.schedule_state, 0)" : "0"
     let sql = """
@@ -62,6 +84,7 @@ extension MessageStore {
       JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
       JOIN chat c ON c.ROWID = cmj.chat_id
       WHERE (\(scheduleTypeColumn) != 0 OR \(scheduleStateColumn) != 0)
+        AND IFNULL(m.is_from_me, 0) = 1
         AND IFNULL(m.date, 0) >= ?
       ORDER BY m.date ASC, m.ROWID ASC
       LIMIT ?
@@ -70,7 +93,7 @@ extension MessageStore {
       var results: [ScheduledMessage] = []
       let rows = try db.prepareRowIterator(
         sql,
-        bindings: [MessageStore.appleEpoch(Date()), max(limit, 1)])
+        bindings: [MessageStore.appleEpoch(asOf), limit])
       while let row = try rows.failableNext() {
         results.append(
           ScheduledMessage(
@@ -91,20 +114,4 @@ extension MessageStore {
     }
   }
 
-  public func scheduledMessage(
-    chatGUID: String,
-    scheduledAt: Date,
-    text: String? = nil
-  ) throws -> ScheduledMessage? {
-    let target = chatGUID.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !target.isEmpty else { return nil }
-    let scheduledRows = try scheduledMessages(limit: 100)
-    let matches = scheduledRows.filter { message in
-      let sameChat = message.chatGUID == target || message.chatIdentifier == target
-      let sameTime = abs(message.scheduledAt.timeIntervalSince(scheduledAt)) < 2
-      let sameText = text.map { message.text == $0 } ?? true
-      return sameChat && sameTime && sameText
-    }
-    return matches.count == 1 ? matches[0] : nil
-  }
 }

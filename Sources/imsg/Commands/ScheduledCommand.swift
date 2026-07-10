@@ -27,11 +27,7 @@ enum ScheduledCommand {
   static func run(
     values: ParsedValues,
     runtime: RuntimeOptions,
-    storeFactory: @escaping (String) throws -> MessageStore = { try MessageStore(path: $0) },
-    invokeBridge: @escaping (BridgeAction, [String: Any]) async throws -> [String: Any] = {
-      action, params in
-      try await IMsgBridgeClient.shared.invoke(action: action, params: params)
-    }
+    storeFactory: @escaping (String) throws -> MessageStore = { try MessageStore(path: $0) }
   ) async throws {
     switch values.argument(0) {
     case "list":
@@ -47,7 +43,15 @@ enum ScheduledCommand {
     storeFactory: (String) throws -> MessageStore
   ) throws {
     let dbPath = values.option("db") ?? MessageStore.defaultPath
-    let limit = values.optionInt("limit") ?? 50
+    let limit: Int
+    if let rawLimit = values.option("limit") {
+      guard let parsed = Int(rawLimit), parsed > 0 else {
+        throw ParsedValuesError.invalidOption("limit")
+      }
+      limit = parsed
+    } else {
+      limit = 50
+    }
     let messages = try storeFactory(dbPath).scheduledMessages(limit: limit)
     if runtime.jsonOutput {
       for message in messages {

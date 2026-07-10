@@ -105,7 +105,6 @@ enum SendRichCommand {
             help: "expressive send id (impact, loud, gentle, invisibleink, confetti, …)"),
           .make(label: "subject", names: [.long("subject")], help: "subject line"),
           .make(label: "replyTo", names: [.long("reply-to")], help: "guid of message to reply to"),
-          .make(label: "schedule", names: [.long("schedule")], help: "ISO8601 send-later time"),
           .make(label: "part", names: [.long("part")], help: "part index (default 0)"),
           .make(
             label: "format",
@@ -168,21 +167,6 @@ enum SendRichCommand {
     if let subject = values.option("subject"), !subject.isEmpty { params["subject"] = subject }
     if let reply = values.option("replyTo"), !reply.isEmpty {
       params["selectedMessageGuid"] = reply
-    }
-    if let rawSchedule = values.option("schedule"), !rawSchedule.isEmpty {
-      guard let scheduledAt = CLIISO8601.parse(rawSchedule) else {
-        throw ParsedValuesError.invalidOption("schedule")
-      }
-      guard scheduledAt > Date() else {
-        throw ParsedValuesError.invalidOption("schedule must be in the future")
-      }
-      guard file.isEmpty else {
-        throw ParsedValuesError.invalidOption("schedule cannot be combined with file")
-      }
-      guard params["selectedMessageGuid"] == nil else {
-        throw ParsedValuesError.invalidOption("schedule cannot be combined with reply-to")
-      }
-      params["scheduledAt"] = CLIISO8601.format(scheduledAt)
     }
 
     // Optional text formatting (macOS 15+ — Sequoia and later). Pass either
@@ -259,33 +243,6 @@ enum SendRichCommand {
     storeFactory: (String) throws -> MessageStore
   ) async throws -> [String: Any] {
     var enriched = data
-    if let rawScheduledAt = data["scheduledAt"] as? String,
-      let scheduledAt = CLIISO8601.parse(rawScheduledAt)
-    {
-      enriched.removeValue(forKey: "guid")
-      enriched.removeValue(forKey: "message_id")
-      enriched.removeValue(forKey: "messageGuid")
-      enriched.removeValue(forKey: "id")
-      do {
-        let store = try storeFactory(dbPath)
-        if let scheduledMessage = try store.scheduledMessage(
-          chatGUID: chat,
-          scheduledAt: scheduledAt,
-          text: text)
-        {
-          enriched["id"] = scheduledMessage.rowID
-          enriched["guid"] = scheduledMessage.guid
-          enriched["message_id"] = scheduledMessage.guid
-          enriched["messageGuid"] = scheduledMessage.guid
-          enriched["scheduled_at"] = CLIISO8601.format(scheduledMessage.scheduledAt)
-          enriched["schedule_type"] = scheduledMessage.scheduleType
-          enriched["schedule_state"] = scheduledMessage.scheduleState
-        }
-      } catch {
-      }
-      return enriched
-    }
-
     guard !text.isEmpty, data["queued"] as? Bool == true else {
       return enriched
     }
@@ -567,7 +524,9 @@ enum DeleteMessageCommand {
     ) { _ in "delete-message: queued" }
   }
 }
+
 // MARK: - notify-anyways
+
 enum NotifyAnywaysCommand {
   static let spec = CommandSpec(
     name: "notify-anyways",
@@ -585,6 +544,7 @@ enum NotifyAnywaysCommand {
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
   }
+
   static func run(values: ParsedValues, runtime: RuntimeOptions) async throws {
     guard let chat = values.option("chat"), !chat.isEmpty else {
       throw ParsedValuesError.missingOption("chat")

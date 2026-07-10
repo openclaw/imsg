@@ -97,6 +97,12 @@ imsg react --chat-id 42 --reaction like
 
 # Search local history.
 imsg search --query "pizza" --match contains
+
+# Summarize logical messages in your local timezone.
+imsg stats --media --json
+
+# List future Send Later rows without launching Messages.
+imsg scheduled list --json
 ```
 
 `--json` emits one JSON object per line. Pipe to `jq -s` to materialize an
@@ -113,6 +119,8 @@ Automation):
 - `imsg history --chat-id <id> [--limit 50] [--attachments] [--convert-attachments] [--participants <handles>] [--start <iso>] [--end <iso>] [--json]`
 - `imsg watch [--chat-id <id>] [--since-rowid <id>] [--debounce <duration>] [--attachments] [--convert-attachments] [--reactions] [--participants <handles>] [--start <iso>] [--end <iso>] [--json]`
 - `imsg search --query <text> [--match contains|exact] [--limit 50] [--json]`
+- `imsg stats [--chat-id <id>] [--time-zone <IANA>] [--media] [--json]`
+- `imsg scheduled list [--limit 50] [--json]`
 - `imsg send (--to <handle-or-contact-name> | --chat-id <id> | --chat-identifier <id> | --chat-guid <guid>) [--text <text>] [--file <path>] [--service imessage|sms|auto] [--no-sms-fallback] [--region US] [--json]`
 - `imsg react --chat-id <id> --reaction love|like|dislike|laugh|emphasis|question`
 - `imsg rpc`
@@ -188,7 +196,7 @@ specific outgoing Apple ID phone number or inline reply target.
 It is intended for agents and long-running integrations that want a single
 process for chats, history, send, and watch.
 
-Read methods: `chats.list`, `messages.history`, `watch.subscribe`,
+Read methods: `chats.list`, `messages.history`, `messages.stats`, `messages.scheduled`, `watch.subscribe`,
 `watch.unsubscribe`, `message.send_status`. Mutating: `send`, `poll.send`.
 Bridge introspection: `handles.check`. See [docs/rpc.md](docs/rpc.md) for
 request and response shapes.

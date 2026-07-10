@@ -24,21 +24,6 @@ extension RPCServer {
     ), !reply.isEmpty {
       bridgeParams["selectedMessageGuid"] = reply
     }
-    if let rawSchedule = stringParam(
-      params["schedule"] ?? params["scheduled_at"] ?? params["scheduledAt"]),
-      !rawSchedule.isEmpty
-    {
-      guard let scheduledAt = CLIISO8601.parse(rawSchedule) else {
-        throw RPCError.invalidParams("schedule must be ISO8601")
-      }
-      guard scheduledAt > Date() else {
-        throw RPCError.invalidParams("schedule must be in the future")
-      }
-      guard bridgeParams["selectedMessageGuid"] == nil else {
-        throw RPCError.invalidParams("schedule cannot be combined with reply_to")
-      }
-      bridgeParams["scheduledAt"] = CLIISO8601.format(scheduledAt)
-    }
     if let formatting = params["text_formatting"] ?? params["textFormatting"] {
       bridgeParams["textFormatting"] = formatting
     }
@@ -58,21 +43,7 @@ extension RPCServer {
       service: .auto,
       chatGUID: chatGUID
     )
-    if let rawScheduledAt = data["scheduledAt"] as? String,
-      let scheduledAt = CLIISO8601.parse(rawScheduledAt),
-      let scheduledMessage = try? store.scheduledMessage(
-        chatGUID: chatGUID,
-        scheduledAt: scheduledAt,
-        text: text)
-    {
-      result["guid"] = scheduledMessage.guid
-      result["message_id"] = scheduledMessage.guid
-      result["id"] = scheduledMessage.rowID
-      result["scheduled_at"] = CLIISO8601.format(scheduledMessage.scheduledAt)
-      result["schedule_type"] = scheduledMessage.scheduleType
-      result["schedule_state"] = scheduledMessage.scheduleState
-    } else if data["queued"] as? Bool == true,
-      data["scheduledAt"] == nil,
+    if data["queued"] as? Bool == true,
       !text.isEmpty,
       let sentMessage = try? await resolveSentMessage(store, options, chatID, sentAt),
       !sentMessage.guid.isEmpty
@@ -80,7 +51,6 @@ extension RPCServer {
       result["guid"] = sentMessage.guid
       result["message_id"] = sentMessage.guid
     } else if data["queued"] as? Bool != true,
-      data["scheduledAt"] == nil,
       let guid = data["messageGuid"] as? String, !guid.isEmpty
     {
       result["guid"] = guid
@@ -112,29 +82,6 @@ extension RPCServer {
       result["message_id"] = guid
     }
     respond(id: id, result: result)
-  }
-
-  func handleScheduledCreate(params: [String: Any], id: Any?) async throws {
-    var scheduledParams = params
-    if scheduledParams["schedule"] == nil,
-      let scheduledAt = scheduledParams["scheduled_at"] ?? scheduledParams["scheduledAt"]
-    {
-      scheduledParams["schedule"] = scheduledAt
-    }
-    guard stringParam(scheduledParams["schedule"])?.isEmpty == false else {
-      throw RPCError.invalidParams("schedule is required")
-    }
-    try await handleSendRich(params: scheduledParams, id: id)
-  }
-
-  func handleScheduledList(params: [String: Any], id: Any?) async throws {
-    let limit = intParam(params["limit"]) ?? 50
-    let messages = try store.scheduledMessages(limit: limit)
-    let payloads = try messages.map { message -> [String: Any] in
-      let data = try JSONLines.encode(ScheduledMessagePayload(message)).data(using: .utf8) ?? Data()
-      return try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-    }
-    respond(id: id, result: ["messages": payloads])
   }
 
   func handlePollSend(params: [String: Any], id: Any?) async throws {

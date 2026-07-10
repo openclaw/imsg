@@ -17,9 +17,6 @@ You almost certainly do not need any of this for normal use.
 - `imsg status` — read-only IMCore bridge status.
 - `imsg send-rich --chat <guid> --reply-to <message-guid> --file <path>` —
   sends a threaded reply with an attachment through the bridge.
-- `imsg send-rich --chat <guid> --text <body> --schedule <iso8601>` —
-  creates a Send Later message through the bridge.
-- `imsg scheduled list` — read future scheduled rows from local history.
 - `imsg send-attachment --chat <guid> --file <path> [--reply-to <message-guid>]` —
   prefers the bridge for private attachment sends, with AppleScript fallback
   for normal files when no reply target is requested.
@@ -88,20 +85,6 @@ imsg status --json
 ```
 
 Reports whether Messages is running, whether the helper dylib is loaded, and whether the IMCore bridge is responding. Read-only; safe to run on any machine.
-
-## Scheduled messages
-
-```bash
-imsg send-rich --chat 'iMessage;-;+15551234567' --text 'later' --schedule 2026-07-08T22:00:00Z
-imsg scheduled list --json
-```
-
-`scheduled list` is read-only SQL against `chat.db`. Creating scheduled text messages
-requires the bridge. The current implementation uses Apple's Send Later initializer
-fields (`scheduleType` / `scheduleState`). Scheduled attachments are rejected until
-that private path is proven. Cancel/delete are intentionally not exposed because the
-tested private delete paths can remove local rows while the Send Later bubble still
-delivers.
 
 When the bridge isn't loaded, `status` prints the reason rather than attempting to fix it. Use `imsg launch` if you want to bring it up.
 
