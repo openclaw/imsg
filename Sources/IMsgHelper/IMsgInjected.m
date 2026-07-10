@@ -897,8 +897,8 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"stickerAssociatedMessage": @(stickerAssociatedMessage),
         @"stickerSend": @(stickerSend),
         @"stickerAttach": @(
-            stickerSend && stickerReplyTo && stickerTargetMembership
-                && stickerTargetLookup && stickerAssociatedMessage),
+            stickerSend && stickerTargetMembership && stickerTargetLookup
+                && stickerAssociatedMessage),
         @"deleteChat": @(hasRegistry &&
             [registryClass instancesRespondToSelector:NSSelectorFromString(@"deleteChat:")]),
         @"removeChat": @(hasRegistry &&
@@ -3237,11 +3237,33 @@ static BOOL stickerPathIsTrusted(NSString *path) {
 }
 
 static int openStickerDirectorySecurely(NSString *directoryPath) {
-    NSArray<NSString *> *components = directoryPath.stringByStandardizingPath.pathComponents;
-    int directoryFD = open("/", O_RDONLY | O_CLOEXEC | O_DIRECTORY);
+    NSString *root = [trustedStickerRoot() stringByStandardizingPath];
+    NSString *directory = [directoryPath stringByStandardizingPath];
+    if (!root.length || !directory.length) return -1;
+    if (![directory isEqualToString:root]
+        && ![directory hasPrefix:[root stringByAppendingString:@"/"]]) {
+        return -1;
+    }
+
+    int directoryFD = open(root.fileSystemRepresentation,
+                           O_RDONLY | O_CLOEXEC | O_DIRECTORY);
     if (directoryFD < 0) return -1;
+    struct stat rootInfo = {0};
+    if (fstat(directoryFD, &rootInfo) != 0 || !S_ISDIR(rootInfo.st_mode)
+        || rootInfo.st_uid != getuid() || (rootInfo.st_mode & S_IWOTH)) {
+        close(directoryFD);
+        return -1;
+    }
+
+    if ([directory isEqualToString:root]) return directoryFD;
+    NSString *relative = [directory substringFromIndex:root.length + 1];
+    NSArray<NSString *> *components = relative.pathComponents;
     for (NSString *component in components) {
-        if ([component isEqualToString:@"/"] || component.length == 0) continue;
+        if ([component isEqualToString:@"."] || [component isEqualToString:@".."]
+            || [component isEqualToString:@"/"] || component.length == 0) {
+            close(directoryFD);
+            return -1;
+        }
         int nextFD = openat(directoryFD, component.fileSystemRepresentation,
                             O_RDONLY | O_CLOEXEC | O_DIRECTORY | O_NOFOLLOW);
         close(directoryFD);
@@ -4139,10 +4161,6 @@ static NSDictionary *handleSendSticker(NSInteger requestId, NSDictionary *params
             return errorResponse(requestId,
                 @"Sticker target does not belong to the selected chat");
         }
-        if (![NSClassFromString(@"IMMessage")
-                instancesRespondToSelector:@selector(setReplyToGUID:)]) {
-            return errorResponse(requestId, @"Sticker reply selector unavailable");
-        }
         parentChatItem = loadParentChatItem(
             selectedMessageGuid, @(targetPartIndex), NULL);
         if (!parentChatItem
@@ -4213,14 +4231,6 @@ static NSDictionary *handleSendSticker(NSInteger requestId, NSDictionary *params
         if (!imMessage) {
             cleanupPreparedStickerPaths(snapshotPath, activePath);
             return errorResponse(requestId, @"Could not build sticker IMMessage");
-        }
-        if (selectedMessageGuid.length) {
-            if (![imMessage respondsToSelector:@selector(setReplyToGUID:)]) {
-                cleanupPreparedStickerPaths(snapshotPath, activePath);
-                return errorResponse(requestId, @"Sticker reply selector unavailable");
-            }
-            [imMessage performSelector:@selector(setReplyToGUID:)
-                            withObject:selectedMessageGuid];
         }
         NSString *registerErr = nil;
         if (!registerPreparedTransfer(transfer, &registerErr)) {

@@ -15,9 +15,6 @@
 ### Native Polls
 - fix: match native poll vote envelopes, participant handles, and summary metadata so votes render participant markers and correct notifications (#162, thanks @omarshahine).
 
-### Advanced IMCore
-- feat: add validated, content-addressed iMessage sticker sends through `send-sticker` and `send.sticker`, with standalone and exact bubble-part attachment modes (#164, thanks @omarshahine).
-
 ## 0.12.3 - 2026-07-06
 
 ### Native Polls
