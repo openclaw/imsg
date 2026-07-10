@@ -4,6 +4,7 @@ struct RPCRequest {
   let id: Any?
   let method: String
   let params: [String: Any]
+  let paramsAreNamed: Bool
 }
 
 struct RPCParseFailure {
@@ -41,7 +42,14 @@ enum RPCRequestParser {
     guard let method = request["method"] as? String, !method.isEmpty else {
       return .failure(RPCParseFailure(id: id, error: RPCError.invalidRequest("method is required")))
     }
+    let rawParams = request["params"]
+    let params = rawParams as? [String: Any] ?? [:]
     return .success(
-      RPCRequest(id: id, method: method, params: request["params"] as? [String: Any] ?? [:]))
+      RPCRequest(
+        id: id,
+        method: method,
+        params: params,
+        paramsAreNamed: rawParams == nil || rawParams is [String: Any]
+      ))
   }
 }

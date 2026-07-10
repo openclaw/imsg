@@ -18,6 +18,7 @@ enum MessageDatabaseFixture {
     var includeChatMessageDate = false
     var includeChatRouting = true
     var includeChatHandleJoin = true
+    var includeReadState = false
   }
 
   static func createSchema(_ db: Connection, options: SchemaOptions = SchemaOptions()) throws {
@@ -37,6 +38,10 @@ enum MessageDatabaseFixture {
     let payloadDataColumn = options.includePayloadData ? "payload_data BLOB," : ""
     let summaryInfoColumn = options.includeMessageSummaryInfo ? "message_summary_info BLOB," : ""
     let replyToColumn = options.includeReplyToGUID ? "reply_to_guid TEXT," : ""
+    let readStateColumns =
+      options.includeReadState
+      ? "is_read INTEGER, date_read INTEGER,"
+      : ""
 
     try db.execute(
       """
@@ -54,6 +59,7 @@ enum MessageDatabaseFixture {
         \(payloadDataColumn)
         \(summaryInfoColumn)
         \(replyToColumn)
+        \(readStateColumns)
         date INTEGER,
         is_from_me INTEGER,
         service TEXT

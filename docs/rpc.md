@@ -29,12 +29,40 @@ The pattern intentionally mirrors language servers and the way `imsg`'s parent g
 Params:
 
 - `limit` (int, default 20)
+- `unread_only` (bool, default `false`) — when true, return only chats with `unread_count > 0`; unavailable database schemas return an invalid-params error rather than an empty list
 
 Result:
 
 ```json
 { "chats": [Chat] }
 ```
+
+### `messages.stats`
+
+Params:
+
+- `chat_id` (int, optional)
+- `time_zone` (IANA identifier, optional; defaults to the local timezone)
+- `include_media` (bool, default `false`)
+
+Result:
+
+```json
+{
+  "total_messages": 123,
+  "sent_messages": 60,
+  "received_messages": 63,
+  "time_zone": "Europe/Vienna",
+  "chats": [],
+  "senders": [],
+  "services": [],
+  "dates": []
+}
+```
+
+When media is requested, `media` includes distinct attachment totals and bytes grouped by
+UTI/MIME and chat. Otherwise the `media` key is omitted. Invalid, non-positive, or nonexistent
+`chat_id` values return invalid params rather than widening to all chats.
 
 ### `messages.history`
 
@@ -230,7 +258,7 @@ Response:
 
 ### Chat
 
-See [JSON output → Chat](json.md#chat). Every field documented there appears in the RPC `chats.list` response.
+See [JSON output → Chat list item](json.md#chat-list-item). Every field documented there appears in the RPC `chats.list` response.
 
 ### Message
 

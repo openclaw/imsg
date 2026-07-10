@@ -13,9 +13,9 @@ imsg watch --chat-id 42 --json
 
 Human progress, prompts, and warnings are written to **stderr**, not stdout. Stdout is reserved for parseable JSON so pipelines stay clean.
 
-## Chat
+## Chat list item
 
-Returned by `imsg chats`, `imsg group`, and embedded in nested chat references in messages.
+Returned by `imsg chats --json` and JSON-RPC `chats.list`.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -32,10 +32,11 @@ Returned by `imsg chats`, `imsg group`, and embedded in nested chat references i
 | `account_id` | string | Routing diagnostic. Read-only. |
 | `account_login` | string | Routing diagnostic. Read-only. |
 | `last_addressed_handle` | string | Routing diagnostic. Read-only. |
+| `unread_count` | int | Count of unread inbound messages in the chat. Omitted on older database schemas without read state. |
 
 ## Message
 
-Returned by `imsg history`, `imsg watch`, and the JSON-RPC `messages.history` and `watch.subscribe` notifications.
+Returned by `imsg history`, `imsg search`, `imsg watch`, and the JSON-RPC `messages.history` and `watch.subscribe` notifications.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -59,6 +60,10 @@ Returned by `imsg history`, `imsg watch`, and the JSON-RPC `messages.history` an
 | `attachments` | array | Present when `--attachments` is set. See below. |
 | `thread_originator_guid` | string | For inline-reply threads. |
 | `poll` | object | Present for native Apple Messages Polls creation and vote rows. See below. |
+| `is_read` | bool | Inbound only — omitted when `is_from_me` is true. |
+| `date_read` | ISO8601 | Inbound only — present when `is_read` is true. |
+
+Read state is a database snapshot. A watch notification includes the state present when that message row is emitted; reading it later does not generate a second message notification.
 
 ### URL preview coalescing
 
@@ -138,6 +143,24 @@ Inside the `attachments` array on a message:
 | `path` | string | Resolved absolute path. |
 | `converted_path` | string | Present with `--convert-attachments`. |
 | `converted_mime_type` | string | Present with `--convert-attachments`. |
+
+## Statistics aggregate
+
+Returned as one object by `imsg stats --json` and as the result of JSON-RPC `messages.stats`.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `total_messages` | int | Logical messages after reaction exclusion and URL-preview coalescing. |
+| `sent_messages` | int | Outbound logical messages. |
+| `received_messages` | int | Inbound logical messages. |
+| `time_zone` | string | Resolved timezone used for `dates`. |
+| `chats` | array | Counts grouped by chat. |
+| `senders` | array | Inbound counts grouped by sender handle. |
+| `services` | array | Counts grouped by message service. |
+| `dates` | array | Counts grouped by local `YYYY-MM-DD` date. |
+| `media` | object | Present only when `--media` / `include_media` is requested. Distinct attachment totals plus type/chat groups. |
+
+See [Statistics](stats.md) for filtering, ordering, and timezone behavior.
 
 ## Conventions
 

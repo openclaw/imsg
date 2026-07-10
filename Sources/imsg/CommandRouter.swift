@@ -11,6 +11,7 @@ struct CommandRouter {
     self.version = CommandRouter.resolveVersion()
     self.specs = [
       ChatsCommand.spec,
+      StatsCommand.spec,
       GroupCommand.spec,
       HistoryCommand.spec,
       WatchCommand.spec,

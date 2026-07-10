@@ -62,7 +62,9 @@ extension MessageStore {
         isReactionAdd: reaction.isReactionAdd,
         reactedToGUID: reaction.reactedToGUID
       ),
-      poll: poll
+      poll: poll,
+      isRead: decoded.isRead,
+      dateRead: decoded.dateRead
     )
   }
 
