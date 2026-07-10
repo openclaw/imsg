@@ -21,6 +21,10 @@ func universalBuildScriptShipsArm64eHelperSlice() throws {
   // load an arm64-only dylib, which silently kills the bridge.
   #expect(script.contains(#"HELPER_ARCHES_VALUE=${HELPER_ARCHES:-"arm64e arm64 x86_64"}"#))
   #expect(script.contains("lipo -create"))
+  #expect(script.contains("--scratch-path"))
+  #expect(script.contains("--show-bin-path"))
+  #expect(script.contains(#"for bundle in "${PRODUCT_DIRS[0]}"/*.bundle"#))
+  #expect(!script.contains(#".build/${ARCH}-apple-macosx"#))
   #expect(script.contains("imsg-bridge-helper.dylib"))
   // release.yml ships via this script only, so it must guard every helper slice.
   #expect(
@@ -41,6 +45,10 @@ func signAndNotarizeScriptDefaultsHelperToArm64e() throws {
   // arm64e. Assert the loop and its lipo check as one contiguous block so this
   // can't pass by matching the separate clang-args HELPER_ARCH_LIST loop.
   #expect(script.contains(#"HELPER_ARCHES_VALUE=${HELPER_ARCHES:-"arm64e arm64 x86_64"}"#))
+  #expect(script.contains("--scratch-path"))
+  #expect(script.contains("--show-bin-path"))
+  #expect(script.contains(#"for bundle in "${PRODUCT_DIRS[0]}"/*.bundle"#))
+  #expect(!script.contains(#".build/${ARCH}-apple-macosx"#))
   #expect(
     script.contains(
       """
