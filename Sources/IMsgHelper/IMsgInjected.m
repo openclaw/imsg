@@ -1888,11 +1888,8 @@ static NSData *buildPollCreationPayloadData(NSString *question,
         [pollOptions addObject:option];
     }
 
-    // Native Polls payloads keep item.title empty and render the question via
-    // the separate "comment or Send" caption row. Supplying a non-empty title
-    // can make Messages recognize the extension but collapse the options UI.
     NSMutableDictionary *item = [NSMutableDictionary dictionaryWithDictionary:@{
-        @"title": @"",
+        @"title": question ?: @"",
         @"orderedPollOptions": pollOptions
     }];
     if (creatorHandle.length) {

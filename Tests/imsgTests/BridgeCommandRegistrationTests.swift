@@ -128,7 +128,6 @@ func injectedHelperWiresNativePollSend() throws {
   #expect(sendPollBody.contains("buildPollCreationPayloadData"))
   #expect(sendPollBody.contains("buildPollIMMessage"))
   #expect(sendPollBody.contains("pollPayloadMessageInitializerAvailable()"))
-  #expect(source.contains(#""title": @"""#))
   #expect(!sendPollBody.contains(#"selectedMessageGuid.length ? @"" : question"#))
   #expect(sendPollBody.contains("buildPollCreationPayloadData(question,"))
   #expect(sendPollBody.contains(#"@{ @"enc": @YES, @"ust": @YES }"#))
