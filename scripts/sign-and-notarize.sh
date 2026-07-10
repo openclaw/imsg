@@ -17,6 +17,7 @@ ARCH_LIST=( ${ARCHES_VALUE} )
 # if any slice (incl. arm64e) is missing.
 HELPER_ARCHES_VALUE=${HELPER_ARCHES:-"arm64e arm64 x86_64"}
 HELPER_ARCH_LIST=( ${HELPER_ARCHES_VALUE} )
+SWIFT_SCRATCH_ROOT=${SWIFT_SCRATCH_ROOT:-"${ROOT}/.build/universal"}
 DIST_DIR="$(mktemp -d "/tmp/${APP_NAME}-dist.XXXXXX")"
 API_KEY_FILE="$(mktemp "/tmp/${APP_NAME}-notary.XXXXXX.p8")"
 
@@ -33,13 +34,16 @@ fi
 
 echo "$APP_STORE_CONNECT_API_KEY_P8" | sed 's/\\n/\n/g' > "$API_KEY_FILE"
 
-for ARCH in "${ARCH_LIST[@]}"; do
-  swift build -c release --product imsg --arch "$ARCH"
-done
-
 BINARIES=()
+PRODUCT_DIRS=()
 for ARCH in "${ARCH_LIST[@]}"; do
-  BINARIES+=("$ROOT/.build/${ARCH}-apple-macosx/release/imsg")
+  SCRATCH_PATH="${SWIFT_SCRATCH_ROOT}/${ARCH}"
+  swift build -c release --product "$APP_NAME" --arch "$ARCH" \
+    --scratch-path "$SCRATCH_PATH"
+  PRODUCT_DIR=$(swift build -c release --arch "$ARCH" \
+    --scratch-path "$SCRATCH_PATH" --show-bin-path)
+  BINARIES+=("${PRODUCT_DIR}/${APP_NAME}")
+  PRODUCT_DIRS+=("$PRODUCT_DIR")
 done
 
 lipo -create "${BINARIES[@]}" -output "$DIST_DIR/imsg"
@@ -72,8 +76,7 @@ codesign --force --timestamp --options runtime --sign "$CODESIGN_IDENTITY" \
   --identifier com.steipete.imsg.bridge-helper \
   "$DIST_DIR/$HELPER_NAME"
 
-FIRST_ARCH="${ARCH_LIST[0]}"
-for bundle in "$ROOT/.build/${FIRST_ARCH}-apple-macosx/release"/*.bundle; do
+for bundle in "${PRODUCT_DIRS[0]}"/*.bundle; do
   if [[ -e "$bundle" ]]; then
     cp -R "$bundle" "$DIST_DIR/"
   fi

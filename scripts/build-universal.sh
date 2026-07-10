@@ -15,15 +15,18 @@ HELPER_ARCHES_VALUE=${HELPER_ARCHES:-"arm64e arm64 x86_64"}
 HELPER_ARCH_LIST=( ${HELPER_ARCHES_VALUE} )
 BUILD_MODE=${BUILD_MODE:-release}
 CODESIGN_IDENTITY=${CODESIGN_IDENTITY:-"-"}
+SWIFT_SCRATCH_ROOT=${SWIFT_SCRATCH_ROOT:-"${ROOT}/.build/universal"}
 
-for ARCH in "${ARCH_LIST[@]}"; do
-  swift build -c "$BUILD_MODE" --product "$APP_NAME" --arch "$ARCH"
-done
-
-FIRST_ARCH="${ARCH_LIST[0]}"
 BINARIES=()
+PRODUCT_DIRS=()
 for ARCH in "${ARCH_LIST[@]}"; do
-  BINARIES+=("${ROOT}/.build/${ARCH}-apple-macosx/${BUILD_MODE}/${APP_NAME}")
+  SCRATCH_PATH="${SWIFT_SCRATCH_ROOT}/${ARCH}"
+  swift build -c "$BUILD_MODE" --product "$APP_NAME" --arch "$ARCH" \
+    --scratch-path "$SCRATCH_PATH"
+  PRODUCT_DIR=$(swift build -c "$BUILD_MODE" --arch "$ARCH" \
+    --scratch-path "$SCRATCH_PATH" --show-bin-path)
+  BINARIES+=("${PRODUCT_DIR}/${APP_NAME}")
+  PRODUCT_DIRS+=("$PRODUCT_DIR")
 done
 
 DIST_DIR="$(mktemp -d "/tmp/${APP_NAME}-universal.XXXXXX")"
@@ -70,7 +73,7 @@ else
     "${DIST_DIR}/${HELPER_NAME}"
 fi
 
-for bundle in "${ROOT}/.build/${FIRST_ARCH}-apple-macosx/${BUILD_MODE}"/*.bundle; do
+for bundle in "${PRODUCT_DIRS[0]}"/*.bundle; do
   if [[ -e "$bundle" ]]; then
     cp -R "$bundle" "$DIST_DIR/"
   fi
