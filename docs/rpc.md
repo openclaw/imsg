@@ -272,21 +272,32 @@ Response:
 
 ### Stickers
 
-`attachments.sendSticker` sends an image file as a sticker-attributed IMCore
+`send.sticker` sends a validated image file as a sticker-attributed IMCore
 transfer. The bridge must be injected with `imsg launch`; AppleScript cannot
-preserve sticker attribution. `sticker.send` is accepted as an alias.
+preserve sticker attribution. Stickers are iMessage-only. Accepted images are
+PNG/APNG, GIF, or JPEG, at most 500 KiB, 618x618 pixels, 100 frames, and
+25 million total decoded pixels.
 
 Request:
 
 ```json
-{"jsonrpc":"2.0","id":"sticker","method":"attachments.sendSticker","params":{"chat_id":42,"file":"~/Desktop/sticker.png","attach_to":"MESSAGE_GUID"}}
+{"jsonrpc":"2.0","id":"sticker","method":"send.sticker","params":{"chat_id":42,"file":"~/Desktop/sticker.png","attach_to":"MESSAGE_GUID","part_index":0}}
 ```
 
 Response:
 
 ```json
-{"ok":true,"guid":"...","message_id":"...","transfer_guid":"..."}
+{"ok":true,"transfer_guid":"..."}
 ```
+
+`guid` and `message_id` are included when Messages exposes the newly queued
+message immediately; treat them as best-effort. `transfer_guid` is returned on
+every successful bridge send.
+
+Use exactly one of `chat_id`, `chat_identifier`, or `chat_guid`. `attach_to`
+accepts a bare message GUID or `p:N/GUID`; `part_index` must agree with an
+embedded part and is invalid without `attach_to`. Unknown parameters and
+non-object params fail with invalid params rather than falling back.
 
 ## Objects
 

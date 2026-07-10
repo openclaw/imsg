@@ -41,8 +41,6 @@ let kSupportedRPCMethods: [String] = [
   "send.attachment",
   "send.sticker",
   "messages.scheduled",
-  "attachments.sendSticker",
-  "sticker.send",
   "poll.send",
   "messages.poll.send",
   "poll.vote",
@@ -170,7 +168,10 @@ final class RPCServer {
         try await handleSendRich(params: params, id: id)
       case "send.attachment":
         try await handleSendAttachment(params: params, id: id)
-      case "send.sticker", "attachments.sendSticker", "sticker.send":
+      case "send.sticker":
+        guard request.paramsAreNamed else {
+          throw RPCError.invalidParams("send.sticker params must be an object")
+        }
         try await handleSendSticker(params: params, id: id)
       case "messages.scheduled":
         guard request.paramsAreNamed else {

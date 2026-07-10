@@ -141,7 +141,7 @@ public struct MessageSender {
     return destination.path
   }
 
-  private static func defaultAttachmentsSubdirectory() -> URL {
+  static func defaultAttachmentsSubdirectory() -> URL {
     let fileManager = FileManager.default
     let home = fileManager.homeDirectoryForCurrentUser
     let messagesRoot = home.appendingPathComponent(

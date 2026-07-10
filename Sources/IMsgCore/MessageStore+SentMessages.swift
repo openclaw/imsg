@@ -36,7 +36,10 @@ extension MessageStore {
     }
   }
 
-  public func chatInfo(matchingTarget target: String) throws -> ChatInfo? {
+  public func chatInfo(
+    matchingTarget target: String,
+    preferredServices: [String] = []
+  ) throws -> ChatInfo? {
     let candidates = Self.chatTargetCandidates(target)
     guard !candidates.isEmpty else { return nil }
 
@@ -45,6 +48,15 @@ extension MessageStore {
     let accountLoginColumn = schema.hasChatAccountLoginColumn ? "IFNULL(c.account_login, '')" : "''"
     let lastAddressedHandleColumn =
       schema.hasChatLastAddressedHandleColumn ? "IFNULL(c.last_addressed_handle, '')" : "''"
+    let serviceOrder: String
+    if preferredServices.isEmpty {
+      serviceOrder = ""
+    } else {
+      let servicePlaceholders = Array(repeating: "?", count: preferredServices.count)
+        .joined(separator: ",")
+      serviceOrder =
+        "ORDER BY CASE WHEN c.service_name IN (\(servicePlaceholders)) THEN 0 ELSE 1 END, c.ROWID DESC"
+    }
     let sql = """
       SELECT c.ROWID AS chat_rowid, IFNULL(c.chat_identifier, '') AS identifier, IFNULL(c.guid, '') AS guid,
              IFNULL(c.display_name, c.chat_identifier) AS name, IFNULL(c.service_name, '') AS service,
@@ -54,9 +66,10 @@ extension MessageStore {
       FROM chat c
       WHERE c.chat_identifier IN (\(placeholders))
          OR c.guid IN (\(placeholders))
+      \(serviceOrder)
       LIMIT 1
       """
-    let bindings: [Binding?] = candidates + candidates
+    let bindings: [Binding?] = candidates + candidates + preferredServices
     return try withConnection { db in
       let rows = try db.prepareRowIterator(sql, bindings: bindings)
       guard let row = try rows.failableNext() else { return nil }

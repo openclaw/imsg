@@ -37,7 +37,7 @@ Full docs: **[imsg.sh](https://imsg.sh)**.
 - **Attachment-aware.** Filenames, UTIs, byte counts, resolved paths, and
   optional CAF→M4A / GIF→PNG conversion for model consumers.
 - **Advanced IMCore (opt-in).** Edit, unsend, delete, rich-text formatting,
-  effects, reply threading, group create/rename/photo, member add/remove,
+  effects, reply threading, native stickers, group create/rename/photo, member add/remove,
   read receipts, typing indicators, and live event streams via the bridge.
 - **Linux read-only preview.** Inspect a copied Messages database from a Linux
   host. No sending, no Messages.app integration.
@@ -139,7 +139,7 @@ Advanced IMCore (require `imsg launch` with SIP off — see
 - `imsg status [--json]`
 - `imsg send-rich [--reply-to <guid>] [--file <path>]`,
   `imsg send-multipart`, `imsg send-attachment [--reply-to <guid>]`,
-  `imsg tapback`
+  `imsg send-sticker [--attach-to <guid>] [--target-part <index>]`, `imsg tapback`
 - `imsg poll send (--chat <guid> | --chat-id <id>) --question <text> [--comment <text>] --option <text> --option <text> [--reply-to <guid>]`
 - `imsg poll vote (--chat <guid> | --chat-id <id>) --poll <guid> (--option-id <id> | --option-index <n> | --option <text>)`
 - `imsg edit`, `imsg unsend`, `imsg delete-message`, `imsg notify-anyways`
@@ -150,7 +150,9 @@ Advanced IMCore (require `imsg launch` with SIP off — see
 
 `imsg status --json` reports native bridge selector capabilities. Poll creation
 requires `selectors.pollPayloadMessage`; poll voting requires
-`selectors.pollVoteMessage` plus `poll.vote` in `rpc_methods`.
+`selectors.pollVoteMessage` plus `poll.vote` in `rpc_methods`. Standalone
+stickers require `send.sticker` in `rpc_methods` and `selectors.stickerSend`;
+attaching one to a bubble also requires `selectors.stickerAttach`.
 Messages does not render the poll payload title on the balloon, so `poll send`
 also sends a best-effort plain caption message right after the poll. The
 caption defaults to `--question`; use `--comment` when the visible text should
@@ -330,6 +332,11 @@ imsg send-multipart --chat 'iMessage;+;chat0000' \
 imsg send-attachment --chat ... --file ~/Pictures/img.jpg --transport auto
 imsg send-attachment --chat ... --reply-to <messageGuid> --file ~/Pictures/img.jpg
 imsg send-attachment --chat ... --file ~/audio.caf --audio
+
+# Validated iMessage sticker, standalone or attached to an exact bubble part
+imsg send-sticker --chat ... --file ~/Pictures/sticker.png
+imsg send-sticker --chat ... --file ~/Pictures/sticker.png \
+  --attach-to <messageGuid> --target-part 0
 
 # Bridge tapback (custom emoji + remove supported here, unlike `imsg react`)
 imsg tapback --chat ... --message <guid> --kind love

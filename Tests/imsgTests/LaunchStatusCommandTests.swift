@@ -59,3 +59,14 @@ func statusCommandProducesTextOutput() async throws {
   #expect(output.contains("imsg Status Report"))
   #expect(output.contains(IMsgVersion.current))
 }
+
+@Test
+func statusOnlyAdvertisesStickerSendWhenSelectorsAreReady() {
+  #expect(!StatusCommand.availableBridgeSendCommands(selectors: [:]).contains("send-sticker"))
+  #expect(
+    !StatusCommand.availableBridgeSendCommands(selectors: ["stickerSend": false])
+      .contains("send-sticker"))
+  #expect(
+    StatusCommand.availableBridgeSendCommands(selectors: ["stickerSend": true])
+      .contains("send-sticker"))
+}

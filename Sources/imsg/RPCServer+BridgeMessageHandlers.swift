@@ -1,3 +1,4 @@
+import CoreFoundation
 import Foundation
 import IMsgCore
 
@@ -85,20 +86,96 @@ extension RPCServer {
   }
 
   func handleSendSticker(params: [String: Any], id: Any?) async throws {
-    let chatGUID = try await resolveChatGUIDParam(params)
-    guard let file = stringParam(params["file"] ?? params["path"]), !file.isEmpty else {
+    let supportedParams: Set<String> = [
+      "chat_id", "chat_identifier", "chat_guid", "file", "attach_to", "part_index",
+    ]
+    if let unknown = params.keys.filter({ !supportedParams.contains($0) }).sorted().first {
+      throw RPCError.invalidParams("unknown send.sticker param: \(unknown)")
+    }
+    let chatKeys = ["chat_id", "chat_identifier", "chat_guid"].filter { params[$0] != nil }
+    guard chatKeys.count == 1 else {
+      throw RPCError.invalidParams(
+        "exactly one of chat_id, chat_identifier, or chat_guid is required"
+      )
+    }
+    if let rawChatID = params["chat_id"] {
+      guard let chatID = strictStickerInt(rawChatID), chatID > 0 else {
+        throw RPCError.invalidParams("chat_id must be a positive integer")
+      }
+    } else {
+      let key = chatKeys[0]
+      guard let value = params[key] as? String, !value.isEmpty else {
+        throw RPCError.invalidParams("\(key) must be a nonempty string")
+      }
+    }
+    let chatGUID = try await resolveChatGUIDParam(
+      params,
+      preferredServices: ["iMessage", "iMessageLite"]
+    )
+    guard isStickerIMessageChatGUID(chatGUID) else {
+      throw RPCError.invalidParams(StickerSendValidationError.iMessageRequired.description)
+    }
+    guard let file = params["file"] as? String, !file.isEmpty else {
       throw RPCError.invalidParams("file is required")
     }
+
+    let explicitPart: Int?
+    if let rawPart = params["part_index"] {
+      guard let parsed = strictStickerInt(rawPart) else {
+        throw RPCError.invalidParams("part_index must be an integer")
+      }
+      explicitPart = parsed
+    } else {
+      explicitPart = nil
+    }
+    let rawTarget: String?
+    if let value = params["attach_to"] {
+      guard let parsed = value as? String else {
+        throw RPCError.invalidParams("attach_to must be a string")
+      }
+      rawTarget = parsed
+    } else {
+      rawTarget = nil
+    }
+    let target: StickerSendTarget?
+    do {
+      target = try StickerSendTarget.resolve(rawTarget: rawTarget, explicitPart: explicitPart)
+    } catch let error as StickerSendValidationError {
+      throw RPCError.invalidParams(error.description)
+    }
+    if let target {
+      let belongsToChat = try store.messageBelongsToChat(
+        messageGUID: target.messageGUID,
+        chatGUID: chatGUID
+      )
+      if !belongsToChat {
+        throw RPCError.invalidParams(StickerSendValidationError.targetNotInChat.description)
+      }
+    }
+
+    let asset: PreparedStickerAsset
+    do {
+      asset = try stageSticker((file as NSString).expandingTildeInPath)
+    } catch let error as StickerAssetError {
+      switch error {
+      case .couldNotStage, .unsupportedPlatform:
+        throw RPCError.internalError(String(describing: error))
+      default:
+        throw RPCError.invalidParams(String(describing: error))
+      }
+    }
+    defer { StickerAssetPreparer.discard(asset) }
     var bridgeParams: [String: Any] = [
       "chatGuid": chatGUID,
-      "filePath": try stageAttachment((file as NSString).expandingTildeInPath),
-      "partIndex": intParam(params["part_index"] ?? params["partIndex"]) ?? 0,
+      "filePath": asset.stagedPath,
+      "contentHash": asset.sha256,
+      "pixelWidth": asset.pixelWidth,
+      "pixelHeight": asset.pixelHeight,
+      "accessibilityLabel": asset.accessibilityLabel,
+      "targetPartIndex": target?.partIndex ?? 0,
     ]
-    if let attachTo = stringParam(
-      params["attach_to"] ?? params["attachTo"] ?? params["reply_to"] ?? params["replyTo"]
-        ?? params["message_guid"] ?? params["messageGuid"] ?? params["message_id"]
-    ), !attachTo.isEmpty {
-      bridgeParams["selectedMessageGuid"] = attachTo
+    if let target {
+      bridgeParams["selectedMessageGuid"] = target.messageGUID
     }
     let data = try await invokeBridge(action: .sendSticker, params: bridgeParams)
     var result: [String: Any] = ["ok": true]
@@ -313,6 +390,14 @@ extension RPCServer {
     _ = try await invokeBridge(action: action, params: bridgeParams)
     respond(id: id, result: ["ok": true])
   }
+}
+
+private func strictStickerInt(_ value: Any) -> Int? {
+  guard let number = value as? NSNumber else { return nil }
+  guard CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+  guard !CFNumberIsFloatType(number) else { return nil }
+  guard let parsed = Int(number.stringValue) else { return nil }
+  return parsed
 }
 
 func rpcPollOptionsParam(_ params: [String: Any]) throws -> [String] {

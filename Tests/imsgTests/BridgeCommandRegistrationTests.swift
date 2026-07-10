@@ -12,7 +12,7 @@ import Testing
 func commandRouterIncludesAllBridgeCommands() {
   let router = CommandRouter()
   let expected: [String] = [
-    "send-rich", "send-multipart", "send-attachment", "sticker", "tapback",
+    "send-rich", "send-multipart", "send-attachment", "send-sticker", "tapback",
     "poll", "edit", "unsend", "delete-message", "notify-anyways",
     "chat-create", "chat-name", "chat-photo",
     "chat-add-member", "chat-remove-member",
@@ -40,7 +40,7 @@ func bridgeMessagingCommandsExposeChatRequirement() async {
     ("unsend", ["--message", "message-guid"]),
     ("delete-message", ["--message", "message-guid"]),
     ("tapback", ["--message", "message-guid", "--kind", "love"]),
-    ("sticker", ["--file", "~/Desktop/sticker.png"]),
+    ("send-sticker", ["--file", "~/Desktop/sticker.png"]),
   ]
   for testCase in cases {
     let (output, status) = await StdoutCapture.capture {
@@ -58,8 +58,8 @@ func stickerCommandStagesFileAndForwardsAttachTarget() async throws {
     options: [
       "chat": ["iMessage;-;+15551234567"],
       "file": ["~/Desktop/sticker.png"],
-      "attachTo": ["parent-guid"],
-      "part": ["3"],
+      "attachTo": ["p:3/parent-guid"],
+      "targetPart": ["3"],
     ],
     flags: []
   )
@@ -77,9 +77,20 @@ func stickerCommandStagesFileAndForwardsAttachTarget() async throws {
         capturedParams = params
         return ["messageGuid": "sent-guid", "transferGuid": "transfer-guid"]
       },
-      stageAttachment: { path in
+      messageBelongsToChat: { messageGUID, chatGUID, _ in
+        messageGUID == "parent-guid" && chatGUID == "iMessage;-;+15551234567"
+      },
+      prepareSticker: { path in
         stagedSource = path
-        return "/staged/sticker.png"
+        return PreparedStickerAsset(
+          stagedPath: "/staged/sticker.png",
+          sha256: String(repeating: "a", count: 64),
+          pixelWidth: 300,
+          pixelHeight: 240,
+          uti: "public.png",
+          byteCount: 123,
+          accessibilityLabel: "Sticker label"
+        )
       }
     )
   }
@@ -87,10 +98,42 @@ func stickerCommandStagesFileAndForwardsAttachTarget() async throws {
   #expect(capturedAction == .sendSticker)
   #expect(capturedParams["chatGuid"] as? String == "iMessage;-;+15551234567")
   #expect(capturedParams["filePath"] as? String == "/staged/sticker.png")
+  #expect(capturedParams["contentHash"] as? String == String(repeating: "a", count: 64))
+  #expect(capturedParams["pixelWidth"] as? Int == 300)
+  #expect(capturedParams["pixelHeight"] as? Int == 240)
+  #expect(capturedParams["accessibilityLabel"] as? String == "Sticker label")
   #expect(capturedParams["selectedMessageGuid"] as? String == "parent-guid")
-  #expect(capturedParams["partIndex"] as? Int == 3)
+  #expect(capturedParams["targetPartIndex"] as? Int == 3)
   #expect(stagedSource.hasSuffix("/Desktop/sticker.png"))
   #expect(output.contains("sticker: sent (guid=sent-guid)"))
+}
+
+@Test
+func stickerTargetNormalizesPartsAndRejectsConflicts() throws {
+  #expect(
+    try StickerSendTarget.resolve(rawTarget: "parent-guid", explicitPart: nil)
+      == StickerSendTarget(messageGUID: "parent-guid", partIndex: 0)
+  )
+  #expect(
+    try StickerSendTarget.resolve(rawTarget: "p:3/parent-guid", explicitPart: nil)
+      == StickerSendTarget(messageGUID: "parent-guid", partIndex: 3)
+  )
+  #expect(
+    try StickerSendTarget.resolve(rawTarget: "p:3/parent-guid", explicitPart: 3)
+      == StickerSendTarget(messageGUID: "parent-guid", partIndex: 3)
+  )
+  #expect(throws: StickerSendValidationError.self) {
+    try StickerSendTarget.resolve(rawTarget: "p:3/parent-guid", explicitPart: 2)
+  }
+  #expect(throws: StickerSendValidationError.self) {
+    try StickerSendTarget.resolve(rawTarget: nil, explicitPart: 1)
+  }
+  #expect(throws: StickerSendValidationError.self) {
+    try StickerSendTarget.resolve(rawTarget: "p:nope/parent-guid", explicitPart: nil)
+  }
+  #expect(throws: StickerSendValidationError.self) {
+    try StickerSendTarget.resolve(rawTarget: "", explicitPart: nil)
+  }
 }
 
 @Test
@@ -107,15 +150,32 @@ func injectedHelperWiresStickerSendAction() throws {
 
   #expect(source.contains("send-sticker"))
   #expect(source.contains("markTransferAsSticker"))
-  #expect(source.contains("stickerTransfer"))
+  #expect(source.contains("stickerSend"))
+  #expect(source.contains("stickerTransferCenter"))
   #expect(source.contains("setStickerUserInfo:"))
   #expect(source.contains("setAttributionInfo:"))
+  #expect(source.contains("stickerSHA256"))
+  #expect(source.contains("stickerMD5"))
+  #expect(source.contains("CGImageSourceCreateWithData"))
+  #expect(source.contains("O_NOFOLLOW"))
+  #expect(source.contains("writeStickerSnapshot"))
+  #expect(source.contains("removeStickerFileSecurely"))
+  #expect(source.contains("cleanupPreparedStickerPaths"))
+  #expect(source.contains("hasStoredMessageWithGUID:"))
+  #expect(source.contains("stickerAttachmentMessageInitializerAvailable"))
+  #expect(source.contains("stickerAssociatedMessageInitializerAvailable"))
+  #expect(source.contains("stickerTargetLookup"))
+  #expect(source.contains("@\"shash\": md5"))
+  #expect(source.contains("@\"sid\": filename"))
   #expect(source.contains(#""p:%ld/%@""#))
-  #expect(sendStickerBody.contains("prepareOutgoingTransfer(fileURL, filename, chatGuid"))
-  #expect(sendStickerBody.contains("YES, &prepErr"))
+  #expect(sendStickerBody.contains("IMsgOutgoingTransferKindSticker"))
   #expect(sendStickerBody.contains("selectedMessageGuid.length ? 1000 : 0"))
   #expect(sendStickerBody.contains(#"@{@"eogcd": @3, @"ust": @YES}"#))
-  #expect(sendStickerBody.contains("buildAttachmentAttributed(transferGuid, filename, partIndex)"))
+  #expect(sendStickerBody.contains("buildAttachmentAttributed(transferGuid, filename, 0)"))
+  #expect(sendStickerBody.contains("loadParentChatItem"))
+  #expect(sendStickerBody.contains("stickerMessageBelongsToChat"))
+  #expect(sendStickerBody.contains("registerPreparedTransfer"))
+  #expect(sendStickerBody.contains("targetPartIndex"))
 }
 
 @Test
@@ -139,15 +199,15 @@ func bridgeAttachmentStagingUsesChatGuid() throws {
       in: source
     ))
 
-  let prepareSignature =
-    #"prepareOutgoingTransfer\s*\([^)]*NSString\s*\*chatGuid\s*,\s*BOOL\s+stickerTransfer\s*,\s*NSString\s*\*\*outErr\)"#
-  #expect(source.range(of: prepareSignature, options: .regularExpression) != nil)
+  #expect(source.contains("IMsgOutgoingTransferKind transferKind"))
+  #expect(source.contains("NSDictionary *transferMetadata"))
+  #expect(source.contains("NSString **outActivePath"))
+  #expect(source.contains("registerPreparedTransfer"))
   #expect(
     prepareBody.contains(
       "_persistentPathForTransfer:filename:highQuality:chatGUID:storeAtExternalPath:"))
   #expect(prepareBody.contains("[inv setArgument:&cg atIndex:5];"))
-  #expect(sendAttachmentBody.contains("prepareOutgoingTransfer(fileURL, filename, chatGuid"))
-  #expect(sendAttachmentBody.contains("NO, &prepErr"))
+  #expect(sendAttachmentBody.contains("IMsgOutgoingTransferKindAttachment"))
 }
 
 @Test

@@ -83,6 +83,29 @@ enum CommandTestDatabase {
     )
   }
 
+  static func makeStoreForRPCWithStickerTarget(
+    includeSMSDuplicate: Bool = false
+  ) throws -> MessageStore {
+    let db = try Connection(.inMemory)
+    try createSchema(db, includeChatHandleJoin: true, includeReactionColumns: true)
+    try seedRPCChat(db)
+    try db.run("UPDATE message SET guid = 'parent-guid' WHERE ROWID = 5")
+    if includeSMSDuplicate {
+      try db.run("UPDATE chat SET chat_identifier = 'shared-target' WHERE ROWID = 1")
+      try db.run(
+        """
+        INSERT INTO chat(ROWID, chat_identifier, guid, display_name, service_name)
+        VALUES (2, 'shared-target', 'SMS;-;shared-target', 'SMS Duplicate', 'SMS')
+        """)
+    }
+    return try MessageStore(
+      connection: db,
+      path: ":memory:",
+      hasAttributedBody: false,
+      hasReactionColumns: true
+    )
+  }
+
   static func makeStoreForRPCWithAttachment(
     filename: String,
     transferName: String,

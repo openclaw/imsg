@@ -106,7 +106,10 @@ extension RPCServer {
   /// Bridge management actions (rename/leave/etc.) require a real chat GUID;
   /// rejecting up-front gives callers a clearer error than the dylib's
   /// downstream "chat not found".
-  func resolveChatGUIDParam(_ params: [String: Any]) async throws -> String {
+  func resolveChatGUIDParam(
+    _ params: [String: Any],
+    preferredServices: [String] = []
+  ) async throws -> String {
     let input = ChatTargetInput(
       recipient: "",
       chatID: int64Param(params["chat_id"]),
@@ -125,7 +128,10 @@ extension RPCServer {
       return resolved.chatGUID
     }
     if !resolved.chatIdentifier.isEmpty {
-      if let info = try store.chatInfo(matchingTarget: resolved.chatIdentifier) {
+      if let info = try store.chatInfo(
+        matchingTarget: resolved.chatIdentifier,
+        preferredServices: preferredServices
+      ) {
         if !info.guid.isEmpty { return info.guid }
         if !info.identifier.isEmpty { return info.identifier }
       }
