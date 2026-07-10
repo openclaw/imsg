@@ -8,6 +8,7 @@ import Testing
 func scheduledMessagesListsOnlyFutureOutboundRowsInChronologicalOrder() throws {
   let db = try Connection(.inMemory)
   var options = MessageDatabaseFixture.SchemaOptions()
+  options.includeAttributedBody = true
   options.includeReactionColumns = true
   options.includeScheduleColumns = true
   try MessageDatabaseFixture.createSchema(db, options: options)
@@ -36,15 +37,30 @@ func scheduledMessagesListsOnlyFutureOutboundRowsInChronologicalOrder() throws {
   try insertScheduledMessage(
     db, rowID: 6, guid: "ordinary", text: "ordinary",
     date: asOf.addingTimeInterval(1800), scheduleType: 0, scheduleState: 0)
+  let attributedText = "body from attributed data"
+  let attributedBody: [UInt8] =
+    [0x01, 0x2b, UInt8(attributedText.utf8.count)] + Array(attributedText.utf8) + [0x86, 0x84]
+  try db.run(
+    """
+    INSERT INTO message(
+      ROWID, guid, handle_id, text, attributedBody, schedule_type, schedule_state,
+      date, is_from_me, service
+    ) VALUES (7, 'attributed', 1, NULL, ?, 2, 1, ?, 1, 'iMessage')
+    """,
+    Blob(bytes: attributedBody),
+    MessageStore.appleEpoch(asOf.addingTimeInterval(900))
+  )
+  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 7)")
 
   let store = try MessageStore(connection: db, path: ":memory:")
   let messages = try store.scheduledMessages(limit: 10, asOf: asOf)
 
-  #expect(messages.map(\.guid) == ["same-time-low", "same-time-high", "later"])
+  #expect(messages.map(\.guid) == ["attributed", "same-time-low", "same-time-high", "later"])
+  #expect(messages.first?.text == attributedText)
   #expect(messages.first?.chatGUID == "iMessage;-;+123")
   #expect(messages.first?.scheduleType == 2)
   #expect(messages.first?.scheduleState == 1)
-  #expect(try store.scheduledMessages(limit: 1, asOf: asOf).map(\.guid) == ["same-time-low"])
+  #expect(try store.scheduledMessages(limit: 1, asOf: asOf).map(\.guid) == ["attributed"])
 }
 
 @Test

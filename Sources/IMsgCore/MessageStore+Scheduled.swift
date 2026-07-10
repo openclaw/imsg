@@ -68,10 +68,12 @@ extension MessageStore {
     guard limit > 0 else { throw ScheduledMessagesError.invalidLimit }
     let scheduleTypeColumn = schema.hasScheduleTypeColumn ? "IFNULL(m.schedule_type, 0)" : "0"
     let scheduleStateColumn = schema.hasScheduleStateColumn ? "IFNULL(m.schedule_state, 0)" : "0"
+    let bodyColumn = schema.hasAttributedBody ? "m.attributedBody" : "NULL"
     let sql = """
       SELECT m.ROWID AS message_id,
              IFNULL(m.guid, '') AS guid,
              IFNULL(m.text, '') AS text,
+             \(bodyColumn) AS body,
              IFNULL(m.service, '') AS service,
              IFNULL(m.date, 0) AS scheduled_date,
              \(scheduleTypeColumn) AS schedule_type,
@@ -95,6 +97,10 @@ extension MessageStore {
         sql,
         bindings: [MessageStore.appleEpoch(asOf), limit])
       while let row = try rows.failableNext() {
+        let rawText = try stringValue(row, "text")
+        let text =
+          rawText.isEmpty
+          ? TypedStreamParser.parseAttributedBody(try dataValue(row, "body")) : rawText
         results.append(
           ScheduledMessage(
             rowID: try int64Value(row, "message_id") ?? 0,
@@ -103,7 +109,7 @@ extension MessageStore {
             chatIdentifier: try stringValue(row, "chat_identifier"),
             chatGUID: try stringValue(row, "chat_guid"),
             chatName: try stringValue(row, "chat_name"),
-            text: try stringValue(row, "text"),
+            text: text,
             service: try stringValue(row, "service"),
             scheduledAt: appleDate(from: try int64Value(row, "scheduled_date")),
             scheduleType: try intValue(row, "schedule_type") ?? 0,
