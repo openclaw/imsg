@@ -2989,7 +2989,7 @@ static NSDictionary *handleSendPollVote(NSInteger requestId, NSDictionary *param
 }
 
 /// `send-poll-unvote`: remove a vote on an existing poll by sending the same
-/// native vote payload with Apple's removal fields populated.
+/// native vote payload shape with an empty votes array.
 static NSDictionary *handleSendPollUnvote(NSInteger requestId, NSDictionary *params) {
     return handleSendPollVoteMutation(requestId, params, YES);
 }
