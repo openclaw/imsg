@@ -4171,20 +4171,31 @@ static NSString *actualUserHomeDirectory(void) {
     return [NSString stringWithUTF8String:entry->pw_dir];
 }
 
-static NSString *trustedStickerRoot(void) {
+static NSString *trustedMessagesAttachmentsRoot(void) {
     return [actualUserHomeDirectory()
-        stringByAppendingPathComponent:@"Library/Messages/Attachments/imsg/stickers"];
+        stringByAppendingPathComponent:@"Library/Messages/Attachments"];
+}
+
+static NSString *trustedStickerRoot(void) {
+    return [trustedMessagesAttachmentsRoot()
+        stringByAppendingPathComponent:@"imsg/stickers"];
+}
+
+static BOOL pathIsWithinRoot(NSString *path, NSString *root) {
+    if (![path isKindOfClass:[NSString class]] || !path.isAbsolutePath) return NO;
+    NSString *candidate = [path stringByStandardizingPath];
+    NSString *standardRoot = [root stringByStandardizingPath];
+    return standardRoot.length
+        && [candidate hasPrefix:[standardRoot stringByAppendingString:@"/"]];
 }
 
 static BOOL stickerPathIsTrusted(NSString *path) {
-    if (![path isKindOfClass:[NSString class]] || !path.isAbsolutePath) return NO;
-    NSString *root = [trustedStickerRoot() stringByStandardizingPath];
-    NSString *candidate = [path stringByStandardizingPath];
-    return root.length && [candidate hasPrefix:[root stringByAppendingString:@"/"]];
+    return pathIsWithinRoot(path, trustedStickerRoot());
 }
 
-static int openStickerDirectorySecurely(NSString *directoryPath) {
-    NSString *root = [trustedStickerRoot() stringByStandardizingPath];
+static int openUserOwnedDirectorySecurely(NSString *directoryPath,
+                                          NSString *requiredRoot) {
+    NSString *root = [requiredRoot stringByStandardizingPath];
     NSString *directory = [directoryPath stringByStandardizingPath];
     if (!root.length || !directory.length) return -1;
     if (![directory isEqualToString:root]
@@ -4224,6 +4235,15 @@ static int openStickerDirectorySecurely(NSString *directoryPath) {
         directoryFD = nextFD;
     }
     return directoryFD;
+}
+
+static int openStickerDirectorySecurely(NSString *directoryPath) {
+    return openUserOwnedDirectorySecurely(directoryPath, trustedStickerRoot());
+}
+
+static int openStickerTransferDirectorySecurely(NSString *directoryPath) {
+    return openUserOwnedDirectorySecurely(
+        directoryPath, trustedMessagesAttachmentsRoot());
 }
 
 static NSData *readStickerSnapshot(NSString *path, NSString **outErr) {
@@ -4491,6 +4511,18 @@ static BOOL removeStickerFileSecurely(NSString *path) {
     return result == 0 || savedErrno == ENOENT;
 }
 
+static BOOL removeStickerTransferFileSecurely(NSString *path) {
+    if (!pathIsWithinRoot(path, trustedMessagesAttachmentsRoot())) return NO;
+    NSString *directory = [path stringByDeletingLastPathComponent];
+    int directoryFD = openStickerTransferDirectorySecurely(directory);
+    if (directoryFD < 0) return NO;
+    int result = unlinkat(
+        directoryFD, path.lastPathComponent.fileSystemRepresentation, 0);
+    int savedErrno = errno;
+    close(directoryFD);
+    return result == 0 || savedErrno == ENOENT;
+}
+
 static BOOL stickerMessageBelongsToChat(IMChat *chat, NSString *messageGuid) {
     SEL selector = NSSelectorFromString(@"hasStoredMessageWithGUID:");
     if (!chat || !messageGuid.length || ![chat respondsToSelector:selector]) return NO;
@@ -4748,7 +4780,8 @@ static IMFileTransfer *prepareOutgoingTransfer(NSURL *originalURL, NSString *fil
             BOOL legacyStaged = NO;
             BOOL persistentMatchesSource = NO;
             BOOL canRetargetSticker = transferKind != IMsgOutgoingTransferKindSticker
-                || [ftc respondsToSelector:@selector(retargetTransfer:toPath:)];
+                || ([ftc respondsToSelector:@selector(retargetTransfer:toPath:)]
+                    && pathIsWithinRoot(persistentPath, trustedMessagesAttachmentsRoot()));
             if (persistentPath.length && canRetargetSticker) {
                 NSURL *persistentURL = [NSURL fileURLWithPath:persistentPath];
                 NSURL *parent = [persistentURL URLByDeletingLastPathComponent];
@@ -5032,7 +5065,7 @@ static NSDictionary *handleSendAttachment(NSInteger requestId, NSDictionary *par
 /// sticker to a message bubble using the same association path as tapbacks.
 static void cleanupPreparedStickerPaths(NSString *snapshotPath,
                                         NSString *activePath) {
-    if (activePath.length) removeStickerFileSecurely(activePath);
+    if (activePath.length) removeStickerTransferFileSecurely(activePath);
     if (snapshotPath.length
         && ![snapshotPath.stringByStandardizingPath
             isEqualToString:activePath.stringByStandardizingPath]) {

@@ -63,7 +63,9 @@ func injectedHelperWiresStickerSendAction() throws {
   let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
   let sendStickerBody = try #require(functionBody(named: "handleSendSticker", in: source))
   let secureOpenBody = try #require(
-    functionBody(named: "openStickerDirectorySecurely", in: source))
+    functionBody(named: "openUserOwnedDirectorySecurely", in: source))
+  let cleanupBody = try #require(
+    functionBody(named: "cleanupPreparedStickerPaths", in: source))
 
   #expect(source.contains("send-sticker"))
   #expect(source.contains("markTransferAsSticker"))
@@ -78,6 +80,7 @@ func injectedHelperWiresStickerSendAction() throws {
   #expect(source.contains("writeStickerSnapshot"))
   #expect(source.contains("removeStickerFileSecurely"))
   #expect(source.contains("cleanupPreparedStickerPaths"))
+  #expect(source.contains("removeStickerTransferFileSecurely"))
   #expect(source.contains("hasStoredMessageWithGUID:"))
   #expect(source.contains("stickerAttachmentMessageInitializerAvailable"))
   #expect(source.contains("stickerAssociatedMessageInitializerAvailable"))
@@ -99,6 +102,7 @@ func injectedHelperWiresStickerSendAction() throws {
   #expect(secureOpenBody.contains("substringFromIndex:home.length + 1"))
   #expect(secureOpenBody.contains("openat(directoryFD"))
   #expect(secureOpenBody.contains("fstat(nextFD, &componentInfo)"))
+  #expect(cleanupBody.contains("removeStickerTransferFileSecurely(activePath)"))
 }
 
 @Test
@@ -131,6 +135,7 @@ func bridgeAttachmentStagingUsesChatGuid() throws {
       "_persistentPathForTransfer:filename:highQuality:chatGUID:storeAtExternalPath:"))
   #expect(prepareBody.contains("[inv setArgument:&cg atIndex:5];"))
   #expect(prepareBody.contains("BOOL canRetargetSticker"))
+  #expect(prepareBody.contains("pathIsWithinRoot(persistentPath"))
   #expect(prepareBody.contains("transferKind != IMsgOutgoingTransferKindSticker || retargeted"))
   #expect(sendAttachmentBody.contains("IMsgOutgoingTransferKindAttachment"))
 }
