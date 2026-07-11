@@ -38,10 +38,14 @@ let kSupportedRPCMethods: [String] = [
   "send",
   "send.rich",
   "send.attachment",
+  "messages.scheduled",
   "poll.send",
   "messages.poll.send",
   "poll.vote",
   "messages.poll.vote",
+  "poll.unvote",
+  "polls.unvote",
+  "messages.poll.unvote",
   "tapback",
   "typing",
   "read",
@@ -165,10 +169,17 @@ final class RPCServer {
         try await handleSendRich(params: params, id: id)
       case "send.attachment":
         try await handleSendAttachment(params: params, id: id)
+      case "messages.scheduled":
+        guard request.paramsAreNamed else {
+          throw RPCError.invalidParams("messages.scheduled params must be an object")
+        }
+        try await handleMessagesScheduled(params: params, id: id)
       case "poll.send", "messages.poll.send":
         try await handlePollSend(params: params, id: id)
       case "poll.vote", "messages.poll.vote":
         try await handlePollVote(params: params, id: id)
+      case "poll.unvote", "polls.unvote", "messages.poll.unvote":
+        try await handlePollUnvote(params: params, id: id)
       case "tapback":
         try await handleTapback(params: params, id: id)
       case "typing":

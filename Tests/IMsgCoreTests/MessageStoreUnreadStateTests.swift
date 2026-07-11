@@ -63,7 +63,7 @@ func listChatsCountsUnreadInboundMessages() throws {
 }
 
 @Test
-func listChatsCountsSplitURLPreviewAsOneUnreadMessage() throws {
+func listChatsCountsConsecutiveSplitURLPreviewsAsOneUnreadMessage() throws {
   let db = try Connection(.inMemory)
   try MessageDatabaseFixture.createSchema(
     db,
@@ -88,14 +88,19 @@ func listChatsCountsSplitURLPreviewAsOneUnreadMessage() throws {
       balloon_bundle_id, date, is_from_me, service, is_read, date_read
     )
     VALUES
-      (1, 1, 'See https://example.com', 'text-guid', NULL, NULL, NULL, ?, 0, 'iMessage', 0, 0),
-      (2, 1, 'https://example.com', 'preview-guid', NULL, NULL, ?, ?, 0, 'iMessage', 0, 0)
+      (1, 1, 'See https://one.example and https://two.example', 'text-guid', NULL, NULL, NULL, ?, 0, 'iMessage', 0, 0),
+      (2, 1, 'https://one.example', 'first-preview-guid', NULL, NULL, ?, ?, 0, 'iMessage', 0, 0),
+      (3, 1, 'https://two.example', 'second-preview-guid', NULL, NULL, ?, ?, 0, 'iMessage', 0, 0)
     """,
     TestDatabase.appleEpoch(now),
     MessageStore.urlPreviewBalloonBundleID,
-    TestDatabase.appleEpoch(now.addingTimeInterval(1))
+    TestDatabase.appleEpoch(now.addingTimeInterval(1)),
+    MessageStore.urlPreviewBalloonBundleID,
+    TestDatabase.appleEpoch(now.addingTimeInterval(2))
   )
-  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 1), (1, 2)")
+  try db.run(
+    "INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 1), (1, 2), (1, 3)"
+  )
 
   let store = try MessageStore(connection: db, path: ":memory:")
   #expect(try store.listChats(limit: 1).first?.unreadCount == 1)

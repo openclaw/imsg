@@ -463,6 +463,42 @@ func pollCommandVoteResolvesOptionIndex() async throws {
 }
 
 @Test
+func pollCommandUnvoteResolvesOptionText() async throws {
+  let values = ParsedValues(
+    positional: ["unvote"],
+    options: [
+      "chatID": ["1"],
+      "poll": ["p:0/poll-guid-6"],
+      "option": ["Yes"],
+    ],
+    flags: ["jsonOutput"]
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+  let store = try CommandTestDatabase.makeStoreForRPCWithOwnPollVoteSnapshot()
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
+
+  _ = try await StdoutCapture.capture {
+    try await PollCommand.run(
+      values: values,
+      runtime: runtime,
+      storeFactory: { _ in store },
+      invokeBridge: { action, params in
+        capturedAction = action
+        capturedParams = params
+        return ["messageGuid": "unvote-guid"]
+      }
+    )
+  }
+
+  #expect(capturedAction == .sendPollUnvote)
+  #expect(capturedParams["pollMessageGuid"] as? String == "poll-guid-6")
+  #expect(capturedParams["optionIdentifier"] as? String == "choice-yes")
+  #expect(capturedParams["optionText"] as? String == "Yes")
+  #expect(capturedParams["remainingOptionIdentifiers"] as? [String] == ["choice-no"])
+}
+
+@Test
 func pollCommandVoteRejectsConflictingSelectors() async throws {
   let values = ParsedValues(
     positional: ["vote"],

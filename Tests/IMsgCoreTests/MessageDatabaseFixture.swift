@@ -18,6 +18,7 @@ enum MessageDatabaseFixture {
     var includeChatMessageDate = false
     var includeChatRouting = true
     var includeChatHandleJoin = true
+    var includeScheduleColumns = false
     var includeReadState = false
   }
 
@@ -38,6 +39,8 @@ enum MessageDatabaseFixture {
     let payloadDataColumn = options.includePayloadData ? "payload_data BLOB," : ""
     let summaryInfoColumn = options.includeMessageSummaryInfo ? "message_summary_info BLOB," : ""
     let replyToColumn = options.includeReplyToGUID ? "reply_to_guid TEXT," : ""
+    let scheduleColumns =
+      options.includeScheduleColumns ? "schedule_type INTEGER, schedule_state INTEGER," : ""
     let readStateColumns =
       options.includeReadState
       ? "is_read INTEGER, date_read INTEGER,"
@@ -59,6 +62,7 @@ enum MessageDatabaseFixture {
         \(payloadDataColumn)
         \(summaryInfoColumn)
         \(replyToColumn)
+        \(scheduleColumns)
         \(readStateColumns)
         date INTEGER,
         is_from_me INTEGER,

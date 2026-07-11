@@ -84,23 +84,33 @@ extension MessageStore {
         AND cmj.chat_id = ?
         \(reactionFilter)
       ORDER BY m.ROWID DESC
-      LIMIT 1
       """
     let rows = try db.prepareRowIterator(sql, bindings: [preview.rowID, preview.chatID])
-    guard let row = try rows.failableNext() else { return nil }
-    let decoded = try decodeMessageRow(
-      row,
-      columns: selection.columns,
-      fallbackChatID: preview.chatID
-    )
+    var previews = [preview]
     var parentCache: ReplyParentCache = [:]
     var pollOptionCache = PollOptionTextCache()
-    let previous = try message(
-      from: decoded,
-      db,
-      parentCache: &parentCache,
-      pollOptionCache: &pollOptionCache
-    )
-    return canCoalesceURLPreview(textMessage: previous, previewMessage: preview) ? previous : nil
+    while let row = try rows.failableNext() {
+      let decoded = try decodeMessageRow(
+        row,
+        columns: selection.columns,
+        fallbackChatID: preview.chatID
+      )
+      let previous = try message(
+        from: decoded,
+        db,
+        parentCache: &parentCache,
+        pollOptionCache: &pollOptionCache
+      )
+      if isURLPreviewBalloon(previous) {
+        previews.append(previous)
+        continue
+      }
+      // One text send can produce a contiguous row per URL. Validate the entire
+      // run so an unrelated message still remains a hard coalescing boundary.
+      return previews.allSatisfy {
+        canCoalesceURLPreview(textMessage: previous, previewMessage: $0)
+      } ? previous : nil
+    }
+    return nil
   }
 }

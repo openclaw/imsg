@@ -39,6 +39,8 @@ imsg group --chat-id ID --json                 # identity + participants; check 
 imsg history --chat-id ID --limit 50 --json | jq -s
 imsg history --chat-id ID --start 2025-01-01T00:00:00Z --end 2025-02-01T00:00:00Z --json
 imsg stats --chat-id ID --time-zone UTC --media --json  # logical message + media totals
+imsg scheduled list --json                    # future Send Later rows; read-only
+imsg chat-background status --chat-id ID --json  # inspect local background state; read-only
 ```
 
 - Chat `id` is the `chat.db` rowid: stable on one machine, the preferred `--chat-id` handle. `identifier` and `guid` are portable across machines.
@@ -78,6 +80,7 @@ Only after `imsg status` confirms the bridge is loaded (`imsg launch` injects it
 imsg send-rich --chat 'iMessage;-;+15551234567' --text 'hi' --reply-to MSG_GUID   # replies, effects, subjects
 imsg send-rich --chat 'iMessage;-;+15551234567' --url https://imsg.sh
 imsg poll send --chat GUID --question 'Dinner?' --option 'Pizza' --option 'Sushi' --comment 'Vote by 5pm'
+imsg poll unvote --chat GUID --poll POLL_GUID --option-index 1
 imsg edit --chat GUID --message MSG_GUID --new-text 'updated'                     # macOS 13+
 imsg chat-create --addresses '+15551234567,+15559876543' --name 'Crew'
 ```

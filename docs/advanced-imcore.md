@@ -23,6 +23,8 @@ You almost certainly do not need any of this for normal use.
 - `imsg send-attachment --chat <guid> --file <path> [--reply-to <message-guid>]` —
   prefers the bridge for private attachment sends, with AppleScript fallback
   for normal files when no reply target is requested.
+- `imsg poll send|vote|unvote ...` — create native Polls balloons and cast or
+  remove selections.
 
 Rich-link metadata and preview images are fetched from the local Mac by the
 `imsg` process before the bridge request; the injected Messages helper performs

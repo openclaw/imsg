@@ -66,6 +66,16 @@ func linuxReleaseStaticallyLinksSwiftRuntime() throws {
 }
 
 @Test
+func dependencyPatchTargetsPhoneNumberKitV5BundleResource() throws {
+  let script = try readRepositoryFile("scripts/patch-deps.sh")
+
+  #expect(script.contains("PhoneNumberKit/Sources/PhoneNumberKit/Bundle+Resources.swift"))
+  #expect(!script.contains("PhoneNumberKit/PhoneNumberKit/Bundle+Resources.swift"))
+  #expect(script.contains("PhoneNumberKit bundle resource patch target is missing"))
+  #expect(script.contains("Bundle.main.bundleURL.resolvingSymlinksInPath()"))
+}
+
+@Test
 func bridgeHelperBuildsUseRelocatableInstallName() throws {
   let developmentBuild = try readRepositoryFile("Makefile")
   let universalBuild = try readRepositoryFile("scripts/build-universal.sh")
