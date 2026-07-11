@@ -213,6 +213,12 @@ These methods require the IMCore bridge and target an existing chat with `chat_i
 - `tapback` sends or removes a reaction. Params: `message_id` or `message_guid`, plus `reaction` / `kind` / `emoji`, optional `remove`.
 - `message.edit` edits `message_id` / `message_guid` with `text`.
 - `message.unsend`, `message.delete`, and `message.notifyAnyways` target `message_id` / `message_guid`.
+- `contacts.shouldShareContact` reads Apple Messages' advisory Name & Photo offer eligibility. The result includes `can_inspect_offer`, `can_share`, and tri-state `should_offer`.
+- `contacts.shareContactCard` explicitly requests Apple Messages Name & Photo sharing. Despite the compatibility name, this does not send a vCard. Success reports `requested: true`, not delivery.
+
+The two `contacts.*` compatibility methods accept `chat_id`, `chat_identifier`,
+or `chat_guid`. Sharing discloses the local Messages profile to every chat
+participant and must only be invoked after explicit user confirmation.
 
 Result:
 

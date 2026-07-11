@@ -47,6 +47,7 @@ struct CommandRouter {
       AccountCommand.spec,
       WhoisCommand.spec,
       NicknameCommand.spec,
+      NamePhotoCommand.spec,
     ]
     let descriptor = CommandDescriptor(
       name: rootName,

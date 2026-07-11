@@ -12,6 +12,9 @@
 ### Packaging
 - fix: isolate universal builds per architecture and consume SwiftPM's reported product paths so stale slices cannot silently ship older CLI code.
 
+### Advanced IMCore
+- feat: inspect and explicitly share Apple Messages Name & Photo through `imsg name-photo` and compatible contact RPC methods, while fixing bridge nickname lookup to use the current controller and handle APIs (thanks @omarshahine).
+
 ### Native Polls
 - fix: match native poll vote envelopes, participant handles, and summary metadata so votes render participant markers and correct notifications (#162, thanks @omarshahine).
 

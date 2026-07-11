@@ -12,7 +12,7 @@ description: "iMessage/SMS: local history, contacts, live watch, and requested s
 - Every read command supports `--json` and emits **NDJSON** (one object per line). Pipe to `jq -s` to get an array. Stdout carries only JSON; progress and warnings go to stderr.
 - Two capability tiers:
   - **Standard** (normal permissions): `chats`, `group`, `history`, `watch`, `search`, `send`, `react`, `nickname --local`, `account --local`, `whois --local`.
-  - **Bridge** (SIP disabled + `imsg launch` dylib injection): `send-rich`, `send-multipart`, `send-attachment`, `tapback`, `poll`, `edit`, `unsend`, `delete-message`, `read`, `typing`, `notify-anyways`, `chat-*`, and default-mode `account`/`whois`/`nickname`.
+  - **Bridge** (SIP disabled + `imsg launch` dylib injection): `send-rich`, `send-multipart`, `send-attachment`, `tapback`, `poll`, `edit`, `unsend`, `delete-message`, `read`, `typing`, `notify-anyways`, `chat-*`, `name-photo`, and default-mode `account`/`whois`/`nickname`.
 - Check availability with `imsg status --json` before using bridge commands. If the bridge is down, use a standard command only when it preserves the requested semantics; otherwise stop and explain. Never turn a reply/effect/subject into a plain send or a GUID-targeted tapback into `react`, and never suggest disabling SIP unprompted.
 - Full command and flag reference: `imsg completions llm`.
 
@@ -41,6 +41,7 @@ imsg history --chat-id ID --start 2025-01-01T00:00:00Z --end 2025-02-01T00:00:00
 imsg stats --chat-id ID --time-zone UTC --media --json  # logical message + media totals
 imsg scheduled list --json                    # future Send Later rows; read-only
 imsg chat-background status --chat-id ID --json  # inspect local background state; read-only
+imsg name-photo status --chat GUID --json          # read-only Share Name & Photo eligibility
 ```
 
 - Chat `id` is the `chat.db` rowid: stable on one machine, the preferred `--chat-id` handle. `identifier` and `guid` are portable across machines.
@@ -67,10 +68,12 @@ Message `id` doubles as the watch cursor: persist the last-seen id and pass it b
 imsg send --to "+15551234567" --text "message" --service auto
 imsg send --chat-id ID --text "message"        # prefer for groups: no address ambiguity
 imsg send --to "+15551234567" --file ~/Desktop/pic.jpg
+imsg name-photo share --chat GUID                  # shares YOUR Name & Photo; explicit request only
 ```
 
 - `--service auto` prefers iMessage and falls back to SMS for text-only phone sends; `--no-sms-fallback` disables that.
 - `imsg react --chat-id ID --reaction like` (AppleScript) only targets the **most recent incoming message** and needs Accessibility permission. To react to a specific message by GUID, use bridge `tapback`.
+- `name-photo share` is not a vCard send. It discloses the local Messages Name & Photo to every participant in the selected chat; confirm the destination and explicit user intent before invoking it.
 
 ## Bridge extras
 

@@ -56,6 +56,8 @@ let kSupportedRPCMethods: [String] = [
   "group.addParticipant",
   "group.removeParticipant",
   "group.leave",
+  "contacts.shouldShareContact",
+  "contacts.shareContactCard",
   "handles.check",
 ]
 
@@ -202,6 +204,16 @@ final class RPCServer {
         try await handleGroupRemoveParticipant(id: id, params: params)
       case "group.leave":
         try await handleGroupLeave(id: id, params: params)
+      case "contacts.shouldShareContact":
+        guard request.paramsAreNamed else {
+          throw RPCError.invalidParams("contacts.shouldShareContact params must be an object")
+        }
+        try await handleNamePhotoStatus(params: params, id: id)
+      case "contacts.shareContactCard":
+        guard request.paramsAreNamed else {
+          throw RPCError.invalidParams("contacts.shareContactCard params must be an object")
+        }
+        try await handleNamePhotoShare(params: params, id: id)
       case "handles.check":
         try await handleHandlesCheck(params: params, id: id)
       default:

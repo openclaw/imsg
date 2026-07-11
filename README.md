@@ -38,7 +38,8 @@ Full docs: **[imsg.sh](https://imsg.sh)**.
   optional CAF→M4A / GIF→PNG conversion for model consumers.
 - **Advanced IMCore (opt-in).** Edit, unsend, delete, rich-text formatting,
   effects, reply threading, group create/rename/photo, member add/remove,
-  read receipts, typing indicators, and live event streams via the bridge.
+  Name & Photo sharing, read receipts, typing indicators, and live event
+  streams via the bridge.
 - **Linux read-only preview.** Inspect a copied Messages database from a Linux
   host. No sending, no Messages.app integration.
 
@@ -147,6 +148,7 @@ Advanced IMCore (require `imsg launch` with SIP off — see
   `imsg chat-add-member`, `imsg chat-remove-member`, `imsg chat-leave`,
   `imsg chat-delete`, `imsg chat-mark`
 - `imsg account`, `imsg whois`, `imsg nickname`
+- `imsg name-photo status|share --chat <guid>`
 
 `imsg status --json` reports native bridge selector capabilities. Poll creation
 requires `selectors.pollPayloadMessage`; poll voting requires
@@ -373,6 +375,19 @@ imsg whois --address foo@bar.com --type email
 imsg nickname --address +15551234567
 imsg nickname --address +15551234567 --local
 ```
+
+Messages Name & Photo:
+
+```bash
+imsg name-photo status --chat 'iMessage;-;+15551234567'  # read-only offer eligibility
+imsg name-photo share --chat 'iMessage;-;+15551234567'   # explicitly share with participants
+```
+
+`status` reports whether Messages would currently offer its native Share Name
+& Photo action; it is advisory, not a durable record of prior sharing. `share`
+submits an explicit private-API send request and reports `requested: true`, not
+a delivery receipt. Because it discloses your personal profile to every chat
+participant, agents must only invoke it after an explicit user request.
 
 Live events (typing indicators surfaced through the dylib):
 

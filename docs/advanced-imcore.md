@@ -15,6 +15,8 @@ You almost certainly do not need any of this for normal use.
 - `imsg typing --to <handle> [--duration 5s] [--stop true]` — show or stop the typing indicator.
 - `imsg launch [--dylib <path>] [--kill-only]` — launch Messages.app with the helper dylib injected.
 - `imsg status` — read-only IMCore bridge status.
+- `imsg name-photo status|share --chat <guid>` — inspect the native offer
+  eligibility or explicitly share your Messages Name & Photo with a chat.
 - `imsg send-rich --chat <guid> --reply-to <message-guid> --file <path>` —
   sends a threaded reply with an attachment through the bridge.
 - `imsg send-attachment --chat <guid> --file <path> [--reply-to <message-guid>]` —
@@ -87,6 +89,24 @@ imsg status --json
 Reports whether Messages is running, whether the helper dylib is loaded, and whether the IMCore bridge is responding. Read-only; safe to run on any machine.
 
 When the bridge isn't loaded, `status` prints the reason rather than attempting to fix it. Use `imsg launch` if you want to bring it up.
+
+## Messages Name & Photo
+
+```bash
+imsg name-photo status --chat 'iMessage;-;+15551234567'
+imsg name-photo share --chat 'iMessage;-;+15551234567'
+```
+
+This is Apple Messages' **Share Name & Photo** feature, not a vCard or Contacts
+attachment. `status` is read-only and reports `should_offer`, the same advisory
+eligibility Messages uses for its native prompt. A false value does not prove
+that sharing previously happened.
+
+`share` is a privacy-sensitive mutation: it requests that Messages send your
+personal nickname/photo to every participant in the selected chat. The bridge
+returns `requested: true` only after invoking the version-gated private API; it
+does not claim receiver delivery. Agents must not invoke it without an explicit
+user request and a confirmed destination.
 
 ## Launching Messages with a custom dylib
 
