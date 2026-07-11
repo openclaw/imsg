@@ -14,9 +14,18 @@
 
 ### Advanced IMCore
 - feat: inspect and explicitly share Apple Messages Name & Photo through `imsg name-photo` and compatible contact RPC methods, while fixing bridge nickname lookup to use the current controller and handle APIs (thanks @omarshahine).
+- fix: canonicalize securely staged attachment paths when Messages attachments are relocated through a symlink, and find nested threaded-reply items for edit, unsend, delete, and notify operations.
 
 ### Native Polls
 - fix: match native poll vote envelopes, participant handles, and summary metadata so votes render participant markers and correct notifications (#162, thanks @omarshahine).
+- feat: add selective native poll unvoting through CLI and JSON-RPC while preserving the sender's other selected options (#162, thanks @omarshahine).
+
+### Advanced IMCore
+- feat: add bridge-backed Apple URL preview sends through `send-rich --url` and `send.rich`, with an eight-second out-of-process preparation deadline, capped image decode/staging, and metadata-only fallback (#165, thanks @omarshahine).
+- feat: send standalone or message-attached native stickers through `imsg send-sticker` and `send.sticker`, with bounded image validation and secure staging (#164, thanks @omarshahine).
+
+### JSON-RPC
+- fix: atomically claim bridge RPC inbox files before dispatch so multiple injected consumers cannot deliver one logical send twice (#158).
 
 ## 0.12.3 - 2026-07-06
 

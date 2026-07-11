@@ -208,7 +208,7 @@ Missing rows return `pending` with `status_fields: null`.
 
 These methods require the IMCore bridge and target an existing chat with `chat_id`, `chat_identifier`, or `chat_guid`.
 
-- `send.rich` sends text with optional `effect`, `subject`, `reply_to`, `part_index`, `dd_scan`, and `text_formatting`.
+- `send.rich` sends text with optional `effect`, `subject`, `reply_to`, `part_index`, `dd_scan`, and `text_formatting`. Alternatively, pass only one chat target plus an HTTP(S) `url` to send an Apple URL-preview balloon. URL mode is iMessage-only and rejects text/send modifiers; metadata or image lookup failure falls back to a metadata-only card, never a plain-message send.
 - `send.attachment` sends `file` or `path`, with optional `audio` / `is_audio` / `as_voice`.
 - `tapback` sends or removes a reaction. Params: `message_id` or `message_guid`, plus `reaction` / `kind` / `emoji`, optional `remove`.
 - `message.edit` edits `message_id` / `message_guid` with `text`.
@@ -274,7 +274,44 @@ Response:
 {"ok":true,"event":"imessage.poll.created","guid":"...","message_id":"...","poll":{"kind":"created","event":"imessage.poll.created","question":"Dinner?","options":[{"id":"...","text":"Pizza"},{"id":"...","text":"Sushi"}]}}
 ```
 
+`poll.vote` casts a native vote after validating the poll and option against local history.
+`polls.unvote` removes a selection with the same poll/option parameters:
+
+```json
+{"jsonrpc":"2.0","id":"vote","method":"poll.vote","params":{"chat_id":42,"poll_guid":"POLL-GUID","option_id":"OPTION-UUID"}}
+{"jsonrpc":"2.0","id":"unvote","method":"polls.unvote","params":{"chat_id":42,"poll_guid":"POLL-GUID","option_id":"OPTION-UUID"}}
+```
+
 `messages.poll.send` is accepted as an alias for `poll.send`. The caption echo is deliberately best-effort: if the poll is created but the follow-up caption send fails, the RPC still returns the poll result to avoid retrying and creating a duplicate poll.
+
+### Stickers
+
+`send.sticker` sends a validated image file as a sticker-attributed IMCore
+transfer. The bridge must be injected with `imsg launch`; AppleScript cannot
+preserve sticker attribution. Stickers are iMessage-only. Accepted images are
+PNG/APNG, GIF, or JPEG, at most 500 KiB, 618x618 pixels, 100 frames, and
+25 million total decoded pixels.
+
+Request:
+
+```json
+{"jsonrpc":"2.0","id":"sticker","method":"send.sticker","params":{"chat_id":42,"file":"~/Desktop/sticker.png","attach_to":"MESSAGE_GUID","part_index":0}}
+```
+
+Response:
+
+```json
+{"ok":true,"transfer_guid":"..."}
+```
+
+`guid` and `message_id` are included when Messages exposes the newly queued
+message immediately; treat them as best-effort. `transfer_guid` is returned on
+every successful bridge send.
+
+Use exactly one of `chat_id`, `chat_identifier`, or `chat_guid`. `attach_to`
+accepts a bare message GUID or `p:N/GUID`; `part_index` must agree with an
+embedded part and is invalid without `attach_to`. Unknown parameters and
+non-object params fail with invalid params rather than falling back.
 
 ## Objects
 

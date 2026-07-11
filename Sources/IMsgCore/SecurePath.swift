@@ -35,17 +35,25 @@ public enum SecurePath {
     return path
   }
 
-  /// Returns true if any component of `path` (after tilde expansion and CWD
-  /// resolution for relative paths) is a symbolic link. Final component
-  /// included.
-  public static func hasSymlinkComponent(_ path: String) -> Bool {
+  private static func absoluteExpandedPath(_ path: String) -> String {
     var lexicalPath = (path as NSString).expandingTildeInPath
     if !lexicalPath.hasPrefix("/") {
       lexicalPath =
         (FileManager.default.currentDirectoryPath as NSString)
         .appendingPathComponent(lexicalPath)
     }
-    lexicalPath = normalizingTrustedSystemAliasPrefix(lexicalPath)
+    return lexicalPath
+  }
+
+  static func absoluteLexicalPath(_ path: String) -> String {
+    normalizingTrustedSystemAliasPrefix(absoluteExpandedPath(path))
+  }
+
+  /// Returns true if any component of `path` (after tilde expansion and CWD
+  /// resolution for relative paths) is a symbolic link. Final component
+  /// included.
+  public static func hasSymlinkComponent(_ path: String) -> Bool {
+    let lexicalPath = absoluteLexicalPath(path)
 
     let components = (lexicalPath as NSString).pathComponents
     guard !components.isEmpty else { return false }

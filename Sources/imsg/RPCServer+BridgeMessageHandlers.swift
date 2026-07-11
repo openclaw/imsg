@@ -1,8 +1,17 @@
+import CoreFoundation
 import Foundation
 import IMsgCore
 
 extension RPCServer {
   func handleSendRich(params: [String: Any], id: Any?) async throws {
+    let retiredRichLinkKeys = ["link", "rich_link", "richLink", "rich_link_url"]
+    if let key = retiredRichLinkKeys.first(where: { params.keys.contains($0) }) {
+      throw RPCError.invalidParams("\(key) is not supported; pass url without rich-link modifiers")
+    }
+    if params.keys.contains("url") {
+      try await handleSendRichLink(params: params, id: id)
+      return
+    }
     let chatGUID = try await resolveChatGUIDParam(params)
     let text = stringParam(params["text"]) ?? stringParam(params["message"]) ?? ""
     var bridgeParams: [String: Any] = [
@@ -57,6 +66,120 @@ extension RPCServer {
       result["message_id"] = guid
     }
     respond(id: id, result: result)
+  }
+
+  private func handleSendRichLink(params: [String: Any], id: Any?) async throws {
+    let allowedKeys: Set<String> = ["chat_id", "chat_identifier", "chat_guid", "url"]
+    if let unsupported = params.keys.sorted().first(where: { !allowedKeys.contains($0) }) {
+      throw RPCError.invalidParams("\(unsupported) is not supported with url")
+    }
+    guard let rawURL = params["url"] as? String else {
+      throw RPCError.invalidParams("url must be a string")
+    }
+
+    let chatInfo = try await strictRichLinkChatInfo(params)
+    let chatGUID = chatInfo.guid
+    let status = try await invokeBridge(action: .status, params: [:])
+    guard bridgeSupportsRichLinks(status) else {
+      throw RPCError.internalError(
+        "running bridge does not support rich links; restart Messages with the current imsg bridge"
+      )
+    }
+
+    let prepared: PreparedRichLinkPreview
+    do {
+      prepared = try await prepareRichLink(rawURL)
+    } catch let error as RichLinkPreparationError {
+      throw RPCError.invalidParams(error.localizedDescription)
+    }
+    defer { prepared.removeStagedImage() }
+
+    let sentAt = Date()
+    let data: [String: Any]
+    do {
+      data = try await invokeBridge(
+        action: .sendRichLink,
+        params: [
+          "chatGuid": chatGUID,
+          "message": prepared.originalURL,
+          "partIndex": 0,
+          "ddScan": true,
+          "richLinkPreview": prepared.bridgePayload,
+        ]
+      )
+    } catch {
+      throw error
+    }
+    var result: [String: Any] = ["ok": true]
+    if let queued = data["queued"] as? Bool {
+      result["queued"] = queued
+    }
+    let options = MessageSendOptions(
+      recipient: "",
+      text: prepared.originalURL,
+      service: .imessage,
+      chatGUID: chatGUID
+    )
+    if data["queued"] as? Bool == true,
+      let sentMessage = try? await resolveSentMessage(store, options, chatInfo.id, sentAt),
+      !sentMessage.guid.isEmpty
+    {
+      result["guid"] = sentMessage.guid
+      result["message_id"] = sentMessage.guid
+    } else if data["queued"] as? Bool != true,
+      let guid = data["messageGuid"] as? String, !guid.isEmpty
+    {
+      result["guid"] = guid
+      result["message_id"] = guid
+    }
+    respond(id: id, result: result)
+  }
+
+  private func strictRichLinkChatInfo(_ params: [String: Any]) async throws -> ChatInfo {
+    let targetKeys = ["chat_id", "chat_identifier", "chat_guid"]
+    let supplied = targetKeys.filter { params.keys.contains($0) }
+    guard supplied.count == 1, let key = supplied.first else {
+      throw RPCError.invalidParams(
+        "exactly one of chat_id, chat_identifier, or chat_guid is required")
+    }
+
+    let info: ChatInfo?
+    switch key {
+    case "chat_id":
+      guard
+        let number = params[key] as? NSNumber,
+        CFGetTypeID(number) != CFBooleanGetTypeID(),
+        !["f", "d", "D"].contains(String(cString: number.objCType)),
+        let chatID = Int64(number.stringValue),
+        chatID > 0
+      else {
+        throw RPCError.invalidParams("chat_id must be a positive integer")
+      }
+      info = try await cache.info(chatID: chatID)
+    case "chat_identifier", "chat_guid":
+      guard let target = params[key] as? String, !target.isEmpty else {
+        throw RPCError.invalidParams("\(key) must be a non-empty string")
+      }
+      if key == "chat_identifier" {
+        info = try store.chatInfo(
+          matchingExactIdentifier: target,
+          preferredServices: ["iMessage", "iMessageLite"]
+        )
+      } else {
+        info = try store.chatInfo(matchingExactGUID: target)
+      }
+    default:
+      info = nil
+    }
+
+    guard let info, !info.guid.isEmpty else {
+      throw RPCError.invalidParams("rich links require an existing chat")
+    }
+    let service = info.service.lowercased()
+    guard service == "imessage" || service == "imessagelite" else {
+      throw RPCError.invalidParams("rich links require an iMessage chat")
+    }
+    return info
   }
 
   func handleSendAttachment(params: [String: Any], id: Any?) async throws {
@@ -148,6 +271,14 @@ extension RPCServer {
   }
 
   func handlePollVote(params: [String: Any], id: Any?) async throws {
+    try await handlePollVoteMutation(params: params, id: id, remove: false)
+  }
+
+  func handlePollUnvote(params: [String: Any], id: Any?) async throws {
+    try await handlePollVoteMutation(params: params, id: id, remove: true)
+  }
+
+  private func handlePollVoteMutation(params: [String: Any], id: Any?, remove: Bool) async throws {
     let chatGUID = try await resolveChatGUIDParam(params)
     guard
       let pollGUID = stringParam(
@@ -181,17 +312,29 @@ extension RPCServer {
     if !matchedOption.text.isEmpty {
       bridgeParams["optionText"] = matchedOption.text
     }
+    if remove {
+      let selectedOptionIDs = try store.pollSelectedOptionIDs(guid: pollGUID)
+      guard selectedOptionIDs.contains(optionID) else {
+        throw RPCError.invalidParams("option_id \(optionID) is not currently selected")
+      }
+      bridgeParams["remainingOptionIdentifiers"] = selectedOptionIDs.filter { $0 != optionID }
+    }
 
-    let data = try await invokeBridge(action: .sendPollVote, params: bridgeParams)
+    let data = try await invokeBridge(
+      action: remove ? .sendPollUnvote : .sendPollVote,
+      params: bridgeParams)
     var result: [String: Any] = [
       "ok": true,
-      "event": "imessage.poll.voted",
+      "event": remove ? "imessage.poll.unvoted" : "imessage.poll.voted",
       // Callers use the resolved option to suppress a redundant text reply that
       // just restates the vote, so return it alongside the poll linkage.
       "poll_guid": barePollGuid(pollGUID),
       "option_id": matchedOption.id,
       "option_text": matchedOption.text,
     ]
+    if let remaining = bridgeParams["remainingOptionIdentifiers"] as? [String] {
+      result["remaining_option_ids"] = remaining
+    }
     if let guid = data["messageGuid"] as? String, !guid.isEmpty {
       result["guid"] = guid
       result["message_id"] = guid

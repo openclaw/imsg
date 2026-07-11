@@ -177,7 +177,7 @@ public enum MessagePollDecoder {
 
     let scan = PayloadScan(payloadData: payloadData, summaryData: messageSummaryInfo)
     let facts = PollFacts(objects: scan.objects)
-    let hasPollPayloadEvidence = !facts.votes.isEmpty || scan.hasPollURLHint
+    let hasPollPayloadEvidence = !facts.votes.isEmpty || facts.hasEmptyVotes || scan.hasPollURLHint
     guard isPollBundle || hasPollPayloadEvidence else { return nil }
 
     let metadata = MessagePollMetadata(
@@ -208,7 +208,7 @@ public enum MessagePollDecoder {
     if isVoteAssociation || !votes.isEmpty {
       let pollGUID = firstNonEmpty(facts.pollGUID, originalGUID, messageGUID)
       return MessagePollEvent(
-        kind: votes.isEmpty ? .unknown : .vote,
+        kind: votes.isEmpty && !facts.hasEmptyVotes ? .unknown : .vote,
         pollGUID: pollGUID,
         question: facts.question,
         options: facts.options,
@@ -351,6 +351,7 @@ private struct PollFacts {
   var question: String?
   var options: [MessagePollOption] = []
   var votes: [MessagePollVote] = []
+  var hasEmptyVotes = false
   var pollGUID: String?
   var creator: String?
   var participants: [String] = []
@@ -363,6 +364,7 @@ private struct PollFacts {
     self.question = state.question
     self.options = state.options
     self.votes = state.votes
+    self.hasEmptyVotes = state.hasEmptyVotes
     self.pollGUID = state.pollGUID
     self.creator = state.creator
     self.participants = state.participants
@@ -415,6 +417,8 @@ private struct PollFacts {
       if !parsedVotes.isEmpty {
         state.appendVotes(parsedVotes)
         state.participants.append(contentsOf: parsedVotes.compactMap { $0.participant })
+      } else if hasEmptyVotesArray(in: dict) {
+        state.hasEmptyVotes = true
       }
 
       for child in dict.values {
@@ -481,6 +485,14 @@ private struct PollFacts {
       return [vote]
     }
     return []
+  }
+
+  private static func hasEmptyVotesArray(in dict: [String: Any]) -> Bool {
+    for key in ["votes", "pollVotes", "responses"] {
+      guard let array = arrayValue(dict[key]) else { continue }
+      if array.isEmpty { return true }
+    }
+    return false
   }
 
   private static func vote(from value: Any) -> MessagePollVote? {
@@ -562,6 +574,7 @@ private struct PollFactsState {
   var question: String?
   var options: [MessagePollOption] = []
   var votes: [MessagePollVote] = []
+  var hasEmptyVotes = false
   var pollGUID: String?
   var creator: String?
   var participants: [String] = []

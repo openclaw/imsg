@@ -56,6 +56,8 @@ clang -dynamiclib "${HELPER_CLANG_ARCH_ARGS[@]}" -fobjc-arc \
   -install_name "@rpath/${HELPER_NAME}" \
   -framework Foundation \
   -framework AppKit \
+  -framework ImageIO \
+  -framework LinkPresentation \
   -o "$DIST_DIR/$HELPER_NAME" \
   "$ROOT/Sources/IMsgHelper/IMsgInjected.m"
 

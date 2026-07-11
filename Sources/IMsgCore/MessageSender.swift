@@ -120,15 +120,15 @@ public struct MessageSender {
   }
 
   private static func stageAttachment(at path: String, destinationRoot: URL) throws -> String {
-    let expandedPath = (path as NSString).expandingTildeInPath
-    let sourceURL = URL(fileURLWithPath: expandedPath)
+    let sourcePath = SecurePath.absoluteLexicalPath(path)
+    let sourceURL = URL(fileURLWithPath: sourcePath)
     let fileManager = FileManager.default
-    guard fileManager.fileExists(atPath: sourceURL.path) else {
-      throw IMsgError.appleScriptFailure("Attachment not found at \(sourceURL.path)")
-    }
+    let sourceHandle = try AttachmentSource.openFile(at: sourcePath)
+    defer { try? sourceHandle.close() }
 
     try fileManager.createDirectory(at: destinationRoot, withIntermediateDirectories: true)
-    let attachmentDir = destinationRoot.appendingPathComponent(
+    let canonicalRoot = destinationRoot.resolvingSymlinksInPath()
+    let attachmentDir = canonicalRoot.appendingPathComponent(
       UUID().uuidString,
       isDirectory: true
     )
@@ -137,11 +137,16 @@ public struct MessageSender {
       sourceURL.lastPathComponent,
       isDirectory: false
     )
-    try fileManager.copyItem(at: sourceURL, to: destination)
+    do {
+      try AttachmentSource.copy(sourceHandle, to: destination)
+    } catch {
+      try? fileManager.removeItem(at: destination)
+      throw error
+    }
     return destination.path
   }
 
-  private static func defaultAttachmentsSubdirectory() -> URL {
+  static func defaultAttachmentsSubdirectory() -> URL {
     let fileManager = FileManager.default
     let home = fileManager.homeDirectoryForCurrentUser
     let messagesRoot = home.appendingPathComponent(

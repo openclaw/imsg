@@ -100,6 +100,7 @@ enum SendRichCommand {
             label: "chat", names: [.long("chat")], help: "chat guid (e.g. iMessage;-;+15551234567)"),
           .make(label: "text", names: [.long("text")], help: "message body"),
           .make(label: "file", names: [.long("file")], help: "path to attachment"),
+          .make(label: "url", names: [.long("url")], help: "URL to send as a rich link preview"),
           .make(
             label: "effect", names: [.long("effect")],
             help: "expressive send id (impact, loud, gentle, invisibleink, confetti, …)"),
@@ -126,6 +127,7 @@ enum SendRichCommand {
       "imsg send-rich --chat 'iMessage;-;+15551234567' --reply-to ABCD --file ~/Desktop/pic.jpg",
       "imsg send-rich --chat 'iMessage;-;+15551234567' --text 'BOOM' --effect impact",
       "imsg send-rich --chat 'iMessage;-;+15551234567' --text 'pew pew' --effect lasers",
+      "imsg send-rich --chat 'iMessage;-;+15551234567' --url https://imsg.sh",
       "imsg send-rich --chat ... --text 'hello world' --format '[{\"start\":0,\"length\":5,\"styles\":[\"bold\"]}]'",
     ]
   ) { values, runtime in
@@ -148,19 +150,44 @@ enum SendRichCommand {
       ) async throws -> Message? = SentMessageVerifier.resolveSentMessage,
     storeFactory: @escaping (String) throws -> MessageStore = { try MessageStore(path: $0) },
     stageAttachment: @escaping (String) throws -> String = MessageSender
-      .stageAttachmentForMessagesApp
+      .stageAttachmentForMessagesApp,
+    prepareRichLink: @escaping RichLinkPrepare = { rawURL in
+      try await RichLinkPreparer.prepare(rawURL)
+    }
   ) async throws {
     guard let chat = values.option("chat"), !chat.isEmpty else {
       throw ParsedValuesError.missingOption("chat")
     }
     let text = values.option("text") ?? ""
     let file = values.option("file") ?? ""
+    let richLinkURL = values.option("url")
+    let preparedRichLink: PreparedRichLinkPreview?
+    if let richLinkURL {
+      try validateRichLinkOptions(values: values, chat: chat)
+      try validateRichLinkChat(
+        chat,
+        dbPath: values.option("db") ?? MessageStore.defaultPath,
+        storeFactory: storeFactory
+      )
+      let status = try await invokeBridge(.status, [:])
+      guard bridgeSupportsRichLinks(status) else {
+        throw RichLinkPreparationError.unsupportedBridge
+      }
+      preparedRichLink = try await prepareRichLink(richLinkURL)
+    } else {
+      preparedRichLink = nil
+    }
+    defer { preparedRichLink?.removeStagedImage() }
+    let effectiveText = preparedRichLink?.originalURL ?? text
     var params: [String: Any] = [
       "chatGuid": chat,
-      "message": text,
-      "partIndex": Int(values.option("part") ?? "0") ?? 0,
-      "ddScan": !values.flag("noDDScan"),
+      "message": effectiveText,
+      "partIndex": preparedRichLink == nil ? Int(values.option("part") ?? "0") ?? 0 : 0,
+      "ddScan": preparedRichLink == nil ? !values.flag("noDDScan") : true,
     ]
+    if let preparedRichLink {
+      params["richLinkPreview"] = preparedRichLink.bridgePayload
+    }
     if let effect = values.option("effect"), !effect.isEmpty {
       params["effectId"] = ExpressiveSendEffect.expand(effect)
     }
@@ -208,11 +235,12 @@ enum SendRichCommand {
 
     do {
       let sentAt = Date()
-      let data = try await invokeBridge(.sendMessage, params)
+      let action: BridgeAction = preparedRichLink == nil ? .sendMessage : .sendRichLink
+      let data = try await invokeBridge(action, params)
       let enriched = try await enrichedSentMessageResponse(
         data,
         chat: chat,
-        text: text,
+        text: effectiveText,
         dbPath: values.option("db") ?? MessageStore.defaultPath,
         sentAt: sentAt,
         resolveSentMessage: resolveSentMessage,
@@ -227,54 +255,6 @@ enum SendRichCommand {
     }
   }
 
-  private static func enrichedSentMessageResponse(
-    _ data: [String: Any],
-    chat: String,
-    text: String,
-    dbPath: String,
-    sentAt: Date,
-    resolveSentMessage:
-      @escaping (
-        MessageStore,
-        MessageSendOptions,
-        Int64?,
-        Date
-      ) async throws -> Message?,
-    storeFactory: (String) throws -> MessageStore
-  ) async throws -> [String: Any] {
-    var enriched = data
-    guard !text.isEmpty, data["queued"] as? Bool == true else {
-      return enriched
-    }
-
-    do {
-      let store = try storeFactory(dbPath)
-      let chatInfo = try store.chatInfo(matchingTarget: chat)
-      let resolvedChatGUID = chatInfo?.guid ?? ""
-      let options = MessageSendOptions(
-        recipient: "",
-        text: text,
-        service: .auto,
-        chatIdentifier: chatInfo?.identifier ?? "",
-        chatGUID: resolvedChatGUID.isEmpty ? chat : resolvedChatGUID
-      )
-      if let sentMessage = try await resolveSentMessage(store, options, chatInfo?.id, sentAt) {
-        enriched["id"] = sentMessage.rowID
-        if !sentMessage.guid.isEmpty {
-          enriched["guid"] = sentMessage.guid
-          enriched["message_id"] = sentMessage.guid
-          enriched["messageGuid"] = sentMessage.guid
-        }
-      } else if data["queued"] as? Bool == true {
-        enriched.removeValue(forKey: "messageGuid")
-      }
-    } catch {
-      if data["queued"] as? Bool == true {
-        enriched.removeValue(forKey: "messageGuid")
-      }
-    }
-    return enriched
-  }
 }
 
 // MARK: - send-multipart

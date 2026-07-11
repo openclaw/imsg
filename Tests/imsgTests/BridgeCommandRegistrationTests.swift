@@ -12,7 +12,7 @@ import Testing
 func commandRouterIncludesAllBridgeCommands() {
   let router = CommandRouter()
   let expected: [String] = [
-    "send-rich", "send-multipart", "send-attachment", "tapback",
+    "send-rich", "send-multipart", "send-attachment", "send-sticker", "tapback",
     "poll", "edit", "unsend", "delete-message", "notify-anyways",
     "chat-create", "chat-name", "chat-photo",
     "chat-add-member", "chat-remove-member",
@@ -40,6 +40,7 @@ func bridgeMessagingCommandsExposeChatRequirement() async {
     ("unsend", ["--message", "message-guid"]),
     ("delete-message", ["--message", "message-guid"]),
     ("tapback", ["--message", "message-guid", "--kind", "love"]),
+    ("send-sticker", ["--file", "~/Desktop/sticker.png"]),
   ]
   for testCase in cases {
     let (output, status) = await StdoutCapture.capture {
@@ -51,7 +52,7 @@ func bridgeMessagingCommandsExposeChatRequirement() async {
 }
 
 @Test
-func bridgeAttachmentStagingUsesChatGuid() throws {
+func injectedHelperHardensRichLinkImageTransfer() throws {
   let testFile = URL(fileURLWithPath: #filePath)
   let repoRoot =
     testFile
@@ -60,28 +61,134 @@ func bridgeAttachmentStagingUsesChatGuid() throws {
     .deletingLastPathComponent()
   let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
   let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
-  let prepareBody = try #require(
-    functionBody(
-      named: "prepareOutgoingTransfer",
-      in: source
-    ))
-  let sendAttachmentBody = try #require(
-    functionBody(
-      named: "handleSendAttachment",
-      in: source
-    ))
+  let sendBody = try #require(functionBody(named: "handleSendMessage", in: source))
+  let dispatchBody = try #require(functionBody(named: "dispatchAction", in: source))
+  let actualHomeBody = try #require(
+    functionBody(named: "richLinkActualUserHomeDirectory", in: source))
+  let trustedRootBody = try #require(
+    functionBody(named: "trustedRichLinkStagingRoot", in: source))
+  let secureOpenBody = try #require(
+    functionBody(named: "openRichLinkDirectorySecurely", in: source))
+  let readBody = try #require(functionBody(named: "readRichLinkPreviewData", in: source))
+  let validateBody = try #require(
+    functionBody(named: "validateRichLinkPreviewImage", in: source))
+  let snapshotBody = try #require(
+    functionBody(named: "writeRichLinkPreviewSnapshot", in: source))
+  let unregisteredBody = try #require(
+    functionBody(named: "prepareUnregisteredOutgoingTransfer", in: source))
 
+  // Messages.app's sandbox home differs from the login user's home. Resolve
+  // the staging root from the uid, verify that trusted root, then walk only
+  // descendant directories without following symlinks before opening the image.
+  #expect(actualHomeBody.contains("getpwuid(getuid())"))
+  #expect(actualHomeBody.contains("entry->pw_dir"))
+  #expect(trustedRootBody.contains("richLinkActualUserHomeDirectory()"))
+  #expect(trustedRootBody.contains("Library/Messages/Attachments/imsg"))
+  #expect(secureOpenBody.contains("trustedRichLinkStagingRoot()"))
+  #expect(secureOpenBody.contains("rootStat.st_uid != getuid()"))
+  #expect(secureOpenBody.contains("rootStat.st_mode & S_IWOTH"))
+  #expect(secureOpenBody.contains("substringFromIndex:rootPrefix.length"))
+  #expect(secureOpenBody.contains("openat(directoryFD"))
+  #expect(secureOpenBody.contains("O_DIRECTORY | O_NOFOLLOW"))
+  #expect(readBody.contains("openat(directoryFD"))
+  #expect(readBody.contains("O_RDONLY | O_CLOEXEC | O_NOFOLLOW"))
+  #expect(readBody.contains("fstat(fd, &before)"))
+  #expect(readBody.contains("after.st_ino != before.st_ino"))
+
+  // The descriptor is bound to the bytes and decoded shape. The helper then
+  // snapshots those verified bytes into a private, exclusive file so the
+  // eventual IMFileTransfer cannot be retargeted by replacing the input path.
+  #expect(validateBody.contains(#"@"contentHash""#))
+  #expect(validateBody.contains("richLinkSHA256(data)"))
+  #expect(validateBody.contains("CGImageSourceGetCount(source) != 1"))
+  let metadataCheck = try #require(validateBody.range(of: "if (!typeMatches || !properties"))
+  let decode = try #require(validateBody.range(of: "CGImageSourceCreateImageAtIndex"))
+  #expect(metadataCheck.lowerBound < decode.lowerBound)
+  #expect(validateBody.contains("writeRichLinkPreviewSnapshot(data, contentHash"))
+  #expect(snapshotBody.contains("mkdirat(rootFD, \"rich-links\", 0700)"))
+  #expect(snapshotBody.contains("O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600"))
+
+  // Construct the balloon before registering its hidden transfer. This keeps
+  // failed archive/KVC construction from orphaning a daemon transfer.
+  let prepare = try #require(
+    sendBody.range(of: "prepareUnregisteredOutgoingTransfer(previewFile"))
+  let construct = try #require(
+    sendBody.range(of: "buildBalloonIMMessage(urlPreviewBalloonBundleIdentifier()"))
+  let register = try #require(
+    sendBody.range(of: "registerPreparedTransfer(richLinkTransfer"))
+  #expect(prepare.lowerBound < construct.lowerBound)
+  #expect(construct.lowerBound < register.lowerBound)
+  #expect(unregisteredBody.contains("IMsgOutgoingTransferKindRichLinkPreview"))
+  #expect(unregisteredBody.contains("prepareOutgoingTransfer(originalURL"))
+
+  // URL previews have their own bridge action. Generic send-message rejects a
+  // smuggled descriptor, while send-rich-link requires one before entering the
+  // shared, strictly validated message builder.
+  #expect(dispatchBody.contains(#"[action isEqualToString:@"send-message"]"#))
   #expect(
-    source.range(
-      of: #"prepareOutgoingTransfer\s*\([^)]*NSString\s*\*chatGuid\s*,\s*NSString\s*\*\*outErr\)"#,
-      options: .regularExpression
-    ) != nil)
+    dispatchBody.contains(
+      #"if (params[@"richLinkPreview"] || params[@"richLinkURL"])"#))
+  #expect(dispatchBody.contains(#"@"Use send-rich-link for URL previews""#))
+  #expect(dispatchBody.contains(#"[action isEqualToString:@"send-rich-link"]"#))
   #expect(
-    prepareBody.contains(
-      "_persistentPathForTransfer:filename:highQuality:chatGUID:storeAtExternalPath:"))
-  #expect(prepareBody.contains("[inv setArgument:&cg atIndex:5];"))
-  #expect(
-    sendAttachmentBody.contains("prepareOutgoingTransfer(fileURL, filename, chatGuid, &prepErr)"))
+    dispatchBody.contains(
+      #"![params[@"richLinkPreview"] isKindOfClass:[NSDictionary class]]"#))
+  #expect(dispatchBody.contains(#"@"Missing rich-link descriptor""#))
+  #expect(dispatchBody.components(separatedBy: "return handleSendMessage").count == 3)
+
+  // Rich-link preparation must not synchronously invoke the private data
+  // detector controller on Messages' main loop.
+  #expect(!source.contains("IMDDController"))
+  #expect(!source.contains("scanOutgoingMessageForDataDetectors"))
+  #expect(!source.contains("waitUntilDone:YES"))
+}
+
+@Test
+func injectedHelperFindsNestedThreadReplyItems() throws {
+  let testFile = URL(fileURLWithPath: #filePath)
+  let repoRoot =
+    testFile
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
+  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
+  let recursiveBody = try #require(
+    functionBody(named: "findMessageItemInObject", in: source)
+  )
+  let normalizationBody = try #require(
+    functionBody(named: "normalizeFoundMessageItemWithChatContext", in: source)
+  )
+  let safeSelectorBody = try #require(
+    functionBody(named: "safelyReadObjectSelector", in: source)
+  )
+  let lookupBody = try #require(
+    functionBody(named: "findMessageItem", in: source)
+  )
+  let loadBody = try #require(
+    functionBody(named: "loadParentChatItem", in: source)
+  )
+
+  #expect(recursiveBody.contains("depth > 8"))
+  #expect(recursiveBody.contains("valueWithNonretainedObject"))
+  #expect(recursiveBody.contains("normalizeFoundMessageItem(object)"))
+  #expect(recursiveBody.contains(#"@"_newChatItems""#))
+  #expect(recursiveBody.contains(#"@"_item""#))
+  #expect(recursiveBody.contains(#"@"messageItem""#))
+  #expect(normalizationBody.contains("@selector(_imMessageItem)"))
+  #expect(normalizationBody.contains("@selector(_newChatItems)"))
+  #expect(normalizationBody.contains("isKindOfClass:partClass"))
+  #expect(source.contains("_newChatItemsWithChatContext:"))
+  #expect(source.contains("_newMessagePartsForMessageItem:chatContext:"))
+  #expect(source.contains("findMessagePartInObject"))
+  #expect(source.contains("findMessagePart(chat, messageGuid, partIndex)"))
+  #expect(source.contains("if ([(IMMessagePartChatItem *)object index] == partIndex)"))
+  #expect(lookupBody.contains("chatContextForPinnedChat:"))
+  #expect(lookupBody.contains("normalizeFoundMessageItemWithChatContext"))
+  #expect(safeSelectorBody.contains("@catch"))
+  #expect(recursiveBody.contains("safelyReadObjectSelector"))
+  #expect(loadBody.contains("normalizeFoundMessageItem(parent)"))
+  #expect(lookupBody.contains("findMessageItemInObject"))
 }
 
 @Test
@@ -104,6 +211,37 @@ func bridgeReplySendsKeepAssociatedMessageFallback() throws {
 }
 
 @Test
+func bridgeV2InboxClaimsRequestBeforeDispatch() throws {
+  let testFile = URL(fileURLWithPath: #filePath)
+  let repoRoot =
+    testFile
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
+  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
+  let processBody = try #require(functionBody(named: "processV2InboxFile", in: source))
+  let cleanupBody = try #require(functionBody(named: "cleanupOrphanedV2Claims", in: source))
+  let scanBody = try #require(functionBody(named: "scanV2Inbox", in: source))
+  let claim = try #require(
+    processBody.range(of: "rename(inPath.UTF8String, claimPath.UTF8String)"))
+  let read = try #require(
+    processBody.range(of: "dataWithContentsOfFile:claimPath"))
+  let dispatch = try #require(processBody.range(of: "processV2Envelope(envelope)"))
+
+  #expect(processBody.contains(#"@"%@.processing.%d""#))
+  #expect(processBody.contains("claimErrno != ENOENT"))
+  #expect(processBody.contains("removeItemAtPath:claimPath"))
+  #expect(!processBody.contains("processedRpcIds"))
+  #expect(claim.lowerBound < read.lowerBound)
+  #expect(read.lowerBound < dispatch.lowerBound)
+  #expect(cleanupBody.contains("kill(ownerPID, 0)"))
+  #expect(cleanupBody.contains("kV2ClaimMaxAge"))
+  #expect(cleanupBody.contains("removeItemAtPath:path"))
+  #expect(scanBody.contains("cleanupOrphanedV2Claims(entries)"))
+}
+
+@Test
 func injectedHelperWiresNativePollSend() throws {
   let testFile = URL(fileURLWithPath: #filePath)
   let repoRoot =
@@ -114,6 +252,7 @@ func injectedHelperWiresNativePollSend() throws {
   let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
   let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
   let sendPollBody = try #require(functionBody(named: "handleSendPoll", in: source))
+  let buildPollBody = try #require(functionBody(named: "buildPollIMMessage", in: source))
 
   #expect(source.contains("send-poll"))
   #expect(source.contains("com.apple.messages.Polls"))
@@ -127,6 +266,8 @@ func injectedHelperWiresNativePollSend() throws {
   #expect(source.contains("pollPreviewImageData"))
   #expect(sendPollBody.contains("buildPollCreationPayloadData"))
   #expect(sendPollBody.contains("buildPollIMMessage"))
+  #expect(buildPollBody.contains("buildBalloonIMMessage(pollsBalloonBundleIdentifier()"))
+  #expect(buildPollBody.contains("@[]"))
   #expect(sendPollBody.contains("pollPayloadMessageInitializerAvailable()"))
   #expect(!sendPollBody.contains(#"selectedMessageGuid.length ? @"" : question"#))
   #expect(sendPollBody.contains("buildPollCreationPayloadData(question,"))
@@ -143,10 +284,11 @@ func injectedHelperWiresNativePollSend() throws {
     sendPollBody.contains(
       "dispatchIMMessageInChat(chat, imMessage, threadIdentifier, parentItem)"
     ))
-  #expect(
-    source.contains(
-      "initWithSender:time:text:messageSubject:fileTransferGUIDs:flags:error:guid:subject:balloonBundleID:payloadData:expressiveSendStyleID:threadIdentifier:scheduleType:scheduleState:messageSummaryInfo:"
-    ))
+  let modernMessageInitializer =
+    "initWithSender:time:text:messageSubject:fileTransferGUIDs:flags:error:guid:subject:"
+    + "balloonBundleID:payloadData:expressiveSendStyleID:threadIdentifier:scheduleType:"
+    + "scheduleState:messageSummaryInfo:"
+  #expect(source.contains(modernMessageInitializer))
 }
 
 @Test
@@ -160,17 +302,23 @@ func injectedHelperBroadcastsFailClosedNativePollVoteMetadata() throws {
   let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
   let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
   let voteBody = try #require(functionBody(named: "buildPollVoteIMMessage", in: source))
-  let sendVoteBody = try #require(functionBody(named: "handleSendPollVote", in: source))
+  let sendVoteBody = try #require(
+    functionBody(named: "handleSendPollVoteMutation", in: source))
 
   #expect(source.contains("send-poll-vote"))
+  #expect(source.contains("send-poll-unvote"))
   #expect(source.contains("Poll vote payload exceeds 4096 bytes"))
   #expect(source.contains(#"@"pollVoteMessage": @(pollVoteMessageInitializerAvailable())"#))
   #expect(sendVoteBody.contains("pollVoteMessageInitializerAvailable()"))
   #expect(!sendVoteBody.contains("pollPayloadMessageInitializerAvailable()"))
   #expect(source.contains("archivePollMutationEnvelope"))
   #expect(source.contains("pollParticipantHandle(voterHandle)"))
+  #expect(source.contains("remainingOptionIdentifiers"))
   #expect(source.contains(#"@"ams": @"Sent a vote""#))
   #expect(source.contains(#"@"amb": pollsBalloonBundleIdentifier()"#))
+  #expect(!source.contains(#"vote[@"eventType"] = @"removed""#))
+  #expect(!source.contains(#"vote[@"removed"] = @YES"#))
+  #expect(!source.contains("send-poll-add-option"))
   #expect(voteBody.contains("associatedMessageType"))
   #expect(voteBody.contains("BOOL balloonStamped = NO;"))
   #expect(voteBody.contains("BOOL payloadStamped = NO;"))
@@ -216,6 +364,9 @@ func injectedHelperConstructorOnlySchedulesDelayedBootstrap() throws {
   let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
   let constructorBody = try #require(functionBody(named: "injectedInit", in: source))
   let bootstrapBody = try #require(functionBody(named: "bridgeBootstrap", in: source))
+  let cleanupBody = try #require(functionBody(named: "injectedCleanup", in: source))
+  let bundleGuard = try #require(bootstrapBody.range(of: "com.apple.MobileSMS"))
+  let initializePaths = try #require(bootstrapBody.range(of: "initFilePaths()"))
 
   #expect(constructorBody.contains("dispatch_after"))
   #expect(constructorBody.contains("dispatch_async"))
@@ -229,10 +380,13 @@ func injectedHelperConstructorOnlySchedulesDelayedBootstrap() throws {
 
   #expect(bootstrapBody.contains("dispatch_once"))
   #expect(bootstrapBody.contains("@autoreleasepool"))
+  #expect(bundleGuard.lowerBound < initializePaths.lowerBound)
+  #expect(bootstrapBody.contains("bridgeDidBootstrap = YES"))
   #expect(bootstrapBody.contains("connectToDaemon"))
   #expect(bootstrapBody.contains("startFileWatcher()"))
   #expect(bootstrapBody.contains("startV2InboxWatcher()"))
   #expect(bootstrapBody.contains("registerEventObservers()"))
+  #expect(cleanupBody.contains("if (!bridgeDidBootstrap) return;"))
 }
 
 private func stripObjectiveCComments(_ source: String) -> String {
@@ -242,23 +396,58 @@ private func stripObjectiveCComments(_ source: String) -> String {
 }
 
 private func functionBody(named name: String, in source: String) -> String? {
-  guard let nameRange = source.range(of: name),
-    let openBrace = source[nameRange.upperBound...].firstIndex(of: "{")
-  else {
-    return nil
-  }
-  var depth = 0
-  var index = openBrace
-  while index < source.endIndex {
-    if source[index] == "{" {
-      depth += 1
-    } else if source[index] == "}" {
-      depth -= 1
-      if depth == 0 {
-        return String(source[openBrace...index])
-      }
+  var searchStart = source.startIndex
+  while searchStart < source.endIndex,
+    let nameRange = source.range(
+      of: name,
+      range: searchStart..<source.endIndex)
+  {
+    searchStart = nameRange.upperBound
+    guard let openParenthesis = source[nameRange.upperBound...].firstIndex(of: "(") else {
+      return nil
     }
-    index = source.index(after: index)
+    guard source[nameRange.upperBound..<openParenthesis].allSatisfy(\.isWhitespace) else {
+      continue
+    }
+
+    var parenthesisDepth = 0
+    var index = openParenthesis
+    var closeParenthesis: String.Index?
+    while index < source.endIndex {
+      if source[index] == "(" {
+        parenthesisDepth += 1
+      } else if source[index] == ")" {
+        parenthesisDepth -= 1
+        if parenthesisDepth == 0 {
+          closeParenthesis = index
+          break
+        }
+      }
+      index = source.index(after: index)
+    }
+    guard let closeParenthesis else { return nil }
+
+    index = source.index(after: closeParenthesis)
+    while index < source.endIndex, source[index].isWhitespace {
+      index = source.index(after: index)
+    }
+    guard index < source.endIndex, source[index] == "{" else {
+      continue
+    }
+
+    let openBrace = index
+    var braceDepth = 0
+    while index < source.endIndex {
+      if source[index] == "{" {
+        braceDepth += 1
+      } else if source[index] == "}" {
+        braceDepth -= 1
+        if braceDepth == 0 {
+          return String(source[openBrace...index])
+        }
+      }
+      index = source.index(after: index)
+    }
   }
   return nil
 }

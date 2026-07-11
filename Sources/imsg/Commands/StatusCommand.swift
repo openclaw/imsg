@@ -3,6 +3,13 @@ import Foundation
 import IMsgCore
 
 enum StatusCommand {
+  static func availableBridgeSendCommands(selectors: [String: Bool]) -> [String] {
+    var commands = ["send-rich", "send-multipart", "send-attachment"]
+    if selectors["stickerSend"] == true { commands.append("send-sticker") }
+    commands.append("tapback")
+    return commands
+  }
+
   static let spec = CommandSpec(
     name: "status",
     abstract: "Check availability of imsg advanced features",
@@ -92,7 +99,8 @@ enum StatusCommand {
         }
         StdoutWriter.writeLine("")
         StdoutWriter.writeLine("Available bridge commands:")
-        StdoutWriter.writeLine("  Send: imsg send-rich, send-multipart, send-attachment, tapback")
+        let sendCommands = availableBridgeSendCommands(selectors: selectors)
+        StdoutWriter.writeLine("  Send: imsg \(sendCommands.joined(separator: ", "))")
         StdoutWriter.writeLine("  Mutate: imsg edit, unsend, delete-message, notify-anyways")
         StdoutWriter.writeLine(
           "  Chat: imsg chat-create, chat-name, chat-photo, chat-add/remove-member, chat-leave/delete, chat-mark"

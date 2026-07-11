@@ -14,6 +14,7 @@ typealias BridgeInvoker = (
 ) async throws -> [String: Any]
 
 typealias AttachmentStager = (_ path: String) throws -> String
+typealias StickerStager = (_ path: String) throws -> PreparedStickerAsset
 
 protocol RPCOutput: Sendable {
   func sendResponse(id: Any, result: Any)
@@ -38,11 +39,15 @@ let kSupportedRPCMethods: [String] = [
   "send",
   "send.rich",
   "send.attachment",
+  "send.sticker",
   "messages.scheduled",
   "poll.send",
   "messages.poll.send",
   "poll.vote",
   "messages.poll.vote",
+  "poll.unvote",
+  "polls.unvote",
+  "messages.poll.unvote",
   "tapback",
   "typing",
   "read",
@@ -72,6 +77,8 @@ final class RPCServer {
   let resolveSentMessage: SentMessageResolver
   let bridgeInvoker: BridgeInvoker
   let stageAttachment: AttachmentStager
+  let stageSticker: StickerStager
+  let prepareRichLink: RichLinkPrepare
   let isBridgeReady: () -> Bool
   let startTyping: (String) throws -> Void
   let stopTyping: (String) throws -> Void
@@ -87,6 +94,12 @@ final class RPCServer {
       try await IMsgBridgeClient.shared.invoke(action: action, params: params)
     },
     stageAttachment: @escaping AttachmentStager = MessageSender.stageAttachmentForMessagesApp,
+    stageSticker: @escaping StickerStager = {
+      try StickerAssetPreparer.prepare(at: $0)
+    },
+    prepareRichLink: @escaping RichLinkPrepare = { rawURL in
+      try await RichLinkPreparer.prepare(rawURL)
+    },
     isBridgeReady: @escaping () -> Bool = { IMsgBridgeClient.shared.isReady() },
     startTyping: @escaping (String) throws -> Void = {
       try TypingIndicator.startTyping(chatIdentifier: $0)
@@ -105,6 +118,8 @@ final class RPCServer {
     self.resolveSentMessage = resolveSentMessage
     self.bridgeInvoker = invokeBridge
     self.stageAttachment = stageAttachment
+    self.stageSticker = stageSticker
+    self.prepareRichLink = prepareRichLink
     self.isBridgeReady = isBridgeReady
     self.startTyping = startTyping
     self.stopTyping = stopTyping
@@ -163,6 +178,11 @@ final class RPCServer {
         try await handleSendRich(params: params, id: id)
       case "send.attachment":
         try await handleSendAttachment(params: params, id: id)
+      case "send.sticker":
+        guard request.paramsAreNamed else {
+          throw RPCError.invalidParams("send.sticker params must be an object")
+        }
+        try await handleSendSticker(params: params, id: id)
       case "messages.scheduled":
         guard request.paramsAreNamed else {
           throw RPCError.invalidParams("messages.scheduled params must be an object")
@@ -172,6 +192,8 @@ final class RPCServer {
         try await handlePollSend(params: params, id: id)
       case "poll.vote", "messages.poll.vote":
         try await handlePollVote(params: params, id: id)
+      case "poll.unvote", "polls.unvote", "messages.poll.unvote":
+        try await handlePollUnvote(params: params, id: id)
       case "tapback":
         try await handleTapback(params: params, id: id)
       case "typing":

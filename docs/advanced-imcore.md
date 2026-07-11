@@ -19,9 +19,24 @@ You almost certainly do not need any of this for normal use.
   eligibility or explicitly share your Messages Name & Photo with a chat.
 - `imsg send-rich --chat <guid> --reply-to <message-guid> --file <path>` —
   sends a threaded reply with an attachment through the bridge.
+- `imsg send-rich --chat <guid> --url <url>` — sends an Apple URL
+  preview balloon through the bridge. URL mode is iMessage-only and does not
+  combine with text, files, effects, subjects, replies, or formatting.
 - `imsg send-attachment --chat <guid> --file <path> [--reply-to <message-guid>]` —
   prefers the bridge for private attachment sends, with AppleScript fallback
   for normal files when no reply target is requested.
+- `imsg send-sticker --chat <guid> --file <path> [--attach-to <message-guid>]
+  [--target-part <index>]` — sends a validated sticker-attributed image transfer
+  through the bridge.
+- `imsg poll send|vote|unvote ...` — create native Polls balloons and cast or
+  remove selections.
+
+Rich-link metadata and preview images are fetched from the local Mac by the
+`imsg` process before the bridge request; the injected Messages helper performs
+no network access. Preparation has one eight-second deadline, and accepted image
+decode/staging is capped at 2 MiB, 4096×4096, and 16 megapixels. Lookup failure
+degrades to a metadata-only card. If the bridge cannot construct the card, the
+command fails without sending the URL as a plain message.
 
 ## Why they're separate
 
@@ -133,3 +148,13 @@ complete without a running bridge for normal file attachments: it stages the
 file under Messages' attachments directory, tries the dylib path first, then
 falls back to AppleScript. `--audio` remains bridge-only because AppleScript
 cannot preserve the private audio-message flag.
+
+`send-sticker` is always bridge-only and iMessage-only. It accepts PNG/APNG,
+GIF, and JPEG images up to 500 KiB, 618x618 pixels, 100 frames, and 25 million
+total decoded pixels. It reads every frame without following symlinks and
+stages a private snapshot under Messages' attachments directory. Content
+bytes—not the filename—define sticker identity. `--attach-to`
+optionally associates the sticker with an exact bubble part; `--target-part`
+defaults to `0` and is invalid without a target. Check `imsg status --json`:
+standalone sends require `selectors.stickerSend`, while attached stickers also
+require `selectors.stickerAttach`.
