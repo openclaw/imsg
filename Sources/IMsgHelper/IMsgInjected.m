@@ -6201,6 +6201,11 @@ static NSDictionary *handleShouldOfferNicknameSharing(NSInteger requestId,
     }
     IMChat *chat = resolveChatByGuid(chatGuid);
     if (!chat) return errorResponse(requestId, @"Chat not found");
+    NSString *observedService = serviceNameForChat(chat, chatGuid);
+    if (![observedService isEqualToString:@"iMessage"]
+        && ![observedService isEqualToString:@"iMessageLite"]) {
+        return errorResponse(requestId, @"Name & Photo sharing requires an iMessage chat");
+    }
 
     Class nnClass = NSClassFromString(@"IMNicknameController");
     NSDictionary *capabilities = nicknameSharingSelectorStatus();
@@ -6256,6 +6261,11 @@ static NSDictionary *handleShareNickname(NSInteger requestId, NSDictionary *para
     }
     IMChat *chat = resolveChatByGuid(chatGuid);
     if (!chat) return errorResponse(requestId, @"Chat not found");
+    NSString *observedService = serviceNameForChat(chat, chatGuid);
+    if (![observedService isEqualToString:@"iMessage"]
+        && ![observedService isEqualToString:@"iMessageLite"]) {
+        return errorResponse(requestId, @"Name & Photo sharing requires an iMessage chat");
+    }
 
     NSArray *participants = [chat respondsToSelector:@selector(participants)]
         ? ((id (*)(id, SEL))objc_msgSend)(chat, @selector(participants))
