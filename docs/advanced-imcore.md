@@ -119,7 +119,9 @@ that sharing previously happened.
 
 `share` is a privacy-sensitive mutation: it requests that Messages send your
 personal nickname/photo to every participant in the selected chat. The bridge
-returns `requested: true` only after invoking the version-gated private API; it
+reports `has_personal_nickname: false` and refuses the share when Messages has
+no personal Name & Photo configured, instead of claiming that it sent one. The
+bridge returns `requested: true` only after invoking the version-gated private API; it
 does not claim receiver delivery. Agents must not invoke it without an explicit
 user request and a confirmed destination.
 

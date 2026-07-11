@@ -478,6 +478,8 @@ static NSAttributedString *annotateBodyForRichLink(NSAttributedString *body,
 
 @interface IMNicknameController : NSObject
 + (instancetype)sharedInstance;
+- (id)personalNickname;
+- (BOOL)isInitialLoadComplete;
 - (id)nicknameForHandle:(IMHandle *)handle;
 - (BOOL)shouldOfferNicknameSharingForChat:(IMChat *)chat;
 - (void)allowHandlesForNicknameSharing:(NSArray *)handles
@@ -6090,6 +6092,23 @@ static id sharedNicknameController(void) {
     return ((id (*)(id, SEL))objc_msgSend)(nnClass, sharedSelector);
 }
 
+static BOOL waitForNicknameControllerLoad(id controller, NSTimeInterval timeout) {
+    SEL loadedSelector = @selector(isInitialLoadComplete);
+    if (![controller respondsToSelector:loadedSelector]) return YES;
+
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:timeout];
+    while (!((BOOL (*)(id, SEL))objc_msgSend)(controller, loadedSelector)) {
+        if ([deadline timeIntervalSinceNow] <= 0) return NO;
+        NSDate *nextCheck = [NSDate dateWithTimeIntervalSinceNow:0.05];
+        if ([NSThread isMainThread]) {
+            [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:nextCheck];
+        } else {
+            [NSThread sleepForTimeInterval:0.05];
+        }
+    }
+    return YES;
+}
+
 static NSString *nicknameSharingMutationSelectorName(Class nnClass) {
     if (!nnClass) return nil;
     NSString *selectorName =
@@ -6223,8 +6242,12 @@ static NSDictionary *handleShouldOfferNicknameSharing(NSInteger requestId,
         : @[];
     NSString *senderSource = nil;
     NSString *senderHandleID = nicknameSenderHandleID(chat, &senderSource);
-    BOOL canInspectOffer = [capabilities[@"should_offer"] boolValue] && controller != nil;
+    BOOL controllerLoaded = controller != nil && waitForNicknameControllerLoad(controller, 1.0);
+    BOOL canInspectOffer = [capabilities[@"should_offer"] boolValue] && controllerLoaded;
     BOOL canShare = [capabilities[@"share"] boolValue] && controller != nil;
+    BOOL hasPersonalNickname = controllerLoaded
+        && [controller respondsToSelector:@selector(personalNickname)]
+        && ((id (*)(id, SEL))objc_msgSend)(controller, @selector(personalNickname)) != nil;
     id shouldOffer = [NSNull null];
     if (canInspectOffer) {
         @try {
@@ -6239,12 +6262,15 @@ static NSDictionary *handleShouldOfferNicknameSharing(NSInteger requestId,
     }
 
     NSString *shareSelector = nicknameSharingMutationSelectorName(nnClass);
-    BOOL available = canShare && participants.count > 0 && senderHandleID.length > 0;
+    BOOL available = canShare && hasPersonalNickname && participants.count > 0
+        && senderHandleID.length > 0;
     return successResponse(requestId, @{
         @"chatGuid": chatGuid,
         @"available": @(available),
         @"can_inspect_offer": @(canInspectOffer),
         @"can_share": @(canShare),
+        @"personal_nickname_loaded": @(controllerLoaded),
+        @"has_personal_nickname": @(hasPersonalNickname),
         @"should_offer": shouldOffer,
         @"participant_count": @(participants.count),
         @"from_handle_available": @(senderHandleID.length > 0),
@@ -6284,6 +6310,16 @@ static NSDictionary *handleShareNickname(NSInteger requestId, NSDictionary *para
         SEL selector = NSSelectorFromString(selectorName);
         if (![controller respondsToSelector:selector]) {
             return errorResponse(requestId, @"Name & Photo sharing selector unavailable");
+        }
+        if (!waitForNicknameControllerLoad(controller, 2.0)) {
+            return errorResponse(requestId,
+                @"Personal Name & Photo is still loading; retry the request");
+        }
+        if (![controller respondsToSelector:@selector(personalNickname)]
+            || ((id (*)(id, SEL))objc_msgSend)(controller,
+                                               @selector(personalNickname)) == nil) {
+            return errorResponse(requestId,
+                @"No personal Name & Photo is configured in Messages");
         }
 
         BOOL forceSend = YES;

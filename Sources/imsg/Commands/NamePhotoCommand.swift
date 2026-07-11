@@ -63,9 +63,13 @@ enum NamePhotoCommand {
       }
       let canInspect = (data["can_inspect_offer"] as? Bool) ?? false
       let canShare = (data["can_share"] as? Bool) ?? false
+      let nicknameLoaded = (data["personal_nickname_loaded"] as? Bool) ?? false
+      let hasPersonalNickname = (data["has_personal_nickname"] as? Bool) ?? false
       let shouldOffer = (data["should_offer"] as? Bool).map(String.init) ?? "unknown"
       return
-        "name-photo: can_inspect_offer=\(canInspect) can_share=\(canShare) should_offer=\(shouldOffer)"
+        "name-photo: can_inspect_offer=\(canInspect) can_share=\(canShare) "
+        + "personal_nickname_loaded=\(nicknameLoaded) "
+        + "has_personal_nickname=\(hasPersonalNickname) should_offer=\(shouldOffer)"
     }
   }
 }

@@ -33,6 +33,8 @@ func namePhotoStatusInvokesOfferInspectionForChat() async throws {
         return [
           "can_inspect_offer": true,
           "can_share": true,
+          "personal_nickname_loaded": true,
+          "has_personal_nickname": true,
           "should_offer": false,
         ]
       }
@@ -43,6 +45,8 @@ func namePhotoStatusInvokesOfferInspectionForChat() async throws {
   #expect(capturedParams["chatGuid"] as? String == "iMessage;-;+15551234567")
   #expect(output.contains("can_inspect_offer=true"))
   #expect(output.contains("can_share=true"))
+  #expect(output.contains("personal_nickname_loaded=true"))
+  #expect(output.contains("has_personal_nickname=true"))
   #expect(output.contains("should_offer=false"))
 }
 
@@ -269,6 +273,10 @@ func injectedHelperUsesGuardedNamePhotoSelectorFamilies() throws {
   #expect(statusBody.contains("shouldOfferNicknameSharingForChat:"))
   #expect(statusBody.contains(#"@"should_offer""#))
   #expect(statusBody.contains(#"@"can_share""#))
+  #expect(statusBody.contains(#"@"has_personal_nickname""#))
+  #expect(statusBody.contains(#"@"personal_nickname_loaded""#))
+  #expect(statusBody.contains("@selector(personalNickname)"))
+  #expect(statusBody.contains("waitForNicknameControllerLoad(controller, 1.0)"))
   #expect(!statusBody.contains("forceSend = YES"))
   #expect(!statusBody.contains(#"@"requested": @YES"#))
 
@@ -281,6 +289,10 @@ func injectedHelperUsesGuardedNamePhotoSelectorFamilies() throws {
   #expect(shareBody.contains(#"isEqualToString:@"iMessageLite""#))
   #expect(shareBody.contains("participants"))
   #expect(shareBody.contains("nicknameSharingMutationSelectorName"))
+  #expect(shareBody.contains("@selector(personalNickname)"))
+  #expect(shareBody.contains("waitForNicknameControllerLoad(controller, 2.0)"))
+  #expect(shareBody.contains("Personal Name & Photo is still loading"))
+  #expect(shareBody.contains("No personal Name & Photo is configured in Messages"))
   #expect(shareBody.contains("forceSend = YES"))
   #expect(!shareBody.contains("else {"))
   #expect(shareBody.contains("objc_msgSend"))
