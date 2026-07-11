@@ -80,6 +80,22 @@ Result:
 { "messages": [Message] }
 ```
 
+### `messages.scheduled`
+
+Reads future outbound Send Later rows from `chat.db`. This method is read-only and does not require the IMCore bridge.
+
+Params:
+
+- `limit` (positive int, default 50)
+
+Result:
+
+```json
+{ "messages": [ScheduledMessage] }
+```
+
+Older Messages database schemas without scheduling columns return an invalid-params error rather than an ambiguous empty list.
+
 ### `watch.subscribe`
 
 Params:

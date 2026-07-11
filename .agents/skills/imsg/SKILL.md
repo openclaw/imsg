@@ -39,6 +39,8 @@ imsg group --chat-id ID --json                 # identity + participants; check 
 imsg history --chat-id ID --limit 50 --json | jq -s
 imsg history --chat-id ID --start 2025-01-01T00:00:00Z --end 2025-02-01T00:00:00Z --json
 imsg stats --chat-id ID --time-zone UTC --media --json  # logical message + media totals
+imsg scheduled list --json                    # future Send Later rows; read-only
+imsg chat-background status --chat-id ID --json  # inspect local background state; read-only
 ```
 
 - Chat `id` is the `chat.db` rowid: stable on one machine, the preferred `--chat-id` handle. `identifier` and `guid` are portable across machines.

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SQLITE_PACKAGE=".build/checkouts/SQLite.swift/Package.swift"
-PHONE_NUMBER_BUNDLE=".build/checkouts/PhoneNumberKit/PhoneNumberKit/Bundle+Resources.swift"
+PHONE_NUMBER_BUNDLE=".build/checkouts/PhoneNumberKit/Sources/PhoneNumberKit/Bundle+Resources.swift"
 
 # Try python3, then python, then fail
 if command -v python3 >/dev/null 2>&1; then
@@ -32,13 +32,18 @@ path.write_text(text.replace(needle, replacement))
 PY
 fi
 
-if [[ -f "$PHONE_NUMBER_BUNDLE" ]]; then
-  chmod u+w "$PHONE_NUMBER_BUNDLE" || true
-  $PYTHON_BIN - <<'PY'
+if [[ ! -f "$PHONE_NUMBER_BUNDLE" ]]; then
+  echo "Error: PhoneNumberKit bundle resource patch target is missing: $PHONE_NUMBER_BUNDLE" >&2
+  exit 1
+fi
+
+chmod u+w "$PHONE_NUMBER_BUNDLE" || true
+PHONE_NUMBER_BUNDLE="$PHONE_NUMBER_BUNDLE" $PYTHON_BIN - <<'PY'
+import os
 import sys
 from pathlib import Path
 
-path = Path(".build/checkouts/PhoneNumberKit/PhoneNumberKit/Bundle+Resources.swift")
+path = Path(os.environ["PHONE_NUMBER_BUNDLE"])
 text = path.read_text()
 
 updated = False
@@ -61,4 +66,3 @@ elif "resolvingSymlinksInPath()" not in text:
 if updated:
     path.write_text(text)
 PY
-fi
