@@ -23,6 +23,7 @@
 #import <unistd.h>
 #import <stdio.h>
 #import <string.h>
+#import <signal.h>
 #import <sys/stat.h>
 #import <dlfcn.h>
 
@@ -135,11 +136,12 @@ static NSString *kDebugLogFile = nil; // .imsg-bridge.log
 
 static NSTimer *fileWatchTimer = nil;
 static NSTimer *rpcInboxTimer = nil;
-static NSMutableSet *processedRpcIds = nil;
+static BOOL bridgeDidBootstrap = NO;
 static os_unfair_lock eventsLock = OS_UNFAIR_LOCK_INIT;
 static int lockFd = -1;
 
 static const NSUInteger kEventsRotateBytes = 1 * 1024 * 1024;
+static const NSTimeInterval kV2ClaimMaxAge = 10 * 60;
 
 static void initFilePaths(void) {
     if (kCommandFile == nil) {
@@ -155,9 +157,6 @@ static void initFilePaths(void) {
         kEventsFile = [containerPath stringByAppendingPathComponent:@".imsg-events.jsonl"];
         kEventsRotated = [containerPath stringByAppendingPathComponent:@".imsg-events.jsonl.1"];
         kDebugLogFile = [containerPath stringByAppendingPathComponent:@".imsg-bridge.log"];
-    }
-    if (processedRpcIds == nil) {
-        processedRpcIds = [NSMutableSet set];
     }
 }
 
@@ -6412,26 +6411,39 @@ static void registerEventObservers(void) {
 
 #pragma mark - v2 Inbox Watcher
 
-/// Process a single inbox file end-to-end: read, dispatch, write outbox,
-/// remove inbox. Skips re-processed ids via processedRpcIds.
+/// Process a single inbox file end-to-end: claim, read, dispatch, write outbox,
+/// remove claim. The same-directory rename is the cross-process ownership
+/// boundary: only one injected process can remove the finalized request name.
 static void processV2InboxFile(NSString *uuid) {
     @autoreleasepool {
-        if ([processedRpcIds containsObject:uuid]) {
-            return;
-        }
-        [processedRpcIds addObject:uuid];
-
         NSString *inPath = [kRpcInDir stringByAppendingPathComponent:
             [uuid stringByAppendingPathExtension:@"json"]];
+        NSString *claimName = [NSString stringWithFormat:@"%@.processing.%d", uuid, getpid()];
+        NSString *claimPath = [kRpcInDir stringByAppendingPathComponent:claimName];
         NSString *outPath = [kRpcOutDir stringByAppendingPathComponent:
             [uuid stringByAppendingPathExtension:@"json"]];
 
+        if (rename(inPath.UTF8String, claimPath.UTF8String) != 0) {
+            int claimErrno = errno;
+            // ENOENT is the expected race loser: another injected process
+            // already claimed this request. Other failures leave the finalized
+            // file in place for a later scan instead of risking duplicate work.
+            if (claimErrno != ENOENT) {
+                NSLog(@"[imsg-bridge v2] Could not claim %@ (errno=%d)", inPath, claimErrno);
+                debugLog(@"v2 claim failed id=%@ pid=%d errno=%d",
+                         uuid, getpid(), claimErrno);
+            }
+            return;
+        }
+        debugLog(@"v2 claimed id=%@ pid=%d process=%@",
+                 uuid, getpid(), [[NSProcessInfo processInfo] processName]);
+
         NSError *err = nil;
-        NSData *body = [NSData dataWithContentsOfFile:inPath options:0 error:&err];
+        NSData *body = [NSData dataWithContentsOfFile:claimPath options:0 error:&err];
         if (!body || err) {
-            NSLog(@"[imsg-bridge v2] Could not read %@: %@", inPath, err);
+            NSLog(@"[imsg-bridge v2] Could not read %@: %@", claimPath, err);
             // Remove malformed file so we don't retry forever.
-            [[NSFileManager defaultManager] removeItemAtPath:inPath error:nil];
+            [[NSFileManager defaultManager] removeItemAtPath:claimPath error:nil];
             return;
         }
 
@@ -6455,12 +6467,49 @@ static void processV2InboxFile(NSString *uuid) {
             rename(tmp.UTF8String, outPath.UTF8String);
         }
 
-        // Drop the inbox request — we're done with it.
-        [[NSFileManager defaultManager] removeItemAtPath:inPath error:nil];
+        // Drop the claimed request — we're done with it. If the process dies
+        // after claiming, a later inbox scan removes the orphan without
+        // replaying a potentially delivered side effect.
+        [[NSFileManager defaultManager] removeItemAtPath:claimPath error:nil];
+    }
+}
 
-        // Cap the dedupe set to prevent unbounded growth on long-lived dylibs.
-        if (processedRpcIds.count > 1024) {
-            [processedRpcIds removeAllObjects];
+static pid_t v2ClaimOwnerPID(NSString *name) {
+    NSRange marker = [name rangeOfString:@".processing." options:NSBackwardsSearch];
+    if (marker.location == NSNotFound) return 0;
+
+    NSString *pidString = [name substringFromIndex:NSMaxRange(marker)];
+    NSScanner *scanner = [NSScanner scannerWithString:pidString];
+    int value = 0;
+    if (![scanner scanInt:&value] || !scanner.isAtEnd || value <= 0) return 0;
+    return (pid_t)value;
+}
+
+/// Claimed requests are never replayed: the handler may have dispatched its
+/// side effect before dying. Delete claims owned by dead processes, claims
+/// left by a recycled current PID, and old claims whose PID was reused by an
+/// unrelated live process.
+static void cleanupOrphanedV2Claims(NSArray *entries) {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    for (NSString *name in entries) {
+        pid_t ownerPID = v2ClaimOwnerPID(name);
+        if (ownerPID <= 0) continue;
+
+        NSString *path = [kRpcInDir stringByAppendingPathComponent:name];
+        BOOL shouldRemove = ownerPID == getpid();
+        if (!shouldRemove && kill(ownerPID, 0) != 0 && errno == ESRCH) {
+            shouldRemove = YES;
+        }
+        if (!shouldRemove) {
+            NSDictionary *attrs = [fm attributesOfItemAtPath:path error:nil];
+            NSDate *modified = attrs[NSFileModificationDate];
+            shouldRemove =
+                modified && [[NSDate date] timeIntervalSinceDate:modified] > kV2ClaimMaxAge;
+        }
+        if (shouldRemove) {
+            [fm removeItemAtPath:path error:nil];
+            debugLog(@"v2 removed orphan claim=%@ owner_pid=%d",
+                     name, (int)ownerPID);
         }
     }
 }
@@ -6471,6 +6520,7 @@ static void scanV2Inbox(void) {
         NSArray *entries = [[NSFileManager defaultManager]
             contentsOfDirectoryAtPath:kRpcInDir error:&err];
         if (!entries) return;
+        cleanupOrphanedV2Claims(entries);
         for (NSString *name in entries) {
             // Only consume finalized .json files; skip in-flight .tmp.
             if (![name hasSuffix:@".json"]) continue;
@@ -6521,6 +6571,13 @@ static void bridgeBootstrap(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         @autoreleasepool {
+            NSString *bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
+            if (![bundleIdentifier isEqualToString:@"com.apple.MobileSMS"]) {
+                NSLog(@"[imsg-bridge] Ignoring injected process with bundle %@",
+                      bundleIdentifier ?: @"(none)");
+                return;
+            }
+            bridgeDidBootstrap = YES;
             initFilePaths();
             NSLog(@"[imsg-bridge] Dylib injected into %@",
                   [[NSProcessInfo processInfo] processName]);
@@ -6587,6 +6644,8 @@ static void injectedInit(void) {
 
 __attribute__((destructor))
 static void injectedCleanup(void) {
+    if (!bridgeDidBootstrap) return;
+
     NSLog(@"[imsg-bridge] Cleaning up...");
 
     if (fileWatchTimer) {
