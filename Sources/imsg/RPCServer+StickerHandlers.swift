@@ -38,14 +38,19 @@ extension RPCServer {
         matchingTarget: stickerChatLookupTarget(requestedChatGUID),
         preferredServices: ["iMessage", "iMessageLite"]
       )
-    guard
-      let chatInfo,
+    let chatGUID: String
+    if let chatInfo,
       !chatInfo.guid.isEmpty,
       isStickerIMessageService(chatInfo.service)
-    else {
+    {
+      chatGUID = chatInfo.guid
+    } else if params["chat_guid"] != nil,
+      let directGUID = directStickerChatGUID(requestedChatGUID)
+    {
+      chatGUID = directGUID
+    } else {
       throw RPCError.invalidParams(StickerSendValidationError.iMessageRequired.description)
     }
-    let chatGUID = chatInfo.guid
     guard let file = params["file"] as? String, !file.isEmpty else {
       throw RPCError.invalidParams("file is required")
     }

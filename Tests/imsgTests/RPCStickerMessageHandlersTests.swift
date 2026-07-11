@@ -91,6 +91,41 @@ func rpcSendStickerPrefersIMessageForSharedIdentifierAndSendsStandalone() async 
 }
 
 @Test
+func rpcSendStickerAllowsNewDirectIMessageChatGUID() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPCWithStickerTarget()
+  let output = TestRPCOutput()
+  let directGUID = "iMessage;-;+15559876543"
+  var capturedChatGUID: String?
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { _, params in
+      capturedChatGUID = params["chatGuid"] as? String
+      return ["transferGuid": "direct-transfer"]
+    },
+    stageSticker: { _ in
+      PreparedStickerAsset(
+        stagedPath: "/tmp/staged-sticker.png",
+        sha256: String(repeating: "f", count: 64),
+        pixelWidth: 64,
+        pixelHeight: 64,
+        uti: "public.png",
+        byteCount: 100,
+        accessibilityLabel: "Sticker"
+      )
+    }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"direct","method":"send.sticker","params":{"chat_guid":"iMessage;-;+15559876543","file":"sticker.png"}}"#
+  )
+
+  #expect(capturedChatGUID == directGUID)
+  #expect(output.errors.isEmpty)
+}
+
+@Test
 func rpcSendStickerDistinguishesInvalidAssetsFromStagingFailures() async throws {
   let store = try CommandTestDatabase.makeStoreForRPCWithStickerTarget()
   for (assetError, expectedCode) in [

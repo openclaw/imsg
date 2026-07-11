@@ -90,3 +90,42 @@ func stickerTargetNormalizesPartsAndRejectsConflicts() throws {
     try StickerSendTarget.resolve(rawTarget: "", explicitPart: nil)
   }
 }
+
+@Test
+func stickerCommandAllowsNewDirectIMessageChat() async throws {
+  let directGUID = "iMessage;-;+15559876543"
+  let values = ParsedValues(
+    positional: [],
+    options: ["chat": [directGUID], "file": ["~/Desktop/sticker.png"]],
+    flags: []
+  )
+  var capturedChatGUID: String?
+
+  _ = try await StdoutCapture.capture {
+    try await StickerCommand.run(
+      values: values,
+      runtime: RuntimeOptions(parsedValues: values),
+      invokeBridge: { _, params in
+        capturedChatGUID = params["chatGuid"] as? String
+        return ["transferGuid": "transfer-guid"]
+      },
+      resolveChat: { _, _ in nil },
+      prepareSticker: { _ in
+        PreparedStickerAsset(
+          stagedPath: "/staged/sticker.png",
+          sha256: String(repeating: "e", count: 64),
+          pixelWidth: 64,
+          pixelHeight: 64,
+          uti: "public.png",
+          byteCount: 100,
+          accessibilityLabel: "Sticker"
+        )
+      }
+    )
+  }
+
+  #expect(capturedChatGUID == directGUID)
+  #expect(directStickerChatGUID("iMessageLite;-;person@example.com") != nil)
+  #expect(directStickerChatGUID("SMS;-;+15559876543") == nil)
+  #expect(directStickerChatGUID("iMessage;+;group-guid") == nil)
+}

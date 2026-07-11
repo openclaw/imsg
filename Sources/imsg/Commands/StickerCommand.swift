@@ -75,13 +75,17 @@ enum StickerCommand {
       throw ParsedValuesError.missingOption("file")
     }
     let dbPath = values.option("db") ?? MessageStore.defaultPath
-    guard let resolvedChat = try resolveChat(chat, dbPath), !resolvedChat.guid.isEmpty else {
+    let chatGUID: String
+    if let resolvedChat = try resolveChat(chat, dbPath), !resolvedChat.guid.isEmpty {
+      guard isStickerIMessageService(resolvedChat.service) else {
+        throw StickerSendValidationError.iMessageRequired
+      }
+      chatGUID = resolvedChat.guid
+    } else if let directGUID = directStickerChatGUID(chat) {
+      chatGUID = directGUID
+    } else {
       throw StickerSendValidationError.iMessageRequired
     }
-    guard isStickerIMessageService(resolvedChat.service) else {
-      throw StickerSendValidationError.iMessageRequired
-    }
-    let chatGUID = resolvedChat.guid
 
     let explicitPart: Int?
     if let rawPart = values.option("targetPart") {

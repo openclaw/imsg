@@ -67,6 +67,17 @@ func stickerChatLookupTarget(_ target: String) -> String {
   return String(parts[2])
 }
 
+func directStickerChatGUID(_ target: String) -> String? {
+  let trimmed = target.trimmingCharacters(in: .whitespacesAndNewlines)
+  let parts = trimmed.split(separator: ";", omittingEmptySubsequences: false)
+  guard parts.count == 3,
+    isStickerIMessageService(String(parts[0])),
+    parts[1] == "-",
+    !parts[2].isEmpty
+  else { return nil }
+  return trimmed
+}
+
 enum StickerSendValidationError: LocalizedError, CustomStringConvertible, Equatable {
   case invalidPart(Int)
   case partWithoutTarget
