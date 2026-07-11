@@ -165,7 +165,21 @@ func securePathDetectsParentSymlink() throws {
 }
 
 @Test
+func securePathDoesNotNormalizeAwaySymlinkedDotDotComponent() throws {
+  let fileManager = FileManager.default
+  let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  let realDirectory = root.appendingPathComponent("real", isDirectory: true)
+  let link = root.appendingPathComponent("link", isDirectory: true)
+  try fileManager.createDirectory(at: realDirectory, withIntermediateDirectories: true)
+  try fileManager.createSymbolicLink(at: link, withDestinationURL: realDirectory)
+  defer { try? fileManager.removeItem(at: root) }
+
+  #expect(SecurePath.hasSymlinkComponent(link.appendingPathComponent("../queue").path))
+}
+
+@Test
 func securePathAllowsTrustedSystemAliasPrefixes() throws {
+  #expect(SecurePath.absoluteLexicalPath("/var/example") == "/private/var/example")
   let privateTmp = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
   let dirName = "imsg-secure-path-\(UUID().uuidString)"
   let realDir = privateTmp.appendingPathComponent(dirName)

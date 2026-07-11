@@ -12,6 +12,9 @@
 ### Packaging
 - fix: isolate universal builds per architecture and consume SwiftPM's reported product paths so stale slices cannot silently ship older CLI code.
 
+### Advanced IMCore
+- fix: canonicalize securely staged attachment paths when Messages attachments are relocated through a symlink, and find nested threaded-reply items for edit, unsend, delete, and notify operations.
+
 ### Native Polls
 - fix: match native poll vote envelopes, participant handles, and summary metadata so votes render participant markers and correct notifications (#162, thanks @omarshahine).
 

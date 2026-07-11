@@ -1446,6 +1446,82 @@ static NSString *deriveThreadIdentifier(NSString *parentGuid,
 /// the load to keep the reply / reaction code paths independent (each
 /// fires its own load), which is what BlueBubblesHelper does too — and
 /// avoids gnarly out-parameter plumbing through deriveThreadIdentifier.
+static id safelyReadObjectSelector(id object, SEL selector) {
+    if (!object || !selector || ![object respondsToSelector:selector]) return nil;
+    @try {
+        return ((id (*)(id, SEL))objc_msgSend)(object, selector);
+    } @catch (__unused NSException *exception) {
+        // Some Tahoe IMCore proxy objects claim private selectors through
+        // forwarding, then raise unrecognized-selector when invoked.
+        return nil;
+    }
+}
+
+static id safelyReadObjectSelectorWithObject(id object, SEL selector, id argument) {
+    if (!object || !selector || ![object respondsToSelector:selector]) return nil;
+    @try {
+        return ((id (*)(id, SEL, id))objc_msgSend)(object, selector, argument);
+    } @catch (__unused NSException *exception) {
+        return nil;
+    }
+}
+
+static id safelyReadObjectSelectorWithTwoObjects(id object, SEL selector,
+                                                 id first, id second) {
+    if (!object || !selector || ![object respondsToSelector:selector]) return nil;
+    @try {
+        return ((id (*)(id, SEL, id, id))objc_msgSend)(
+            object, selector, first, second);
+    } @catch (__unused NSException *exception) {
+        return nil;
+    }
+}
+
+static id normalizeFoundMessageItemWithChatContext(id object, id chatContext) {
+    if (!object) return nil;
+
+    Class partClass = NSClassFromString(@"IMMessagePartChatItem");
+    if (partClass && [object isKindOfClass:partClass]) return object;
+
+    // History loading can yield an IMMessage, its backing IMMessageItem, or
+    // a chat item directly depending on OS version and whether it is a
+    // threaded reply. Normalize all three to the chat item mutations expect.
+    id messageItem = object;
+    SEL itemSel = @selector(_imMessageItem);
+    if ([messageItem respondsToSelector:itemSel]) {
+        messageItem = safelyReadObjectSelector(messageItem, itemSel);
+        if (!messageItem) return nil;
+    }
+    SEL chatItemsSel = @selector(_newChatItems);
+    BOOL hasChatItemsSelector = [messageItem respondsToSelector:chatItemsSel];
+    id items = nil;
+    if (hasChatItemsSelector) {
+        items = safelyReadObjectSelector(messageItem, chatItemsSel);
+    }
+    BOOL needsContext = !items
+        || ([items isKindOfClass:[NSArray class]] && ((NSArray *)items).count == 0);
+    if (needsContext && chatContext) {
+        SEL contextSel = NSSelectorFromString(@"_newChatItemsWithChatContext:");
+        items = safelyReadObjectSelectorWithObject(messageItem, contextSel, chatContext);
+        BOOL contextItemsMissing = !items
+            || ([items isKindOfClass:[NSArray class]] && ((NSArray *)items).count == 0);
+        if (contextItemsMissing) {
+            SEL partsSel = NSSelectorFromString(
+                @"_newMessagePartsForMessageItem:chatContext:");
+            items = safelyReadObjectSelectorWithTwoObjects(
+                partClass, partsSel, messageItem, chatContext);
+        }
+    }
+    if ([items isKindOfClass:[NSArray class]]) {
+        return ((NSArray *)items).firstObject;
+    }
+    return items ?: (hasChatItemsSelector ? nil : messageItem);
+}
+
+static id normalizeFoundMessageItem(id object) {
+    return normalizeFoundMessageItemWithChatContext(object, nil);
+}
+
 static id loadParentFirstChatItem(NSString *parentGuid, id *outParentMessage) {
     if (outParentMessage) *outParentMessage = nil;
     if (parentGuid.length == 0) return nil;
@@ -1477,14 +1553,7 @@ static id loadParentFirstChatItem(NSString *parentGuid, id *outParentMessage) {
     }
     if (!parent) return nil;
     if (outParentMessage) *outParentMessage = parent;
-
-    if (![parent respondsToSelector:@selector(_imMessageItem)]) return nil;
-    id parentItem = [parent performSelector:@selector(_imMessageItem)];
-    SEL chatItemsSel = NSSelectorFromString(@"_newChatItems");
-    if (!parentItem || ![parentItem respondsToSelector:chatItemsSel]) return nil;
-    id items = [parentItem performSelector:chatItemsSel];
-    return [items isKindOfClass:[NSArray class]]
-        ? ((NSArray *)items).firstObject : items;
+    return normalizeFoundMessageItem(parent);
 }
 
 /// Dispatch a built IMMessage into the chat after installing the same
@@ -2404,6 +2473,56 @@ static id buildIMMessage(NSAttributedString *body,
 /// `chat.chatItems` window. Falls back to the older
 /// `loadedChatItemsForChat:beforeDate:limit:loadIfNeeded:` + sync poll
 /// for OSes that don't expose the block-based load.
+static id findMessageItemInObject(id object,
+                                  NSString *messageGuid,
+                                  NSMutableSet<NSValue *> *visited,
+                                  NSUInteger depth) {
+    if (!object || !messageGuid.length || depth > 8) return nil;
+
+    NSValue *identity = [NSValue valueWithNonretainedObject:object];
+    if ([visited containsObject:identity]) return nil;
+    [visited addObject:identity];
+
+    SEL guidSel = @selector(guid);
+    if ([object respondsToSelector:guidSel]) {
+        id guid = safelyReadObjectSelector(object, guidSel);
+        if ([guid isKindOfClass:[NSString class]]
+            && [guid isEqualToString:messageGuid]) {
+            id normalized = normalizeFoundMessageItem(object);
+            if (normalized) return normalized;
+        }
+    }
+
+    // Threaded replies can sit below a top-level transcript item. Walk both
+    // public-ish wrappers and private backing objects, with a small depth cap
+    // and identity set so cyclic IMCore graphs cannot recurse forever.
+    NSArray<NSString *> *objectSelectors = @[
+        @"message", @"messageItem", @"_item", @"_imMessageItem"
+    ];
+    for (NSString *name in objectSelectors) {
+        SEL sel = NSSelectorFromString(name);
+        if (![object respondsToSelector:sel]) continue;
+        id child = safelyReadObjectSelector(object, sel);
+        id match = findMessageItemInObject(child, messageGuid, visited, depth + 1);
+        if (match) return match;
+    }
+
+    NSArray<NSString *> *collectionSelectors = @[
+        @"_newChatItems", @"chatItems", @"aggregateAttachmentParts"
+    ];
+    for (NSString *name in collectionSelectors) {
+        SEL sel = NSSelectorFromString(name);
+        if (![object respondsToSelector:sel]) continue;
+        id children = safelyReadObjectSelector(object, sel);
+        if (![children isKindOfClass:[NSArray class]]) continue;
+        for (id child in (NSArray *)children) {
+            id match = findMessageItemInObject(child, messageGuid, visited, depth + 1);
+            if (match) return match;
+        }
+    }
+    return nil;
+}
+
 static id findMessageItem(IMChat *chat, NSString *messageGuid) {
     if (!chat || !messageGuid.length) {
         return nil;
@@ -2413,7 +2532,15 @@ static id findMessageItem(IMChat *chat, NSString *messageGuid) {
     // (returns an IMMessage). Callers want the chat item, so navigate
     // IMMessage → IMMessageItem → first IMMessagePartChatItem via the
     // same accessor walk loadParentFirstChatItem performs.
-    id loadedChatItem = loadParentFirstChatItem(messageGuid, NULL);
+    id loadedMessage = nil;
+    id loadedChatItem = loadParentFirstChatItem(messageGuid, &loadedMessage);
+    if (!loadedChatItem && loadedMessage) {
+        Class contextClass = NSClassFromString(@"IMMutableChatContext");
+        SEL contextSel = NSSelectorFromString(@"chatContextForPinnedChat:");
+        id chatContext = safelyReadObjectSelectorWithObject(contextClass, contextSel, chat);
+        loadedChatItem = normalizeFoundMessageItemWithChatContext(
+            loadedMessage, chatContext);
+    }
     if (loadedChatItem) return loadedChatItem;
 
     Class hcClass = NSClassFromString(@"IMChatHistoryController");
@@ -2441,25 +2568,73 @@ static id findMessageItem(IMChat *chat, NSString *messageGuid) {
         if ([chat respondsToSelector:@selector(chatItems)]) {
             items = [chat performSelector:@selector(chatItems)];
         }
+        NSMutableSet<NSValue *> *visited = [NSMutableSet set];
         for (id item in items) {
-            id message = nil;
-            if ([item respondsToSelector:@selector(message)]) {
-                message = [item performSelector:@selector(message)];
-            }
-            NSString *guid = nil;
-            if (message && [message respondsToSelector:@selector(guid)]) {
-                guid = [message performSelector:@selector(guid)];
-            } else if ([item respondsToSelector:@selector(guid)]) {
-                guid = [item performSelector:@selector(guid)];
-            }
-            if ([guid isEqualToString:messageGuid]) {
-                return item;
-            }
+            id match = findMessageItemInObject(item, messageGuid, visited, 0);
+            if (match) return match;
         }
         [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
                                  beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
     }
     return nil;
+}
+
+static id findMessagePartInObject(id object, NSInteger partIndex) {
+    if (!object) return nil;
+    if ([object isKindOfClass:[NSArray class]]) {
+        for (id child in (NSArray *)object) {
+            id match = findMessagePartInObject(child, partIndex);
+            if (match) return match;
+        }
+        return nil;
+    }
+
+    id aggregate = safelyReadObjectSelector(
+        object, @selector(aggregateAttachmentParts));
+    id aggregateMatch = findMessagePartInObject(aggregate, partIndex);
+    if (aggregateMatch) return aggregateMatch;
+
+    if ([object respondsToSelector:@selector(index)]) {
+        @try {
+            if ([(IMMessagePartChatItem *)object index] == partIndex) return object;
+        } @catch (__unused NSException *exception) {
+        }
+        return nil;
+    }
+    return partIndex == 0 ? object : nil;
+}
+
+static id findMessagePart(IMChat *chat, NSString *messageGuid, NSInteger partIndex) {
+    id item = findMessageItem(chat, messageGuid);
+    if (!item) return nil;
+
+    id messageItem = safelyReadObjectSelector(item, @selector(messageItem));
+    if (!messageItem) messageItem = item;
+
+    Class contextClass = NSClassFromString(@"IMMutableChatContext");
+    SEL contextSel = NSSelectorFromString(@"chatContextForPinnedChat:");
+    id chatContext = safelyReadObjectSelectorWithObject(
+        contextClass, contextSel, chat);
+
+    id parts = safelyReadObjectSelector(messageItem, @selector(_newChatItems));
+    BOOL partsMissing = !parts
+        || ([parts isKindOfClass:[NSArray class]] && ((NSArray *)parts).count == 0);
+    if (partsMissing && chatContext) {
+        SEL contextItemsSel = NSSelectorFromString(@"_newChatItemsWithChatContext:");
+        parts = safelyReadObjectSelectorWithObject(
+            messageItem, contextItemsSel, chatContext);
+        partsMissing = !parts
+            || ([parts isKindOfClass:[NSArray class]] && ((NSArray *)parts).count == 0);
+        if (partsMissing) {
+            Class partClass = NSClassFromString(@"IMMessagePartChatItem");
+            SEL partsSel = NSSelectorFromString(
+                @"_newMessagePartsForMessageItem:chatContext:");
+            parts = safelyReadObjectSelectorWithTwoObjects(
+                partClass, partsSel, messageItem, chatContext);
+        }
+    }
+
+    return findMessagePartInObject(parts ?: item, partIndex);
 }
 
 /// Best-effort messageGuid extractor for transactional sends. Returns the
@@ -3697,54 +3872,13 @@ static NSDictionary *handleUnsendMessage(NSInteger requestId, NSDictionary *para
         return errorResponse(requestId, @"retractMessagePart: not available on this macOS");
     }
 
-    id messageItem = findMessageItem(chat, messageGuid);
-    if (!messageItem) {
+    id target = findMessagePart(chat, messageGuid, partIndex);
+    if (!target) {
         return errorResponse(requestId,
-            [NSString stringWithFormat:@"Message not found: %@", messageGuid]);
+            [NSString stringWithFormat:@"Message part not found: %ld", (long)partIndex]);
     }
 
     @try {
-        id newChatItems = nil;
-        SEL ncSel = @selector(_newChatItems);
-        if ([messageItem respondsToSelector:ncSel]) {
-            // Route through objc_msgSend to avoid ARC's "performSelector
-            // names a selector which retains the object" warning on the
-            // underscore-prefixed selector.
-            newChatItems = ((id (*)(id, SEL))objc_msgSend)(messageItem, ncSel);
-        }
-        id target = nil;
-        if ([newChatItems isKindOfClass:[NSArray class]]) {
-            NSArray *arr = newChatItems;
-            if (arr.count == 0) target = messageItem;
-            else if (arr.count == 1) target = arr.firstObject;
-            else {
-                for (id sub in arr) {
-                    // Aggregate attachment unwrap
-                    if ([sub respondsToSelector:@selector(aggregateAttachmentParts)]) {
-                        NSArray *agg = [sub performSelector:@selector(aggregateAttachmentParts)];
-                        for (id p in agg) {
-                            if ([p respondsToSelector:@selector(index)]
-                                && [(IMMessagePartChatItem *)p index] == partIndex) {
-                                target = p; break;
-                            }
-                        }
-                        if (target) break;
-                    }
-                    if ([sub respondsToSelector:@selector(index)]
-                        && [(IMMessagePartChatItem *)sub index] == partIndex) {
-                        target = sub; break;
-                    }
-                }
-            }
-        } else if (newChatItems != nil) {
-            target = newChatItems;
-        } else {
-            target = messageItem;
-        }
-        if (!target) {
-            return errorResponse(requestId,
-                [NSString stringWithFormat:@"Message part not found: %ld", (long)partIndex]);
-        }
         [chat performSelector:@selector(retractMessagePart:) withObject:target];
     } @catch (NSException *ex) {
         return errorResponse(requestId, ex.reason ?: @"unsend-message failed");

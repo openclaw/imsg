@@ -85,6 +85,54 @@ func bridgeAttachmentStagingUsesChatGuid() throws {
 }
 
 @Test
+func injectedHelperFindsNestedThreadReplyItems() throws {
+  let testFile = URL(fileURLWithPath: #filePath)
+  let repoRoot =
+    testFile
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
+  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
+  let recursiveBody = try #require(
+    functionBody(named: "findMessageItemInObject", in: source)
+  )
+  let normalizationBody = try #require(
+    functionBody(named: "normalizeFoundMessageItemWithChatContext", in: source)
+  )
+  let safeSelectorBody = try #require(
+    functionBody(named: "safelyReadObjectSelector", in: source)
+  )
+  let lookupBody = try #require(
+    functionBody(named: "findMessageItem(IMChat", in: source)
+  )
+  let loadBody = try #require(
+    functionBody(named: "loadParentFirstChatItem", in: source)
+  )
+
+  #expect(recursiveBody.contains("depth > 8"))
+  #expect(recursiveBody.contains("valueWithNonretainedObject"))
+  #expect(recursiveBody.contains("normalizeFoundMessageItem(object)"))
+  #expect(recursiveBody.contains(#"@"_newChatItems""#))
+  #expect(recursiveBody.contains(#"@"_item""#))
+  #expect(recursiveBody.contains(#"@"messageItem""#))
+  #expect(normalizationBody.contains("@selector(_imMessageItem)"))
+  #expect(normalizationBody.contains("@selector(_newChatItems)"))
+  #expect(normalizationBody.contains("isKindOfClass:partClass"))
+  #expect(source.contains("_newChatItemsWithChatContext:"))
+  #expect(source.contains("_newMessagePartsForMessageItem:chatContext:"))
+  #expect(source.contains("findMessagePartInObject"))
+  #expect(source.contains("findMessagePart(chat, messageGuid, partIndex)"))
+  #expect(source.contains("if ([(IMMessagePartChatItem *)object index] == partIndex)"))
+  #expect(lookupBody.contains("chatContextForPinnedChat:"))
+  #expect(lookupBody.contains("normalizeFoundMessageItemWithChatContext"))
+  #expect(safeSelectorBody.contains("@catch"))
+  #expect(recursiveBody.contains("safelyReadObjectSelector"))
+  #expect(loadBody.contains("normalizeFoundMessageItem(parent)"))
+  #expect(lookupBody.contains("findMessageItemInObject"))
+}
+
+@Test
 func bridgeReplySendsKeepAssociatedMessageFallback() throws {
   let testFile = URL(fileURLWithPath: #filePath)
   let repoRoot =
