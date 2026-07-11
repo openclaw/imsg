@@ -109,7 +109,7 @@ func stickerCommandAllowsNewDirectIMessageChat() async throws {
         capturedChatGUID = params["chatGuid"] as? String
         return ["transferGuid": "transfer-guid"]
       },
-      resolveChat: { _, _ in nil },
+      resolveChat: { _, _ in ("SMS;-;+15559876543", "SMS") },
       prepareSticker: { _ in
         PreparedStickerAsset(
           stagedPath: "/staged/sticker.png",

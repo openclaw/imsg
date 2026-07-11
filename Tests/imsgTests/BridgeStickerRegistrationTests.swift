@@ -9,6 +9,8 @@ func injectedHelperWiresStickerSendAction() throws {
     stickerFunctionBody(named: "openUserOwnedDirectorySecurely", in: source))
   let cleanupBody = try #require(
     stickerFunctionBody(named: "cleanupPreparedStickerPaths", in: source))
+  let resolveChatBody = try #require(
+    stickerFunctionBody(named: "resolveChatByGuid", in: source))
 
   #expect(source.contains("send-sticker"))
   #expect(source.contains("markTransferAsSticker"))
@@ -46,6 +48,8 @@ func injectedHelperWiresStickerSendAction() throws {
   #expect(secureOpenBody.contains("openat(directoryFD"))
   #expect(secureOpenBody.contains("fstat(nextFD, &componentInfo)"))
   #expect(cleanupBody.contains("removeStickerTransferFileSecurely(activePath)"))
+  #expect(resolveChatBody.contains(#"[parts[1] isEqualToString:@"-"]"#))
+  #expect(resolveChatBody.contains("vendIMHandle(hr, address, preferredService, NO)"))
 }
 
 @Test

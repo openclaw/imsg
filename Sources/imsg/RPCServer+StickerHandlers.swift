@@ -39,15 +39,15 @@ extension RPCServer {
         preferredServices: ["iMessage", "iMessageLite"]
       )
     let chatGUID: String
-    if let chatInfo,
+    if params["chat_guid"] != nil,
+      let directGUID = directStickerChatGUID(requestedChatGUID)
+    {
+      chatGUID = directGUID
+    } else if let chatInfo,
       !chatInfo.guid.isEmpty,
       isStickerIMessageService(chatInfo.service)
     {
       chatGUID = chatInfo.guid
-    } else if params["chat_guid"] != nil,
-      let directGUID = directStickerChatGUID(requestedChatGUID)
-    {
-      chatGUID = directGUID
     } else {
       throw RPCError.invalidParams(StickerSendValidationError.iMessageRequired.description)
     }

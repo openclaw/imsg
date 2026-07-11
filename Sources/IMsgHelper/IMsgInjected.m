@@ -1081,22 +1081,20 @@ static IMChat *resolveChatByGuid(NSString *chatGuid) {
         if (chat) return chat;
     }
 
-    // Fallback: parse trailing address out of `<service>;<+|->;<address>`
-    // and try to vend a handle, then materialize a chat.
+    // Fallback: parse a direct `<service>;-;<address>` guid and materialize
+    // a chat using only a handle for the explicitly requested service.
     NSArray *parts = [chatGuid componentsSeparatedByString:@";"];
-    if (parts.count == 3) {
+    if (parts.count == 3 && [parts[1] isEqualToString:@"-"]) {
+        NSString *preferredService = parts.firstObject;
         NSString *address = parts.lastObject;
         Class hrClass = NSClassFromString(@"IMHandleRegistrar");
         if (hrClass) {
             id hr = [hrClass performSelector:@selector(sharedInstance)];
-            if ([hr respondsToSelector:@selector(IMHandleWithID:)]) {
-                id handle = [hr performSelector:@selector(IMHandleWithID:)
-                                     withObject:address];
-                if (handle && [registry respondsToSelector:@selector(chatForIMHandle:)]) {
-                    id chat = [registry performSelector:@selector(chatForIMHandle:)
-                                             withObject:handle];
-                    if (chat) return chat;
-                }
+            id handle = vendIMHandle(hr, address, preferredService, NO);
+            if (handle && [registry respondsToSelector:@selector(chatForIMHandle:)]) {
+                id chat = [registry performSelector:@selector(chatForIMHandle:)
+                                         withObject:handle];
+                if (chat) return chat;
             }
         }
     }

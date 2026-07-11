@@ -76,13 +76,13 @@ enum StickerCommand {
     }
     let dbPath = values.option("db") ?? MessageStore.defaultPath
     let chatGUID: String
-    if let resolvedChat = try resolveChat(chat, dbPath), !resolvedChat.guid.isEmpty {
+    if let directGUID = directStickerChatGUID(chat) {
+      chatGUID = directGUID
+    } else if let resolvedChat = try resolveChat(chat, dbPath), !resolvedChat.guid.isEmpty {
       guard isStickerIMessageService(resolvedChat.service) else {
         throw StickerSendValidationError.iMessageRequired
       }
       chatGUID = resolvedChat.guid
-    } else if let directGUID = directStickerChatGUID(chat) {
-      chatGUID = directGUID
     } else {
       throw StickerSendValidationError.iMessageRequired
     }
