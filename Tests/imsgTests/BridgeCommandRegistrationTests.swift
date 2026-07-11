@@ -191,7 +191,7 @@ func injectedHelperFindsNestedThreadReplyItems() throws {
     functionBody(named: "safelyReadObjectSelector", in: source)
   )
   let lookupBody = try #require(
-    functionBody(named: "findMessageItem(IMChat", in: source)
+    functionBody(named: "findMessageItem", in: source)
   )
   let loadBody = try #require(
     functionBody(named: "loadParentFirstChatItem", in: source)
@@ -299,7 +299,8 @@ func injectedHelperBroadcastsFailClosedNativePollVoteMetadata() throws {
   let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
   let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
   let voteBody = try #require(functionBody(named: "buildPollVoteIMMessage", in: source))
-  let sendVoteBody = try #require(functionBody(named: "handleSendPollVote", in: source))
+  let sendVoteBody = try #require(
+    functionBody(named: "handleSendPollVoteMutation", in: source))
 
   #expect(source.contains("send-poll-vote"))
   #expect(source.contains("send-poll-unvote"))
