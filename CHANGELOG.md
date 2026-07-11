@@ -12,8 +12,15 @@
 ### Packaging
 - fix: isolate universal builds per architecture and consume SwiftPM's reported product paths so stale slices cannot silently ship older CLI code.
 
+### Advanced IMCore
+- fix: canonicalize securely staged attachment paths when Messages attachments are relocated through a symlink, and find nested threaded-reply items for edit, unsend, delete, and notify operations.
+
 ### Native Polls
 - fix: match native poll vote envelopes, participant handles, and summary metadata so votes render participant markers and correct notifications (#162, thanks @omarshahine).
+- feat: add selective native poll unvoting through CLI and JSON-RPC while preserving the sender's other selected options (#162, thanks @omarshahine).
+
+### Advanced IMCore
+- feat: add bridge-backed Apple URL preview sends through `send-rich --url` and `send.rich`, with an eight-second out-of-process preparation deadline, capped image decode/staging, and metadata-only fallback (#165, thanks @omarshahine).
 
 ## 0.12.3 - 2026-07-06
 

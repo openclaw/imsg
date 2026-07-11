@@ -79,7 +79,9 @@ Only after `imsg status` confirms the bridge is loaded (`imsg launch` injects it
 ```bash
 imsg send-rich --chat 'iMessage;-;+15551234567' --text 'hi' --reply-to MSG_GUID   # replies, effects, subjects
 imsg send-sticker --chat GUID --file ~/Pictures/sticker.png --attach-to MSG_GUID --target-part 0
+imsg send-rich --chat 'iMessage;-;+15551234567' --url https://imsg.sh
 imsg poll send --chat GUID --question 'Dinner?' --option 'Pizza' --option 'Sushi' --comment 'Vote by 5pm'
+imsg poll unvote --chat GUID --poll POLL_GUID --option-index 1
 imsg edit --chat GUID --message MSG_GUID --new-text 'updated'                     # macOS 13+
 imsg chat-create --addresses '+15551234567,+15559876543' --name 'Crew'
 ```

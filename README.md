@@ -137,7 +137,7 @@ Advanced IMCore (require `imsg launch` with SIP off — see
 - `imsg typing --to <handle> [--duration 5s] [--stop true]`
 - `imsg launch [--dylib <path>] [--kill-only] [--json]`
 - `imsg status [--json]`
-- `imsg send-rich [--reply-to <guid>] [--file <path>]`,
+- `imsg send-rich [--reply-to <guid>] [--file <path>] [--url <url>]`,
   `imsg send-multipart`, `imsg send-attachment [--reply-to <guid>]`,
   `imsg send-sticker [--attach-to <guid>] [--target-part <index>]`, `imsg tapback`
 - `imsg poll send (--chat <guid> | --chat-id <id>) --question <text> [--comment <text>] --option <text> --option <text> [--reply-to <guid>]`
@@ -308,6 +308,9 @@ groups). Get a chat GUID via `imsg chats --json`.
 Messaging:
 
 ```bash
+# Apple URL preview (URL-only; incompatible with text/effects/replies/files)
+imsg send-rich --chat 'iMessage;-;+15551234567' --url https://imsg.sh
+
 # Rich send with effect + reply
 imsg send-rich --chat 'iMessage;-;+15551234567' --text "boom" \
   --effect com.apple.MobileSMS.expressivesend.impact \

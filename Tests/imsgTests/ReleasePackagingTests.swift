@@ -66,6 +66,16 @@ func linuxReleaseStaticallyLinksSwiftRuntime() throws {
 }
 
 @Test
+func dependencyPatchTargetsPhoneNumberKitV5BundleResource() throws {
+  let script = try readRepositoryFile("scripts/patch-deps.sh")
+
+  #expect(script.contains("PhoneNumberKit/Sources/PhoneNumberKit/Bundle+Resources.swift"))
+  #expect(!script.contains("PhoneNumberKit/PhoneNumberKit/Bundle+Resources.swift"))
+  #expect(script.contains("PhoneNumberKit bundle resource patch target is missing"))
+  #expect(script.contains("Bundle.main.bundleURL.resolvingSymlinksInPath()"))
+}
+
+@Test
 func bridgeHelperBuildsUseRelocatableInstallName() throws {
   let developmentBuild = try readRepositoryFile("Makefile")
   let universalBuild = try readRepositoryFile("scripts/build-universal.sh")
@@ -78,9 +88,11 @@ func bridgeHelperBuildsUseRelocatableInstallName() throws {
 }
 
 @Test
-func bridgeHelperBuildsLinkStickerImageValidation() throws {
+func bridgeHelperBuildsLinkRichLinkFrameworks() throws {
   for path in ["Makefile", "scripts/build-universal.sh", "scripts/sign-and-notarize.sh"] {
-    #expect(try readRepositoryFile(path).contains("-framework ImageIO"))
+    let contents = try readRepositoryFile(path)
+    #expect(contents.contains("-framework ImageIO"))
+    #expect(contents.contains("-framework LinkPresentation"))
   }
 }
 

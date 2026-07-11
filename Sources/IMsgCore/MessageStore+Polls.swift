@@ -59,6 +59,18 @@ extension MessageStore {
     }
   }
 
+  /// Latest outbound vote snapshot for a poll. Native poll vote rows carry the
+  /// sender's full selected-option set, not a single delta, so selective unvote
+  /// must remove one option from this current snapshot and resend the remainder.
+  public func pollSelectedOptionIDs(guid: String) throws -> [String] {
+    let normalized = normalizeAssociatedGUID(guid)
+    let target = normalized.isEmpty ? guid : normalized
+    guard !target.isEmpty else { return [] }
+    return try withConnection { db in
+      try latestOutboundPollVoteOptionIDs(guid: target, db: db)
+    }
+  }
+
   private func pollOptionTextsByID(
     pollGUID: String,
     db: Connection,
@@ -131,6 +143,35 @@ extension MessageStore {
       }
     }
     return options
+  }
+
+  private func latestOutboundPollVoteOptionIDs(guid: String, db: Connection) throws -> [String] {
+    guard schema.hasReactionColumns else { return [] }
+    let selection = MessageRowSelection(store: self, includeChatID: false)
+    let rows = try db.prepareRowIterator(
+      """
+      SELECT \(selection.selectList)
+      FROM message m
+      LEFT JOIN handle h ON m.handle_id = h.ROWID
+      WHERE m.is_from_me = 1
+        AND m.associated_message_type = ?
+        AND (
+          m.associated_message_guid = ?
+          OR m.associated_message_guid LIKE '%/' || ?
+        )
+      ORDER BY m.date DESC, m.ROWID DESC
+      LIMIT 1
+      """,
+      bindings: [MessagePollDecoder.voteAssociatedMessageType, guid, guid]
+    )
+    guard let row = try rows.failableNext() else { return [] }
+    let decoded = try decodeMessageRow(
+      row,
+      columns: selection.columns,
+      fallbackChatID: nil
+    )
+    guard decoded.poll?.kind == .vote else { return [] }
+    return decoded.poll?.votes?.map(\.optionID) ?? []
   }
 
   private func sourcePollGUID(forAny candidates: [String], db: Connection) throws -> String? {

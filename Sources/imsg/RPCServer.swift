@@ -45,6 +45,9 @@ let kSupportedRPCMethods: [String] = [
   "messages.poll.send",
   "poll.vote",
   "messages.poll.vote",
+  "poll.unvote",
+  "polls.unvote",
+  "messages.poll.unvote",
   "tapback",
   "typing",
   "read",
@@ -73,6 +76,7 @@ final class RPCServer {
   let bridgeInvoker: BridgeInvoker
   let stageAttachment: AttachmentStager
   let stageSticker: StickerStager
+  let prepareRichLink: RichLinkPrepare
   let isBridgeReady: () -> Bool
   let startTyping: (String) throws -> Void
   let stopTyping: (String) throws -> Void
@@ -90,6 +94,9 @@ final class RPCServer {
     stageAttachment: @escaping AttachmentStager = MessageSender.stageAttachmentForMessagesApp,
     stageSticker: @escaping StickerStager = {
       try StickerAssetPreparer.prepare(at: $0)
+    },
+    prepareRichLink: @escaping RichLinkPrepare = { rawURL in
+      try await RichLinkPreparer.prepare(rawURL)
     },
     isBridgeReady: @escaping () -> Bool = { IMsgBridgeClient.shared.isReady() },
     startTyping: @escaping (String) throws -> Void = {
@@ -110,6 +117,7 @@ final class RPCServer {
     self.bridgeInvoker = invokeBridge
     self.stageAttachment = stageAttachment
     self.stageSticker = stageSticker
+    self.prepareRichLink = prepareRichLink
     self.isBridgeReady = isBridgeReady
     self.startTyping = startTyping
     self.stopTyping = stopTyping
@@ -182,6 +190,8 @@ final class RPCServer {
         try await handlePollSend(params: params, id: id)
       case "poll.vote", "messages.poll.vote":
         try await handlePollVote(params: params, id: id)
+      case "poll.unvote", "polls.unvote", "messages.poll.unvote":
+        try await handlePollUnvote(params: params, id: id)
       case "tapback":
         try await handleTapback(params: params, id: id)
       case "typing":

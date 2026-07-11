@@ -44,6 +44,7 @@ build-dylib:
 		-framework Foundation \
 		-framework AppKit \
 		-framework ImageIO \
+		-framework LinkPresentation \
 		-o .build/release/imsg-bridge-helper.dylib \
 		Sources/IMsgHelper/IMsgInjected.m
 	@echo "Built .build/release/imsg-bridge-helper.dylib"

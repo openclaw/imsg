@@ -163,6 +163,23 @@ enum CommandTestDatabase {
   }
 
   static func makeStoreForRPCWithPollVote() throws -> MessageStore {
+    try makeStoreForRPCWithPollVoteSnapshot(
+      isFromMe: false,
+      selectedOptionIDs: ["choice-yes"]
+    )
+  }
+
+  static func makeStoreForRPCWithOwnPollVoteSnapshot() throws -> MessageStore {
+    try makeStoreForRPCWithPollVoteSnapshot(
+      isFromMe: true,
+      selectedOptionIDs: ["choice-yes", "choice-no"]
+    )
+  }
+
+  private static func makeStoreForRPCWithPollVoteSnapshot(
+    isFromMe: Bool,
+    selectedOptionIDs: [String]
+  ) throws -> MessageStore {
     let db = try Connection(.inMemory)
     try createSchema(
       db,
@@ -182,13 +199,13 @@ enum CommandTestDatabase {
       ])
     let votePayload = try pollPayload(
       jsonObject: [
-        "votes": [
+        "votes": selectedOptionIDs.map { optionID in
           [
-            "voteOptionIdentifier": "choice-yes",
+            "voteOptionIdentifier": optionID,
             "participantHandle": "+123",
             "eventType": "selected",
           ]
-        ]
+        }
       ])
     try db.run(
       """
@@ -208,10 +225,11 @@ enum CommandTestDatabase {
         ROWID, handle_id, text, guid, associated_message_guid, associated_message_type,
         balloon_bundle_id, payload_data, message_summary_info, date, is_from_me, service
       )
-      VALUES (7, 1, '', 'poll-vote-guid-7', 'p:0/poll-guid-6', 4000, NULL, ?, NULL, ?, 0, 'iMessage')
+      VALUES (7, 1, '', 'poll-vote-guid-7', 'p:0/poll-guid-6', 4000, NULL, ?, NULL, ?, ?, 'iMessage')
       """,
       Blob(bytes: [UInt8](votePayload)),
-      appleEpoch(now.addingTimeInterval(2))
+      appleEpoch(now.addingTimeInterval(2)),
+      isFromMe ? 1 : 0
     )
     try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 6)")
     try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 7)")
@@ -224,7 +242,7 @@ enum CommandTestDatabase {
     return dir.appendingPathComponent("chat.db").path
   }
 
-  private static func createSchema(
+  static func createSchema(
     _ db: Connection,
     includeChatHandleJoin: Bool,
     includeReactionColumns: Bool = false,
@@ -322,7 +340,7 @@ enum CommandTestDatabase {
     try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 1)")
   }
 
-  private static func seedRPCChat(_ db: Connection) throws {
+  static func seedRPCChat(_ db: Connection) throws {
     let now = Date()
     try db.run(
       """

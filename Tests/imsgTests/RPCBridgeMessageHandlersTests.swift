@@ -4,6 +4,22 @@ import Testing
 @testable import IMsgCore
 @testable import imsg
 
+private let rpcPreparedRichLinkFixture = PreparedRichLinkPreview(
+  originalURL: "https://imsg.sh",
+  resolvedURL: "https://imsg.sh/",
+  title: "imsg",
+  image: nil
+)
+
+private func rpcRichLinkCapableStatus() -> [String: Any] {
+  [
+    "selectors": [
+      "urlPreviewMessage": true,
+      "sendRichLinkAction": true,
+    ] as [String: Any]
+  ]
+}
+
 @Test
 func rpcStatusAdvertisesBridgeMessageMethods() {
   let methods = Set(kSupportedRPCMethods)
@@ -16,6 +32,7 @@ func rpcStatusAdvertisesBridgeMessageMethods() {
     "messages.poll.send",
     "poll.vote",
     "messages.poll.vote",
+    "polls.unvote",
     "tapback",
     "message.edit",
     "message.unsend",
@@ -25,6 +42,56 @@ func rpcStatusAdvertisesBridgeMessageMethods() {
   ] {
     #expect(methods.contains(method))
   }
+}
+
+@Test
+func rpcPollUnvoteValidatesAndResolvesOption() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPCWithOwnPollVoteSnapshot()
+  let output = TestRPCOutput()
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, params in
+      capturedAction = action
+      capturedParams = params
+      return ["messageGuid": "unvote-guid"]
+    }
+  )
+
+  let request =
+    #"{"jsonrpc":"2.0","id":"unvote","method":"polls.unvote","params":{"chat_id":1,"#
+    + #""poll_guid":"p:0/poll-guid-6","option_id":"choice-yes"}}"#
+  await server.handleLineForTesting(request)
+
+  #expect(capturedAction == .sendPollUnvote)
+  #expect(capturedParams["chatGuid"] as? String == "iMessage;+;chat123")
+  #expect(capturedParams["pollMessageGuid"] as? String == "poll-guid-6")
+  #expect(capturedParams["optionIdentifier"] as? String == "choice-yes")
+  #expect(capturedParams["optionText"] as? String == "Yes")
+  #expect(capturedParams["remainingOptionIdentifiers"] as? [String] == ["choice-no"])
+  let result = output.responses.first?["result"] as? [String: Any]
+  #expect(result?["event"] as? String == "imessage.poll.unvoted")
+  #expect(result?["option_text"] as? String == "Yes")
+  #expect(result?["remaining_option_ids"] as? [String] == ["choice-no"])
+  #expect(result?["message_id"] as? String == "unvote-guid")
+}
+
+@Test
+func rpcPollUnvoteRejectsUnselectedOption() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPCWithPollVote()
+  let output = TestRPCOutput()
+  let server = RPCServer(store: store, verbose: false, output: output)
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"unvote","method":"polls.unvote","params":{"chat_id":1,"poll_guid":"poll-guid-6","option_id":"choice-no"}}"#
+  )
+
+  let error = output.errors.first?["error"] as? [String: Any]
+  #expect((error?["code"] as? Int) == -32602)
+  #expect((error?["data"] as? String)?.contains("not currently selected") == true)
 }
 
 @Test
@@ -253,6 +320,50 @@ func rpcSendRichResolvesQueuedBridgeGuidBeforeResponding() async throws {
 }
 
 @Test
+func rpcSendRichWithRichLinkResolvesQueuedBridgeGuidWithURL() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  var actions: [BridgeAction] = []
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    resolveSentMessage: { _, options, chatID, _ in
+      #expect(options.text == "https://imsg.sh")
+      #expect(chatID == 1)
+      return Message(
+        rowID: 42,
+        chatID: 1,
+        sender: "",
+        text: "https://imsg.sh",
+        date: Date(),
+        isFromMe: true,
+        service: "iMessage",
+        handleID: nil,
+        attachmentsCount: 0,
+        guid: "actual-rich-link-guid"
+      )
+    },
+    invokeBridge: { action, _ in
+      actions.append(action)
+      if action == .status { return rpcRichLinkCapableStatus() }
+      return ["messageGuid": "previous-guid", "queued": true]
+    },
+    prepareRichLink: { _ in rpcPreparedRichLinkFixture }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"rich","method":"send.rich","params":{"chat_id":1,"url":"https://imsg.sh"}}"#
+  )
+
+  let result = output.responses.first?["result"] as? [String: Any]
+  #expect(result?["queued"] as? Bool == true)
+  #expect(result?["guid"] as? String == "actual-rich-link-guid")
+  #expect(result?["message_id"] as? String == "actual-rich-link-guid")
+  #expect(actions == [.status, .sendRichLink])
+}
+
+@Test
 func rpcSendAttachmentStagesFileBeforeBridgeSend() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()
@@ -286,171 +397,98 @@ func rpcSendAttachmentStagesFileBeforeBridgeSend() async throws {
 }
 
 @Test
-func rpcSendStickerStagesFileAndReturnsTransferGuid() async throws {
-  let store = try CommandTestDatabase.makeStoreForRPCWithStickerTarget()
+func rpcSendRichForwardsRichLinkURL() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()
   var capturedAction: BridgeAction?
   var capturedParams: [String: Any] = [:]
-  var stagedInput: String?
   let server = RPCServer(
     store: store,
     verbose: false,
     output: output,
     invokeBridge: { action, params in
+      if action == .status { return rpcRichLinkCapableStatus() }
       capturedAction = action
       capturedParams = params
-      return ["messageGuid": "sticker-guid", "transferGuid": "transfer-guid"]
+      return ["messageGuid": "rich-link-guid"]
     },
-    stageSticker: { path in
-      stagedInput = path
-      return PreparedStickerAsset(
-        stagedPath: "/tmp/staged-sticker.png",
-        sha256: String(repeating: "b", count: 64),
-        pixelWidth: 300,
-        pixelHeight: 300,
-        uti: "public.png",
-        byteCount: 100,
-        accessibilityLabel: "Sticker label"
-      )
+    prepareRichLink: { rawURL in
+      #expect(rawURL == "https://imsg.sh")
+      return rpcPreparedRichLinkFixture
     }
   )
 
-  let line =
-    #"{"jsonrpc":"2.0","id":"sticker","method":"send.sticker","params":{"#
-    + #""chat_id":1,"file":"~/Desktop/sticker.png","attach_to":"p:2/parent-guid","part_index":2}}"#
-  await server.handleLineForTesting(line)
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"rich","method":"send.rich","params":{"chat_id":1,"url":"https://imsg.sh"}}"#
+  )
 
-  #expect(capturedAction == .sendSticker)
-  #expect(stagedInput?.hasSuffix("/Desktop/sticker.png") == true)
-  #expect(capturedParams["filePath"] as? String == "/tmp/staged-sticker.png")
-  #expect(capturedParams["contentHash"] as? String == String(repeating: "b", count: 64))
-  #expect(capturedParams["pixelWidth"] as? Int == 300)
-  #expect(capturedParams["pixelHeight"] as? Int == 300)
-  #expect(capturedParams["accessibilityLabel"] as? String == "Sticker label")
-  #expect(capturedParams["selectedMessageGuid"] as? String == "parent-guid")
-  #expect(capturedParams["targetPartIndex"] as? Int == 2)
+  #expect(capturedAction == .sendRichLink)
+  #expect(capturedParams["message"] as? String == "https://imsg.sh")
+  let preview = capturedParams["richLinkPreview"] as? [String: Any]
+  #expect(preview?["version"] as? Int == 1)
+  #expect(preview?["title"] as? String == "imsg")
   let result = output.responses.first?["result"] as? [String: Any]
-  #expect(result?["message_id"] as? String == "sticker-guid")
-  #expect(result?["transfer_guid"] as? String == "transfer-guid")
+  #expect(result?["message_id"] as? String == "rich-link-guid")
 }
 
 @Test
-func rpcSendStickerPrefersIMessageForSharedIdentifierAndSendsStandalone() async throws {
-  let store = try CommandTestDatabase.makeStoreForRPCWithStickerTarget(
-    includeSMSDuplicate: true)
+func rpcSendRichURLRejectsBridgeWithoutPreviewSupportBeforePreparation() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()
-  var capturedChatGUID: String?
+  var actions: [BridgeAction] = []
+  var prepared = false
   let server = RPCServer(
     store: store,
     verbose: false,
     output: output,
-    invokeBridge: { _, params in
-      capturedChatGUID = params["chatGuid"] as? String
-      return ["transferGuid": "standalone-transfer"]
+    invokeBridge: { action, _ in
+      actions.append(action)
+      return ["selectors": ["urlPreviewMessage": true] as [String: Any]]
     },
-    stageSticker: { _ in
-      PreparedStickerAsset(
-        stagedPath: "/tmp/staged-sticker.png",
-        sha256: String(repeating: "d", count: 64),
-        pixelWidth: 64,
-        pixelHeight: 64,
-        uti: "public.png",
-        byteCount: 100,
-        accessibilityLabel: "Sticker"
-      )
+    prepareRichLink: { _ in
+      prepared = true
+      return rpcPreparedRichLinkFixture
     }
   )
 
-  let line =
-    #"{"jsonrpc":"2.0","id":"standalone","method":"send.sticker","params":{"#
-    + #""chat_identifier":"shared-target","file":"~/Desktop/sticker.png"}}"#
-  await server.handleLineForTesting(line)
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"rich","method":"send.rich","params":{"chat_id":1,"url":"https://imsg.sh"}}"#
+  )
 
-  #expect(capturedChatGUID == "iMessage;+;chat123")
-  let result = output.responses.first?["result"] as? [String: Any]
-  #expect(result?["transfer_guid"] as? String == "standalone-transfer")
+  #expect(actions == [.status])
+  #expect(!prepared)
+  let error = output.errors.first?["error"] as? [String: Any]
+  #expect(error?["code"] as? Int == -32603)
+  #expect((error?["data"] as? String)?.contains("does not support rich links") == true)
 }
 
 @Test
-func rpcSendStickerDistinguishesInvalidAssetsFromStagingFailures() async throws {
-  let store = try CommandTestDatabase.makeStoreForRPCWithStickerTarget()
-  for (assetError, expectedCode) in [
-    (StickerAssetError.invalidFormat("unknown"), -32602),
-    (StickerAssetError.couldNotStage("disk full"), -32603),
-  ] {
-    let output = TestRPCOutput()
-    let server = RPCServer(
-      store: store,
-      verbose: false,
-      output: output,
-      stageSticker: { _ in throw assetError }
-    )
-    await server.handleLineForTesting(
-      #"{"jsonrpc":"2.0","id":"asset-error","method":"send.sticker","params":{"chat_id":1,"file":"sticker.png"}}"#
-    )
-    let code = (output.errors.first?["error"] as? [String: Any])?["code"] as? Int
-    #expect(code == expectedCode)
-  }
-}
-
-@Test
-func rpcSendStickerRejectsUnshippedAliasesAndMalformedRequests() async throws {
-  let store = try CommandTestDatabase.makeStoreForRPCWithStickerTarget()
+func rpcSendRichURLPrefersIMessageChatForSharedIdentifier() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPCWithSharedIdentifier()
   let output = TestRPCOutput()
-  var stageCalls = 0
-  var bridgeCalls = 0
+  var actions: [BridgeAction] = []
+  var sentParams: [String: Any] = [:]
   let server = RPCServer(
     store: store,
     verbose: false,
     output: output,
-    invokeBridge: { _, _ in
-      bridgeCalls += 1
-      return [:]
+    invokeBridge: { action, params in
+      actions.append(action)
+      if action == .status { return rpcRichLinkCapableStatus() }
+      sentParams = params
+      return ["messageGuid": "rich-link-guid"]
     },
-    stageSticker: { _ in
-      stageCalls += 1
-      return PreparedStickerAsset(
-        stagedPath: "/tmp/should-not-stage.png",
-        sha256: String(repeating: "c", count: 64),
-        pixelWidth: 64,
-        pixelHeight: 64,
-        uti: "public.png",
-        byteCount: 100,
-        accessibilityLabel: "Sticker"
-      )
-    }
+    prepareRichLink: { _ in rpcPreparedRichLinkFixture }
   )
-  let requests = [
-    #"{"jsonrpc":"2.0","id":"alias","method":"attachments.sendSticker","params":{}}"#,
-    #"{"jsonrpc":"2.0","id":"shape","method":"send.sticker","params":[]}"#,
-    #"{"jsonrpc":"2.0","id":"unknown","method":"send.sticker","params":{"chat_id":1,"file":"x.png","partIndex":1}}"#,
-    #"{"jsonrpc":"2.0","id":"chat-string","method":"send.sticker","params":{"chat_id":"1","file":"x.png"}}"#,
-    #"{"jsonrpc":"2.0","id":"chat-float","method":"send.sticker","params":{"chat_id":1.0,"file":"x.png"}}"#,
-    #"{"jsonrpc":"2.0","id":"chat-exponent","method":"send.sticker","params":{"chat_id":1e0,"file":"x.png"}}"#,
-    #"{"jsonrpc":"2.0","id":"chat-conflict","method":"send.sticker","params":{"#
-      + #""chat_id":1,"chat_guid":"iMessage;+;chat123","file":"x.png"}}"#,
-    #"{"jsonrpc":"2.0","id":"bool","method":"send.sticker","params":{"chat_id":1,"file":"x.png","part_index":true}}"#,
-    #"{"jsonrpc":"2.0","id":"float","method":"send.sticker","params":{"chat_id":1,"file":"x.png","part_index":1.5}}"#,
-    #"{"jsonrpc":"2.0","id":"integral-float","method":"send.sticker","params":{"chat_id":1,"file":"x.png","part_index":0.0}}"#,
-    #"{"jsonrpc":"2.0","id":"integral-exponent","method":"send.sticker","params":{"chat_id":1,"file":"x.png","part_index":0e0}}"#,
-    #"{"jsonrpc":"2.0","id":"string","method":"send.sticker","params":{"chat_id":1,"file":"x.png","part_index":"1"}}"#,
-    #"{"jsonrpc":"2.0","id":"orphan-part","method":"send.sticker","params":{"chat_id":1,"file":"x.png","part_index":1}}"#,
-    #"{"jsonrpc":"2.0","id":"sms","method":"send.sticker","params":{"chat_guid":"SMS;-;+123","file":"x.png"}}"#,
-    #"{"jsonrpc":"2.0","id":"wrong-chat","method":"send.sticker","params":{"chat_id":1,"file":"x.png","attach_to":"other-guid"}}"#,
-  ]
-  for request in requests {
-    await server.handleLineForTesting(request)
-  }
 
-  #expect(output.responses.isEmpty)
-  #expect(output.errors.count == requests.count)
-  #expect(stageCalls == 0)
-  #expect(bridgeCalls == 0)
-  let codes = output.errors.compactMap {
-    ($0["error"] as? [String: Any])?["code"] as? Int
-  }
-  #expect(codes.first == -32601)
-  #expect(codes.dropFirst().allSatisfy { $0 == -32602 })
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"rich","method":"send.rich","params":{"chat_identifier":"+123","url":"https://imsg.sh"}}"#
+  )
+
+  #expect(actions == [.status, .sendRichLink])
+  #expect(sentParams["chatGuid"] as? String == "iMessage;-;+123")
+  let result = output.responses.first?["result"] as? [String: Any]
+  #expect(result?["message_id"] as? String == "rich-link-guid")
 }
 
 @Test

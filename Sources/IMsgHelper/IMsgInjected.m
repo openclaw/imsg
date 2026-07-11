@@ -13,6 +13,7 @@
 #import <AppKit/AppKit.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <ImageIO/ImageIO.h>
+#import <LinkPresentation/LinkPresentation.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <os/lock.h>
@@ -30,6 +31,75 @@
 // parent message's first IMMessagePartChatItem, returns the thread
 // identifier string ("0:0:<parent-len>:<parent-guid>") to set on the reply.
 typedef NSString *(*IMCreateThreadIdentifierForMessagePartChatItemFn)(id);
+
+@interface IMsgRichLinkArchiveProxy : NSObject <NSSecureCoding>
+@property (nonatomic, strong) id richLinkMetadata;
+@property (nonatomic, assign) BOOL richLinkIsPlaceholder;
+@end
+
+@implementation IMsgRichLinkArchiveProxy
++ (BOOL)supportsSecureCoding { return YES; }
+
+- (void)encodeWithCoder:(NSCoder *)coder {
+    [coder encodeObject:self.richLinkMetadata forKey:@"richLinkMetadata"];
+    [coder encodeBool:self.richLinkIsPlaceholder forKey:@"richLinkIsPlaceholder"];
+}
+
+- (instancetype)initWithCoder:(NSCoder *)coder {
+    self = [super init];
+    if (self) {
+        _richLinkMetadata = [coder decodeObjectForKey:@"richLinkMetadata"];
+        _richLinkIsPlaceholder = [coder decodeBoolForKey:@"richLinkIsPlaceholder"];
+    }
+    return self;
+}
+@end
+
+@interface IMsgRichLinkImageAttachmentArchiveProxy : NSObject <NSSecureCoding>
+@property (nonatomic, assign) NSInteger richLinkImageAttachmentSubstituteIndex;
+@property (nonatomic, copy) NSString *MIMEType;
+@property (nonatomic, assign) NSInteger imageType;
+@property (nonatomic, assign) BOOL hasSingleDominantColor;
+@property (nonatomic, assign) BOOL dominantColor;
+@property (nonatomic, assign) CGFloat dominantColorRed;
+@property (nonatomic, assign) CGFloat dominantColorGreen;
+@property (nonatomic, assign) CGFloat dominantColorBlue;
+@property (nonatomic, assign) CGFloat dominantColorAlpha;
+@end
+
+@implementation IMsgRichLinkImageAttachmentArchiveProxy
++ (BOOL)supportsSecureCoding { return YES; }
+
+- (void)encodeWithCoder:(NSCoder *)coder {
+    [coder encodeInteger:self.richLinkImageAttachmentSubstituteIndex
+                 forKey:@"richLinkImageAttachmentSubstituteIndex"];
+    [coder encodeObject:self.MIMEType ?: @"image/png" forKey:@"MIMEType"];
+    [coder encodeInteger:self.imageType forKey:@"imageType"];
+    [coder encodeBool:self.hasSingleDominantColor forKey:@"hasSingleDominantColor"];
+    [coder encodeBool:self.dominantColor forKey:@"dominantColor"];
+    [coder encodeDouble:self.dominantColorRed forKey:@"dominantColor.red"];
+    [coder encodeDouble:self.dominantColorGreen forKey:@"dominantColor.green"];
+    [coder encodeDouble:self.dominantColorBlue forKey:@"dominantColor.blue"];
+    [coder encodeDouble:self.dominantColorAlpha forKey:@"dominantColor.alpha"];
+}
+
+- (instancetype)initWithCoder:(NSCoder *)coder {
+    self = [super init];
+    if (self) {
+        _richLinkImageAttachmentSubstituteIndex =
+            [coder decodeIntegerForKey:@"richLinkImageAttachmentSubstituteIndex"];
+        _MIMEType = [coder decodeObjectForKey:@"MIMEType"];
+        _imageType = [coder decodeIntegerForKey:@"imageType"];
+        _hasSingleDominantColor = [coder decodeBoolForKey:@"hasSingleDominantColor"];
+        _dominantColor = [coder decodeBoolForKey:@"dominantColor"];
+        _dominantColorRed = [coder decodeDoubleForKey:@"dominantColor.red"];
+        _dominantColorGreen = [coder decodeDoubleForKey:@"dominantColor.green"];
+        _dominantColorBlue = [coder decodeDoubleForKey:@"dominantColor.blue"];
+        _dominantColorAlpha = [coder decodeDoubleForKey:@"dominantColor.alpha"];
+    }
+    return self;
+}
+@end
 
 static IMCreateThreadIdentifierForMessagePartChatItemFn
 imCreateThreadIdentifierFn(void) {
@@ -215,6 +285,7 @@ static BOOL gHasSendMessageReason = NO;      // sendMessage:reason:
 
 static BOOL pollPayloadMessageInitializerAvailable(void);
 static BOOL pollVoteMessageInitializerAvailable(void);
+static BOOL urlPreviewMessageInitializerAvailable(void);
 
 static void probeSelectors(void) {
     Class chatClass = NSClassFromString(@"IMChat");
@@ -360,6 +431,29 @@ static void probeSelectors(void) {
 - (void)retargetTransfer:(NSString *)guid toPath:(NSString *)path;
 - (void)registerTransferWithDaemon:(NSString *)guid;
 @end
+
+typedef NS_ENUM(NSInteger, IMsgOutgoingTransferKind) {
+    IMsgOutgoingTransferKindAttachment = 0,
+    IMsgOutgoingTransferKindSticker = 1,
+    IMsgOutgoingTransferKindRichLinkPreview = 2,
+};
+
+static IMFileTransfer *prepareOutgoingTransfer(NSURL *originalURL, NSString *filename,
+                                               NSString *chatGuid,
+                                               IMsgOutgoingTransferKind transferKind,
+                                               NSDictionary *transferMetadata,
+                                               NSString **outActivePath,
+                                               NSString **outErr);
+static IMFileTransfer *prepareUnregisteredOutgoingTransfer(
+    NSURL *originalURL, NSString *filename, NSString *chatGuid,
+    BOOL hideAttachment, NSString *mimeType, NSString **outErr);
+static BOOL registerPreparedTransfer(IMFileTransfer *transfer, NSString **outErr);
+static BOOL configurePreviewPayloadTransfer(IMFileTransfer *transfer,
+                                            NSString *mimeType,
+                                            NSString *filename);
+static BOOL richLinkIntegerNumber(NSNumber *number);
+static NSAttributedString *annotateBodyForRichLink(NSAttributedString *body,
+                                                   NSString *urlString);
 
 @interface IMDPersistentAttachmentController : NSObject
 + (instancetype)sharedInstance;
@@ -899,6 +993,9 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"stickerAttach": @(
             stickerSend && stickerTargetMembership && stickerTargetLookup
                 && stickerAssociatedMessage),
+        @"urlPreviewMessage": @(urlPreviewMessageInitializerAvailable()),
+        @"sendRichLinkAction": @YES,
+        @"pollUpdateMessage": @(pollVoteMessageInitializerAvailable()),
         @"deleteChat": @(hasRegistry &&
             [registryClass instancesRespondToSelector:NSSelectorFromString(@"deleteChat:")]),
         @"removeChat": @(hasRegistry &&
@@ -1530,6 +1627,82 @@ static NSString *deriveThreadIdentifier(NSString *parentGuid,
 /// the load to keep the reply / reaction code paths independent (each
 /// fires its own load), which is what BlueBubblesHelper does too — and
 /// avoids gnarly out-parameter plumbing through deriveThreadIdentifier.
+static id safelyReadObjectSelector(id object, SEL selector) {
+    if (!object || !selector || ![object respondsToSelector:selector]) return nil;
+    @try {
+        return ((id (*)(id, SEL))objc_msgSend)(object, selector);
+    } @catch (__unused NSException *exception) {
+        // Some Tahoe IMCore proxy objects claim private selectors through
+        // forwarding, then raise unrecognized-selector when invoked.
+        return nil;
+    }
+}
+
+static id safelyReadObjectSelectorWithObject(id object, SEL selector, id argument) {
+    if (!object || !selector || ![object respondsToSelector:selector]) return nil;
+    @try {
+        return ((id (*)(id, SEL, id))objc_msgSend)(object, selector, argument);
+    } @catch (__unused NSException *exception) {
+        return nil;
+    }
+}
+
+static id safelyReadObjectSelectorWithTwoObjects(id object, SEL selector,
+                                                 id first, id second) {
+    if (!object || !selector || ![object respondsToSelector:selector]) return nil;
+    @try {
+        return ((id (*)(id, SEL, id, id))objc_msgSend)(
+            object, selector, first, second);
+    } @catch (__unused NSException *exception) {
+        return nil;
+    }
+}
+
+static id normalizeFoundMessageItemWithChatContext(id object, id chatContext) {
+    if (!object) return nil;
+
+    Class partClass = NSClassFromString(@"IMMessagePartChatItem");
+    if (partClass && [object isKindOfClass:partClass]) return object;
+
+    // History loading can yield an IMMessage, its backing IMMessageItem, or
+    // a chat item directly depending on OS version and whether it is a
+    // threaded reply. Normalize all three to the chat item mutations expect.
+    id messageItem = object;
+    SEL itemSel = @selector(_imMessageItem);
+    if ([messageItem respondsToSelector:itemSel]) {
+        messageItem = safelyReadObjectSelector(messageItem, itemSel);
+        if (!messageItem) return nil;
+    }
+    SEL chatItemsSel = @selector(_newChatItems);
+    BOOL hasChatItemsSelector = [messageItem respondsToSelector:chatItemsSel];
+    id items = nil;
+    if (hasChatItemsSelector) {
+        items = safelyReadObjectSelector(messageItem, chatItemsSel);
+    }
+    BOOL needsContext = !items
+        || ([items isKindOfClass:[NSArray class]] && ((NSArray *)items).count == 0);
+    if (needsContext && chatContext) {
+        SEL contextSel = NSSelectorFromString(@"_newChatItemsWithChatContext:");
+        items = safelyReadObjectSelectorWithObject(messageItem, contextSel, chatContext);
+        BOOL contextItemsMissing = !items
+            || ([items isKindOfClass:[NSArray class]] && ((NSArray *)items).count == 0);
+        if (contextItemsMissing) {
+            SEL partsSel = NSSelectorFromString(
+                @"_newMessagePartsForMessageItem:chatContext:");
+            items = safelyReadObjectSelectorWithTwoObjects(
+                partClass, partsSel, messageItem, chatContext);
+        }
+    }
+    if ([items isKindOfClass:[NSArray class]]) {
+        return ((NSArray *)items).firstObject;
+    }
+    return items ?: (hasChatItemsSelector ? nil : messageItem);
+}
+
+static id normalizeFoundMessageItem(id object) {
+    return normalizeFoundMessageItemWithChatContext(object, nil);
+}
+
 static id chatItemWithPartIndex(id candidate, NSInteger partIndex) {
     if ([candidate isKindOfClass:[NSArray class]]) {
         for (id item in (NSArray *)candidate) {
@@ -1538,11 +1711,10 @@ static id chatItemWithPartIndex(id candidate, NSInteger partIndex) {
         }
         return nil;
     }
-    if ([candidate respondsToSelector:@selector(aggregateAttachmentParts)]) {
-        id aggregate = [candidate performSelector:@selector(aggregateAttachmentParts)];
-        id match = chatItemWithPartIndex(aggregate, partIndex);
-        if (match) return match;
-    }
+    id aggregate = safelyReadObjectSelector(
+        candidate, @selector(aggregateAttachmentParts));
+    id aggregateMatch = chatItemWithPartIndex(aggregate, partIndex);
+    if (aggregateMatch) return aggregateMatch;
     if ([candidate respondsToSelector:@selector(index)]
         && [(IMMessagePartChatItem *)candidate index] == partIndex) {
         return candidate;
@@ -1582,17 +1754,10 @@ static id loadParentChatItem(NSString *parentGuid, NSNumber *partIndex,
     }
     if (!parent) return nil;
     if (outParentMessage) *outParentMessage = parent;
-
-    if (![parent respondsToSelector:@selector(_imMessageItem)]) return nil;
-    id parentItem = [parent performSelector:@selector(_imMessageItem)];
-    SEL chatItemsSel = NSSelectorFromString(@"_newChatItems");
-    if (!parentItem || ![parentItem respondsToSelector:chatItemsSel]) return nil;
-    id items = [parentItem performSelector:chatItemsSel];
-    if (partIndex) {
-        return chatItemWithPartIndex(items, partIndex.integerValue);
-    }
-    return [items isKindOfClass:[NSArray class]]
-        ? ((NSArray *)items).firstObject : items;
+    id parentItem = safelyReadObjectSelector(parent, @selector(_imMessageItem));
+    id items = safelyReadObjectSelector(parentItem, @selector(_newChatItems));
+    if (partIndex) return chatItemWithPartIndex(items, partIndex.integerValue);
+    return normalizeFoundMessageItem(parent);
 }
 
 static id loadParentFirstChatItem(NSString *parentGuid, id *outParentMessage) {
@@ -2050,16 +2215,19 @@ static unsigned long long flagsForMessagePayload(NSAttributedString *subject,
                                                  NSArray *fileTransferGuids,
                                                  BOOL isAudioMessage);
 
-static id buildPollIMMessage(NSAttributedString *body,
-                             NSData *payloadData,
-                             NSDictionary *summaryInfo,
-                             NSString *threadIdentifier,
-                             NSString *replyToGUID,
-                             NSString *threadOriginatorGUID,
-                             NSString *threadOriginatorPart,
-                             id parentItem) {
+static id buildBalloonIMMessage(NSString *balloonID,
+                                NSAttributedString *body,
+                                NSData *payloadData,
+                                NSDictionary *summaryInfo,
+                                NSArray *fileTransferGuids,
+                                NSString *threadIdentifier,
+                                NSString *replyToGUID,
+                                NSString *threadOriginatorGUID,
+                                NSString *threadOriginatorPart,
+                                id parentItem) {
     Class messageClass = NSClassFromString(@"IMMessage");
     if (!messageClass) return nil;
+    if (!balloonID.length) return nil;
 
     if (replyToGUID.length) {
         Class itemClass = NSClassFromString(@"IMMessageItem");
@@ -2075,8 +2243,8 @@ static id buildPollIMMessage(NSAttributedString *body,
         if (!item) return nil;
 
         NSDate *now = [NSDate date];
-        NSArray *fileTransferGuids = @[];
-        unsigned long long flags = flagsForMessagePayload(nil, fileTransferGuids, NO);
+        NSArray *transferGuids = fileTransferGuids ?: @[];
+        unsigned long long flags = flagsForMessagePayload(nil, transferGuids, NO);
         NSError *err = nil;
         NSString *guid = [[NSUUID UUID] UUIDString];
         id sender = nil;
@@ -2091,7 +2259,7 @@ static id buildPollIMMessage(NSAttributedString *body,
         [iinv setArgument:&now atIndex:3];
         [iinv setArgument:&body atIndex:4];
         [iinv setArgument:&attributes atIndex:5];
-        [iinv setArgument:&fileTransferGuids atIndex:6];
+        [iinv setArgument:&transferGuids atIndex:6];
         [iinv setArgument:&flags atIndex:7];
         [iinv setArgument:&err atIndex:8];
         [iinv setArgument:&guid atIndex:9];
@@ -2105,7 +2273,6 @@ static id buildPollIMMessage(NSAttributedString *body,
         }
         ensureItemBodyData(item, body);
 
-        NSString *balloonID = pollsBalloonBundleIdentifier();
         if (![item respondsToSelector:@selector(setBalloonBundleID:)]
             || ![item respondsToSelector:@selector(setPayloadData:)]
             || ![item respondsToSelector:@selector(setReplyToGUID:)]) {
@@ -2178,9 +2345,8 @@ static id buildPollIMMessage(NSAttributedString *body,
 
     id nilObj = nil;
     NSDate *now = [NSDate date];
-    NSArray *fileTransferGuids = @[];
-    unsigned long long flags = flagsForMessagePayload(nil, fileTransferGuids, NO);
-    NSString *balloonID = pollsBalloonBundleIdentifier();
+    NSArray *transferGuids = fileTransferGuids ?: @[];
+    unsigned long long flags = flagsForMessagePayload(nil, transferGuids, NO);
     unsigned long long scheduleType = 0;
     unsigned long long scheduleState = 0;
     NSString *messageThreadIdentifier = threadIdentifier.length ? threadIdentifier : nil;
@@ -2189,7 +2355,7 @@ static id buildPollIMMessage(NSAttributedString *body,
     [inv setArgument:&now atIndex:3];                 // time
     [inv setArgument:&body atIndex:4];                // text
     [inv setArgument:&nilObj atIndex:5];              // messageSubject
-    [inv setArgument:&fileTransferGuids atIndex:6];
+    [inv setArgument:&transferGuids atIndex:6];
     [inv setArgument:&flags atIndex:7];
     [inv setArgument:&nilObj atIndex:8];              // error
     [inv setArgument:&nilObj atIndex:9];              // guid
@@ -2207,6 +2373,186 @@ static id buildPollIMMessage(NSAttributedString *body,
         clearReplyMetadataOnMessage(result);
     }
     return result;
+}
+
+static id buildPollIMMessage(NSAttributedString *body,
+                             NSData *payloadData,
+                             NSDictionary *summaryInfo,
+                             NSString *threadIdentifier,
+                             NSString *replyToGUID,
+                             NSString *threadOriginatorGUID,
+                             NSString *threadOriginatorPart,
+                             id parentItem) {
+    return buildBalloonIMMessage(pollsBalloonBundleIdentifier(),
+                                 body,
+                                 payloadData,
+                                 summaryInfo,
+                                 @[],
+                                 threadIdentifier,
+                                 replyToGUID,
+                                 threadOriginatorGUID,
+                                 threadOriginatorPart,
+                                 parentItem);
+}
+
+static NSString *urlPreviewBalloonBundleIdentifier(void) {
+    return @"com.apple.messages.URLBalloonProvider";
+}
+
+static BOOL urlPreviewMessageInitializerAvailable(void) {
+    Class messageClass = NSClassFromString(@"IMMessage");
+    if (!messageClass) return NO;
+    SEL sel = @selector(initWithSender:time:text:messageSubject:fileTransferGUIDs:flags:error:guid:subject:balloonBundleID:payloadData:expressiveSendStyleID:threadIdentifier:scheduleType:scheduleState:messageSummaryInfo:);
+    return [messageClass instancesRespondToSelector:sel];
+}
+
+static IMsgRichLinkImageAttachmentArchiveProxy *makeURLPreviewImageSubstitute(
+    NSString *mimeType) {
+    IMsgRichLinkImageAttachmentArchiveProxy *substitute =
+        [IMsgRichLinkImageAttachmentArchiveProxy new];
+    substitute.richLinkImageAttachmentSubstituteIndex = 0;
+    substitute.MIMEType = mimeType.length ? mimeType : @"image/png";
+    substitute.imageType = 0;
+    substitute.hasSingleDominantColor = NO;
+    substitute.dominantColor = YES;
+    substitute.dominantColorRed = 0.1686274509803922;
+    substitute.dominantColorGreen = 0.1686274509803922;
+    substitute.dominantColorBlue = 0.1764705882352941;
+    substitute.dominantColorAlpha = 1.0;
+    return substitute;
+}
+
+static BOOL replaceURLPreviewImagesWithAttachmentSubstitute(LPLinkMetadata *metadata,
+                                                            NSString *mimeType) {
+    if (!metadata) return NO;
+    IMsgRichLinkImageAttachmentArchiveProxy *substitute =
+        makeURLPreviewImageSubstitute(mimeType);
+    @try {
+        [metadata setValue:nil forKey:@"image"];
+        [metadata setValue:nil forKey:@"icon"];
+        [metadata setValue:@[substitute] forKey:@"contentImages"];
+        NSArray *installed = [metadata valueForKey:@"contentImages"];
+        if ([installed containsObject:substitute]) return YES;
+    } @catch (NSException *exception) {
+        @try {
+            [metadata setValue:nil forKey:@"_image"];
+            [metadata setValue:nil forKey:@"_icon"];
+            [metadata setValue:@[substitute] forKey:@"_contentImages"];
+            NSArray *installed = [metadata valueForKey:@"_contentImages"];
+            if ([installed containsObject:substitute]) return YES;
+        } @catch (NSException *ignored) {
+            debugLog(@"rich-link: could not install image substitute: %@",
+                     ignored.reason ?: exception.reason ?: @"unknown");
+        }
+    }
+    return NO;
+}
+
+static NSURL *validatedRichLinkURL(id rawValue, NSString **outErr) {
+    if (![rawValue isKindOfClass:[NSString class]]) {
+        if (outErr) *outErr = @"Rich-link URL must be a string";
+        return nil;
+    }
+    NSString *value = [(NSString *)rawValue
+        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (!value.length || [value lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 8192) {
+        if (outErr) *outErr = @"Rich-link URL is empty or too long";
+        return nil;
+    }
+    NSURLComponents *components = [NSURLComponents componentsWithString:value];
+    NSString *scheme = components.scheme.lowercaseString;
+    if (!components ||
+        !([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"]) ||
+        !components.host.length || components.user.length || components.password.length) {
+        if (outErr) *outErr = @"Rich-link URL must be HTTP(S), include a host, and omit credentials";
+        return nil;
+    }
+    components.scheme = scheme;
+    NSURL *url = components.URL;
+    if (!url || [url.absoluteString lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 8192) {
+        if (outErr) *outErr = @"Rich-link URL could not be normalized";
+        return nil;
+    }
+    return url;
+}
+
+static NSData *buildURLPreviewPayloadData(NSDictionary *descriptor,
+                                          BOOL includeImageSubstitute,
+                                          NSString *previewMimeType,
+                                          BOOL *outImageSubstituteInstalled,
+                                          NSString **outErr) {
+    NSSet *allowedKeys = [NSSet setWithArray:@[
+        @"version", @"originalURL", @"resolvedURL", @"title", @"image"
+    ]];
+    for (id key in descriptor) {
+        if (![key isKindOfClass:[NSString class]] || ![allowedKeys containsObject:key]) {
+            if (outErr) *outErr = @"Invalid rich-link descriptor";
+            return nil;
+        }
+    }
+    NSNumber *version = descriptor[@"version"];
+    if (![descriptor isKindOfClass:[NSDictionary class]] ||
+        !richLinkIntegerNumber(version) || version.integerValue != 1) {
+        if (outErr) *outErr = @"Invalid rich-link descriptor version";
+        return nil;
+    }
+    NSString *urlError = nil;
+    NSURL *originalURL = validatedRichLinkURL(descriptor[@"originalURL"], &urlError);
+    NSURL *resolvedURL = validatedRichLinkURL(descriptor[@"resolvedURL"], &urlError);
+    if (!originalURL || !resolvedURL) {
+        if (outErr) *outErr = urlError ?: @"Invalid rich-link URL";
+        return nil;
+    }
+    NSString *title = [descriptor[@"title"] isKindOfClass:[NSString class]]
+        ? descriptor[@"title"] : @"";
+    if (!title.length || [title lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 1024 ||
+        [title rangeOfCharacterFromSet:[NSCharacterSet controlCharacterSet]].location !=
+            NSNotFound) {
+        if (outErr) *outErr = @"Invalid rich-link title";
+        return nil;
+    }
+
+    LPLinkMetadata *metadata = [LPLinkMetadata new];
+    metadata.URL = resolvedURL;
+    metadata.originalURL = originalURL;
+    metadata.title = title;
+    BOOL imageSubstituteInstalled = NO;
+    if (includeImageSubstitute) {
+        imageSubstituteInstalled =
+            replaceURLPreviewImagesWithAttachmentSubstitute(metadata, previewMimeType);
+    }
+    if (outImageSubstituteInstalled) {
+        *outImageSubstituteInstalled = imageSubstituteInstalled;
+    }
+
+    IMsgRichLinkArchiveProxy *richLink = [IMsgRichLinkArchiveProxy new];
+    richLink.richLinkMetadata = metadata;
+    richLink.richLinkIsPlaceholder = NO;
+
+    NSData *payload = nil;
+    @try {
+        NSKeyedArchiver *archiver =
+            [[NSKeyedArchiver alloc] initRequiringSecureCoding:YES];
+        [archiver setClassName:@"RichLink"
+                     forClass:[IMsgRichLinkArchiveProxy class]];
+        [archiver setClassName:@"RichLinkImageAttachmentSubstitute"
+                     forClass:[IMsgRichLinkImageAttachmentArchiveProxy class]];
+        [archiver encodeObject:richLink forKey:NSKeyedArchiveRootObjectKey];
+        [archiver finishEncoding];
+        if (archiver.error) {
+            if (outErr) *outErr = archiver.error.localizedDescription;
+            return nil;
+        }
+        payload = [archiver.encodedData copy];
+    } @catch (NSException *exception) {
+        if (outErr) *outErr = exception.reason ?: @"Could not archive URL metadata";
+        return nil;
+    }
+    if (!payload.length || payload.length > 1024 * 1024) {
+        if (outErr) *outErr = @"Rich-link payload is empty or too large";
+        return nil;
+    }
+    return payload;
 }
 
 static NSString *threadOriginatorPartForChatItem(id parentItem) {
@@ -2525,6 +2871,56 @@ static id buildIMMessage(NSAttributedString *body,
 /// `chat.chatItems` window. Falls back to the older
 /// `loadedChatItemsForChat:beforeDate:limit:loadIfNeeded:` + sync poll
 /// for OSes that don't expose the block-based load.
+static id findMessageItemInObject(id object,
+                                  NSString *messageGuid,
+                                  NSMutableSet<NSValue *> *visited,
+                                  NSUInteger depth) {
+    if (!object || !messageGuid.length || depth > 8) return nil;
+
+    NSValue *identity = [NSValue valueWithNonretainedObject:object];
+    if ([visited containsObject:identity]) return nil;
+    [visited addObject:identity];
+
+    SEL guidSel = @selector(guid);
+    if ([object respondsToSelector:guidSel]) {
+        id guid = safelyReadObjectSelector(object, guidSel);
+        if ([guid isKindOfClass:[NSString class]]
+            && [guid isEqualToString:messageGuid]) {
+            id normalized = normalizeFoundMessageItem(object);
+            if (normalized) return normalized;
+        }
+    }
+
+    // Threaded replies can sit below a top-level transcript item. Walk both
+    // public-ish wrappers and private backing objects, with a small depth cap
+    // and identity set so cyclic IMCore graphs cannot recurse forever.
+    NSArray<NSString *> *objectSelectors = @[
+        @"message", @"messageItem", @"_item", @"_imMessageItem"
+    ];
+    for (NSString *name in objectSelectors) {
+        SEL sel = NSSelectorFromString(name);
+        if (![object respondsToSelector:sel]) continue;
+        id child = safelyReadObjectSelector(object, sel);
+        id match = findMessageItemInObject(child, messageGuid, visited, depth + 1);
+        if (match) return match;
+    }
+
+    NSArray<NSString *> *collectionSelectors = @[
+        @"_newChatItems", @"chatItems", @"aggregateAttachmentParts"
+    ];
+    for (NSString *name in collectionSelectors) {
+        SEL sel = NSSelectorFromString(name);
+        if (![object respondsToSelector:sel]) continue;
+        id children = safelyReadObjectSelector(object, sel);
+        if (![children isKindOfClass:[NSArray class]]) continue;
+        for (id child in (NSArray *)children) {
+            id match = findMessageItemInObject(child, messageGuid, visited, depth + 1);
+            if (match) return match;
+        }
+    }
+    return nil;
+}
+
 static id findMessageItem(IMChat *chat, NSString *messageGuid) {
     if (!chat || !messageGuid.length) {
         return nil;
@@ -2534,7 +2930,15 @@ static id findMessageItem(IMChat *chat, NSString *messageGuid) {
     // (returns an IMMessage). Callers want the chat item, so navigate
     // IMMessage → IMMessageItem → first IMMessagePartChatItem via the
     // same accessor walk loadParentFirstChatItem performs.
-    id loadedChatItem = loadParentFirstChatItem(messageGuid, NULL);
+    id loadedMessage = nil;
+    id loadedChatItem = loadParentFirstChatItem(messageGuid, &loadedMessage);
+    if (!loadedChatItem && loadedMessage) {
+        Class contextClass = NSClassFromString(@"IMMutableChatContext");
+        SEL contextSel = NSSelectorFromString(@"chatContextForPinnedChat:");
+        id chatContext = safelyReadObjectSelectorWithObject(contextClass, contextSel, chat);
+        loadedChatItem = normalizeFoundMessageItemWithChatContext(
+            loadedMessage, chatContext);
+    }
     if (loadedChatItem) return loadedChatItem;
 
     Class hcClass = NSClassFromString(@"IMChatHistoryController");
@@ -2562,25 +2966,73 @@ static id findMessageItem(IMChat *chat, NSString *messageGuid) {
         if ([chat respondsToSelector:@selector(chatItems)]) {
             items = [chat performSelector:@selector(chatItems)];
         }
+        NSMutableSet<NSValue *> *visited = [NSMutableSet set];
         for (id item in items) {
-            id message = nil;
-            if ([item respondsToSelector:@selector(message)]) {
-                message = [item performSelector:@selector(message)];
-            }
-            NSString *guid = nil;
-            if (message && [message respondsToSelector:@selector(guid)]) {
-                guid = [message performSelector:@selector(guid)];
-            } else if ([item respondsToSelector:@selector(guid)]) {
-                guid = [item performSelector:@selector(guid)];
-            }
-            if ([guid isEqualToString:messageGuid]) {
-                return item;
-            }
+            id match = findMessageItemInObject(item, messageGuid, visited, 0);
+            if (match) return match;
         }
         [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
                                  beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
     }
     return nil;
+}
+
+static id findMessagePartInObject(id object, NSInteger partIndex) {
+    if (!object) return nil;
+    if ([object isKindOfClass:[NSArray class]]) {
+        for (id child in (NSArray *)object) {
+            id match = findMessagePartInObject(child, partIndex);
+            if (match) return match;
+        }
+        return nil;
+    }
+
+    id aggregate = safelyReadObjectSelector(
+        object, @selector(aggregateAttachmentParts));
+    id aggregateMatch = findMessagePartInObject(aggregate, partIndex);
+    if (aggregateMatch) return aggregateMatch;
+
+    if ([object respondsToSelector:@selector(index)]) {
+        @try {
+            if ([(IMMessagePartChatItem *)object index] == partIndex) return object;
+        } @catch (__unused NSException *exception) {
+        }
+        return nil;
+    }
+    return partIndex == 0 ? object : nil;
+}
+
+static id findMessagePart(IMChat *chat, NSString *messageGuid, NSInteger partIndex) {
+    id item = findMessageItem(chat, messageGuid);
+    if (!item) return nil;
+
+    id messageItem = safelyReadObjectSelector(item, @selector(messageItem));
+    if (!messageItem) messageItem = item;
+
+    Class contextClass = NSClassFromString(@"IMMutableChatContext");
+    SEL contextSel = NSSelectorFromString(@"chatContextForPinnedChat:");
+    id chatContext = safelyReadObjectSelectorWithObject(
+        contextClass, contextSel, chat);
+
+    id parts = safelyReadObjectSelector(messageItem, @selector(_newChatItems));
+    BOOL partsMissing = !parts
+        || ([parts isKindOfClass:[NSArray class]] && ((NSArray *)parts).count == 0);
+    if (partsMissing && chatContext) {
+        SEL contextItemsSel = NSSelectorFromString(@"_newChatItemsWithChatContext:");
+        parts = safelyReadObjectSelectorWithObject(
+            messageItem, contextItemsSel, chatContext);
+        partsMissing = !parts
+            || ([parts isKindOfClass:[NSArray class]] && ((NSArray *)parts).count == 0);
+        if (partsMissing) {
+            Class partClass = NSClassFromString(@"IMMessagePartChatItem");
+            SEL partsSel = NSSelectorFromString(
+                @"_newMessagePartsForMessageItem:chatContext:");
+            parts = safelyReadObjectSelectorWithTwoObjects(
+                partClass, partsSel, messageItem, chatContext);
+        }
+    }
+
+    return findMessagePartInObject(parts ?: item, partIndex);
 }
 
 /// Best-effort messageGuid extractor for transactional sends. Returns the
@@ -2658,29 +3110,363 @@ static void appendEvent(NSDictionary *evt) {
 
 #pragma mark - Send Handlers (v2)
 
+static NSString *richLinkActualUserHomeDirectory(void) {
+    struct passwd *entry = getpwuid(getuid());
+    if (!entry || !entry->pw_dir) return nil;
+    return [NSString stringWithUTF8String:entry->pw_dir];
+}
+
+static NSString *trustedRichLinkStagingRoot(void) {
+    return [[richLinkActualUserHomeDirectory()
+        stringByAppendingPathComponent:@"Library/Messages/Attachments/imsg"]
+        stringByStandardizingPath];
+}
+
+static BOOL richLinkPathIsTrusted(NSString *path) {
+    if (![path isKindOfClass:[NSString class]] || !path.isAbsolutePath) return NO;
+    NSString *root = trustedRichLinkStagingRoot();
+    NSString *candidate = path.stringByStandardizingPath;
+    return root.length && [candidate hasPrefix:[root stringByAppendingString:@"/"]];
+}
+
+static int openRichLinkDirectorySecurely(NSString *directoryPath) {
+    NSString *root = trustedRichLinkStagingRoot();
+    NSString *candidate = directoryPath.stringByStandardizingPath;
+    if (!root.length || !candidate.length) return -1;
+    BOOL isRoot = [candidate isEqualToString:root];
+    NSString *rootPrefix = [root stringByAppendingString:@"/"];
+    if (!isRoot && ![candidate hasPrefix:rootPrefix]) return -1;
+
+    int directoryFD = open(root.fileSystemRepresentation, O_RDONLY | O_CLOEXEC | O_DIRECTORY);
+    if (directoryFD < 0) return -1;
+    struct stat rootStat = {0};
+    if (fstat(directoryFD, &rootStat) != 0 || !S_ISDIR(rootStat.st_mode) ||
+        rootStat.st_uid != getuid() || (rootStat.st_mode & S_IWOTH) != 0) {
+        close(directoryFD);
+        return -1;
+    }
+    if (isRoot) return directoryFD;
+
+    NSString *relative = [candidate substringFromIndex:rootPrefix.length];
+    NSArray<NSString *> *components = relative.pathComponents;
+    for (NSString *component in components) {
+        if ([component isEqualToString:@"/"] || component.length == 0) continue;
+        int nextFD = openat(directoryFD, component.fileSystemRepresentation,
+                            O_RDONLY | O_CLOEXEC | O_DIRECTORY | O_NOFOLLOW);
+        close(directoryFD);
+        if (nextFD < 0) return -1;
+        directoryFD = nextFD;
+    }
+    return directoryFD;
+}
+
+static NSString *richLinkSHA256(NSData *data) {
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
+    NSMutableString *hex = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
+    for (NSUInteger index = 0; index < CC_SHA256_DIGEST_LENGTH; index++) {
+        [hex appendFormat:@"%02x", digest[index]];
+    }
+    return hex;
+}
+
+static BOOL richLinkIntegerNumber(NSNumber *number) {
+    if (![number isKindOfClass:[NSNumber class]]) return NO;
+    if (CFGetTypeID((__bridge CFTypeRef)number) == CFBooleanGetTypeID()) return NO;
+    return !CFNumberIsFloatType((__bridge CFNumberRef)number);
+}
+
+static NSData *readRichLinkPreviewData(NSString *path,
+                                       unsigned long long expectedSize,
+                                       NSString **outErr) {
+    if (!richLinkPathIsTrusted(path)) {
+        if (outErr) *outErr = @"Rich-link image path is outside the secure staging directory";
+        return nil;
+    }
+    NSString *directory = path.stringByDeletingLastPathComponent;
+    int directoryFD = openRichLinkDirectorySecurely(directory);
+    if (directoryFD < 0) {
+        if (outErr) *outErr = @"Could not securely open rich-link image directory";
+        return nil;
+    }
+    int fd = openat(directoryFD, path.lastPathComponent.fileSystemRepresentation,
+                    O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    close(directoryFD);
+    if (fd < 0) {
+        if (outErr) *outErr = @"Could not securely open rich-link image";
+        return nil;
+    }
+    struct stat before = {0};
+    if (fstat(fd, &before) != 0 || !S_ISREG(before.st_mode) || before.st_nlink != 1 ||
+        before.st_size <= 0 || (unsigned long long)before.st_size != expectedSize ||
+        expectedSize > 2ULL * 1024ULL * 1024ULL) {
+        close(fd);
+        if (outErr) *outErr = @"Rich-link image file does not match its descriptor";
+        return nil;
+    }
+
+    NSMutableData *data = [NSMutableData dataWithCapacity:(NSUInteger)before.st_size];
+    unsigned char buffer[64 * 1024];
+    while (YES) {
+        ssize_t count = read(fd, buffer, sizeof(buffer));
+        if (count == 0) break;
+        if (count < 0) {
+            if (errno == EINTR) continue;
+            close(fd);
+            if (outErr) *outErr = @"Could not read rich-link image";
+            return nil;
+        }
+        if ((unsigned long long)data.length + (unsigned long long)count > expectedSize) {
+            close(fd);
+            if (outErr) *outErr = @"Rich-link image changed while being read";
+            return nil;
+        }
+        [data appendBytes:buffer length:(NSUInteger)count];
+    }
+    struct stat after = {0};
+    BOOL changed = fstat(fd, &after) != 0
+        || after.st_dev != before.st_dev
+        || after.st_ino != before.st_ino
+        || after.st_size != before.st_size
+        || after.st_mtimespec.tv_sec != before.st_mtimespec.tv_sec
+        || after.st_mtimespec.tv_nsec != before.st_mtimespec.tv_nsec
+        || after.st_ctimespec.tv_sec != before.st_ctimespec.tv_sec
+        || after.st_ctimespec.tv_nsec != before.st_ctimespec.tv_nsec;
+    close(fd);
+    if (changed || data.length != (NSUInteger)expectedSize) {
+        if (outErr) *outErr = @"Rich-link image changed while being read";
+        return nil;
+    }
+    return data;
+}
+
+static NSString *writeRichLinkPreviewSnapshot(NSData *data,
+                                              NSString *contentHash,
+                                              NSString **outErr) {
+    NSString *root = trustedRichLinkStagingRoot();
+    int rootFD = openRichLinkDirectorySecurely(root);
+    if (rootFD < 0) {
+        if (outErr) *outErr = @"Could not securely open rich-link staging root";
+        return nil;
+    }
+    if (mkdirat(rootFD, "rich-links", 0700) != 0 && errno != EEXIST) {
+        close(rootFD);
+        if (outErr) *outErr = @"Could not create private rich-link directory";
+        return nil;
+    }
+    int previewsFD = openat(rootFD, "rich-links",
+                            O_RDONLY | O_CLOEXEC | O_DIRECTORY | O_NOFOLLOW);
+    close(rootFD);
+    if (previewsFD < 0) {
+        if (outErr) *outErr = @"Could not open private rich-link directory";
+        return nil;
+    }
+    NSString *directoryName = NSUUID.UUID.UUIDString;
+    if (mkdirat(previewsFD, directoryName.fileSystemRepresentation, 0700) != 0) {
+        close(previewsFD);
+        if (outErr) *outErr = @"Could not create private rich-link snapshot directory";
+        return nil;
+    }
+    int directoryFD = openat(previewsFD, directoryName.fileSystemRepresentation,
+                             O_RDONLY | O_CLOEXEC | O_DIRECTORY | O_NOFOLLOW);
+    if (directoryFD < 0) {
+        unlinkat(previewsFD, directoryName.fileSystemRepresentation, AT_REMOVEDIR);
+        close(previewsFD);
+        if (outErr) *outErr = @"Could not open private rich-link snapshot directory";
+        return nil;
+    }
+    NSString *filename = [contentHash stringByAppendingString:@".pluginPayloadAttachment"];
+    int fd = openat(directoryFD, filename.fileSystemRepresentation,
+                    O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
+    BOOL ok = fd >= 0;
+    const unsigned char *bytes = data.bytes;
+    NSUInteger offset = 0;
+    while (ok && offset < data.length) {
+        ssize_t written = write(fd, bytes + offset, data.length - offset);
+        if (written < 0 && errno == EINTR) continue;
+        if (written <= 0) { ok = NO; break; }
+        offset += (NSUInteger)written;
+    }
+    if (ok && fsync(fd) != 0) ok = NO;
+    if (fd >= 0 && close(fd) != 0) ok = NO;
+    if (!ok) {
+        unlinkat(directoryFD, filename.fileSystemRepresentation, 0);
+        close(directoryFD);
+        unlinkat(previewsFD, directoryName.fileSystemRepresentation, AT_REMOVEDIR);
+        close(previewsFD);
+        if (outErr) *outErr = @"Could not write private rich-link snapshot";
+        return nil;
+    }
+    close(directoryFD);
+    close(previewsFD);
+    return [[[root stringByAppendingPathComponent:@"rich-links"]
+        stringByAppendingPathComponent:directoryName]
+        stringByAppendingPathComponent:filename];
+}
+
+static void removeRichLinkPreviewSnapshot(NSString *path) {
+    NSString *root = [[trustedRichLinkStagingRoot()
+        stringByAppendingPathComponent:@"rich-links"] stringByStandardizingPath];
+    NSString *candidate = path.stringByStandardizingPath;
+    if (!root.length || ![candidate hasPrefix:[root stringByAppendingString:@"/"]]) return;
+    NSString *directory = candidate.stringByDeletingLastPathComponent;
+    int directoryFD = openRichLinkDirectorySecurely(directory);
+    if (directoryFD >= 0) {
+        unlinkat(directoryFD, candidate.lastPathComponent.fileSystemRepresentation, 0);
+        close(directoryFD);
+    }
+    NSString *parent = directory.stringByDeletingLastPathComponent;
+    int parentFD = openRichLinkDirectorySecurely(parent);
+    if (parentFD >= 0) {
+        unlinkat(parentFD, directory.lastPathComponent.fileSystemRepresentation, AT_REMOVEDIR);
+        close(parentFD);
+    }
+}
+
+static BOOL validateRichLinkPreviewImage(NSDictionary *image,
+                                         NSURL **outFileURL,
+                                         NSString **outMimeType,
+                                         NSString **outErr) {
+    if (!image) return YES;
+    NSSet *allowedKeys = [NSSet setWithArray:@[
+        @"filePath", @"mimeType", @"contentHash", @"byteCount",
+        @"pixelWidth", @"pixelHeight"
+    ]];
+    for (id key in image) {
+        if (![key isKindOfClass:[NSString class]] || ![allowedKeys containsObject:key]) {
+            if (outErr) *outErr = @"Invalid rich-link image descriptor";
+            return NO;
+        }
+    }
+    NSString *filePath = [image[@"filePath"] isKindOfClass:[NSString class]]
+        ? image[@"filePath"] : @"";
+    NSString *mimeType = [image[@"mimeType"] isKindOfClass:[NSString class]]
+        ? [image[@"mimeType"] lowercaseString] : @"";
+    NSString *contentHash = [image[@"contentHash"] isKindOfClass:[NSString class]]
+        ? [image[@"contentHash"] lowercaseString] : @"";
+    NSNumber *byteCount = image[@"byteCount"];
+    NSNumber *pixelWidth = image[@"pixelWidth"];
+    NSNumber *pixelHeight = image[@"pixelHeight"];
+    NSSet *allowedMIMETypes = [NSSet setWithArray:@[
+        @"image/jpeg", @"image/png", @"image/webp"
+    ]];
+    NSInteger width = pixelWidth.integerValue;
+    NSInteger height = pixelHeight.integerValue;
+    NSCharacterSet *nonHex = [[NSCharacterSet characterSetWithCharactersInString:
+        @"0123456789abcdef"] invertedSet];
+    if (!filePath.length || ![filePath hasSuffix:@".pluginPayloadAttachment"] ||
+        ![allowedMIMETypes containsObject:mimeType] || contentHash.length != 64 ||
+        [contentHash rangeOfCharacterFromSet:nonHex].location != NSNotFound ||
+        !richLinkIntegerNumber(byteCount) || !richLinkIntegerNumber(pixelWidth) ||
+        !richLinkIntegerNumber(pixelHeight) ||
+        byteCount.longLongValue <= 0 || byteCount.longLongValue > 2 * 1024 * 1024 ||
+        width <= 0 || height <= 0 || width > 4096 || height > 4096 ||
+        width > (16 * 1024 * 1024) / height) {
+        if (outErr) *outErr = @"Rich-link image metadata exceeds safe limits";
+        return NO;
+    }
+
+    NSData *data = readRichLinkPreviewData(filePath.stringByStandardizingPath,
+        byteCount.unsignedLongLongValue, outErr);
+    if (!data) return NO;
+    if (![[richLinkSHA256(data) lowercaseString] isEqualToString:contentHash]) {
+        if (outErr) *outErr = @"Rich-link image hash does not match its descriptor";
+        return NO;
+    }
+    CGImageSourceRef source = CGImageSourceCreateWithData((__bridge CFDataRef)data, NULL);
+    if (!source || CGImageSourceGetCount(source) != 1) {
+        if (source) CFRelease(source);
+        if (outErr) *outErr = @"Rich-link image must contain exactly one decodable frame";
+        return NO;
+    }
+    NSString *uti = (__bridge NSString *)CGImageSourceGetType(source);
+    BOOL typeMatches = ([mimeType isEqualToString:@"image/png"] && [uti isEqualToString:@"public.png"])
+        || ([mimeType isEqualToString:@"image/jpeg"] && [uti isEqualToString:@"public.jpeg"])
+        || ([mimeType isEqualToString:@"image/webp"] &&
+            ([uti isEqualToString:@"org.webmproject.webp"] || [uti isEqualToString:@"public.webp"]));
+    CFDictionaryRef rawProperties = CGImageSourceCopyPropertiesAtIndex(source, 0, NULL);
+    NSDictionary *properties = CFBridgingRelease(rawProperties);
+    NSInteger actualWidth = [properties[(NSString *)kCGImagePropertyPixelWidth] integerValue];
+    NSInteger actualHeight = [properties[(NSString *)kCGImagePropertyPixelHeight] integerValue];
+    if (!typeMatches || !properties || actualWidth != width || actualHeight != height) {
+        CFRelease(source);
+        if (outErr) *outErr = @"Rich-link image metadata does not match its descriptor";
+        return NO;
+    }
+    CGImageRef decoded = CGImageSourceCreateImageAtIndex(source, 0, NULL);
+    CFRelease(source);
+    if (!decoded) {
+        if (outErr) *outErr = @"Rich-link image could not be decoded safely";
+        return NO;
+    }
+    CGImageRelease(decoded);
+    NSString *snapshotPath = writeRichLinkPreviewSnapshot(data, contentHash, outErr);
+    if (!snapshotPath.length) return NO;
+    if (outFileURL) *outFileURL = [NSURL fileURLWithPath:snapshotPath];
+    if (outMimeType) *outMimeType = mimeType;
+    return YES;
+}
+
 /// Implementation core for `send-message`. Builds an IMMessage with optional
 /// effect/subject/reply and dispatches via `[chat sendMessage:]`. ddScan on
 /// macOS 13+ defers the send by 100ms.
 static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params) {
-    NSString *chatGuid = params[@"chatGuid"];
-    NSString *message = params[@"message"];
-    NSString *effectId = params[@"effectId"];
-    NSString *subject = params[@"subject"];
-    NSString *selectedMessageGuid = params[@"selectedMessageGuid"];
-    NSNumber *partIndexNum = params[@"partIndex"];
+    id chatGuidValue = params[@"chatGuid"];
+    id messageValue = params[@"message"];
+    id effectIdValue = params[@"effectId"];
+    id subjectValue = params[@"subject"];
+    id selectedMessageGuidValue = params[@"selectedMessageGuid"];
+    id richLinkValue = params[@"richLinkPreview"];
+    id partIndexValue = params[@"partIndex"];
+    id ddScanValue = params[@"ddScan"];
+    id attributedBodyValue = params[@"attributedBody"];
+    id textFormattingValue = params[@"textFormatting"];
+    if (![chatGuidValue isKindOfClass:[NSString class]] ||
+        (messageValue && ![messageValue isKindOfClass:[NSString class]]) ||
+        (effectIdValue && ![effectIdValue isKindOfClass:[NSString class]]) ||
+        (subjectValue && ![subjectValue isKindOfClass:[NSString class]]) ||
+        (selectedMessageGuidValue &&
+         ![selectedMessageGuidValue isKindOfClass:[NSString class]]) ||
+        (richLinkValue && ![richLinkValue isKindOfClass:[NSDictionary class]]) ||
+        (partIndexValue && !richLinkIntegerNumber(partIndexValue)) ||
+        (ddScanValue && ![ddScanValue isKindOfClass:[NSNumber class]]) ||
+        (attributedBodyValue && ![attributedBodyValue isKindOfClass:[NSString class]]) ||
+        (textFormattingValue && ![textFormattingValue isKindOfClass:[NSArray class]])) {
+        return errorResponse(requestId, @"Invalid send-message parameter types");
+    }
+
+    NSString *chatGuid = chatGuidValue;
+    NSString *message = messageValue;
+    NSString *effectId = effectIdValue;
+    NSString *subject = subjectValue;
+    NSString *selectedMessageGuid = selectedMessageGuidValue;
+    NSDictionary *richLinkPreview = richLinkValue;
+    NSNumber *partIndexNum = partIndexValue;
     NSInteger partIndex = partIndexNum ? [partIndexNum integerValue] : 0;
-    NSNumber *ddScanNum = params[@"ddScan"];
+    NSNumber *ddScanNum = ddScanValue;
     BOOL ddScan = [ddScanNum boolValue];
-    NSString *attributedBodyB64 = params[@"attributedBody"];
-    NSArray *textFormatting = params[@"textFormatting"];
+    NSString *attributedBodyB64 = attributedBodyValue;
+    NSArray *textFormatting = textFormattingValue;
 
     if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
     if (!message) message = @"";
+    if (richLinkPreview &&
+        (effectId.length || subject.length || selectedMessageGuid.length || partIndex != 0 ||
+         attributedBodyB64.length || textFormatting.count || !ddScan)) {
+        return errorResponse(requestId, @"Rich links do not support send modifiers");
+    }
 
     IMChat *chat = resolveChatByGuid(chatGuid);
     if (!chat) {
         return errorResponse(requestId,
             [NSString stringWithFormat:@"Chat not found: %@", chatGuid]);
+    }
+    if (richLinkPreview) {
+        NSString *serviceName = serviceNameForChat(chat, chatGuid).lowercaseString;
+        if (!([serviceName isEqualToString:@"imessage"] ||
+              [serviceName isEqualToString:@"imessagelite"])) {
+            return errorResponse(requestId, @"Rich links require an iMessage chat");
+        }
     }
 
     NSAttributedString *body = attributedBodyFromBase64(attributedBodyB64);
@@ -2715,20 +3501,126 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
         clearThreadContextForChat(chat, nil);
     }
 
+    NSString *richLinkSnapshotPath = nil;
+    IMFileTransfer *richLinkTransfer = nil;
+    BOOL richLinkTransferRegistered = NO;
     @try {
-        id imMessage = buildIMMessage(body, subjectAttr,
-                                      effectId,
-                                      threadIdentifier,
-                                      parentItem,
-                                      selectedMessageGuid,
-                                      associatedType,
-                                      zeroRange,
-                                      /*summaryInfo*/ nil,
-                                      /*fileTransferGuids*/ @[],
-                                      /*isAudio*/ NO,
-                                      ddScan);
+        id imMessage = nil;
+        BOOL richLinkImageUsed = NO;
+        if (richLinkPreview) {
+            NSString *urlError = nil;
+            NSURL *originalURL = validatedRichLinkURL(richLinkPreview[@"originalURL"], &urlError);
+            if (!originalURL || ![message isEqualToString:originalURL.absoluteString]) {
+                return errorResponse(requestId,
+                    urlError.length ? urlError : @"Rich-link body does not match its URL");
+            }
+            body = annotateBodyForRichLink(body, originalURL.absoluteString);
+            if (!body) {
+                return errorResponse(requestId, @"Could not annotate rich-link body");
+            }
+
+            NSMutableArray *fileTransferGuids = [NSMutableArray array];
+            NSString *previewMimeType = nil;
+            NSURL *previewFile = nil;
+            NSString *imageError = nil;
+            NSDictionary *imageDescriptor = [richLinkPreview[@"image"]
+                isKindOfClass:[NSDictionary class]] ? richLinkPreview[@"image"] : nil;
+            if (richLinkPreview[@"image"] && !imageDescriptor) {
+                return errorResponse(requestId, @"Invalid rich-link image descriptor");
+            }
+            if (!validateRichLinkPreviewImage(imageDescriptor,
+                                              &previewFile,
+                                              &previewMimeType,
+                                              &imageError)) {
+                return errorResponse(requestId, imageError ?: @"Invalid rich-link image");
+            }
+            if (previewFile) {
+                richLinkSnapshotPath = previewFile.path;
+                NSString *prepErr = nil;
+                NSString *filename = previewFile.lastPathComponent;
+                richLinkTransfer = prepareUnregisteredOutgoingTransfer(previewFile,
+                                                                       filename,
+                                                                       chatGuid,
+                                                                       YES,
+                                                                       previewMimeType,
+                                                                       &prepErr);
+                NSString *transferGuid = [richLinkTransfer guid];
+                if (transferGuid.length) {
+                    [fileTransferGuids addObject:transferGuid];
+                    debugLog(@"rich-link: prepared hidden preview transfer");
+                } else {
+                    debugLog(@"rich-link: hidden preview unavailable (%@); using metadata-only card",
+                             prepErr ?: @"unknown");
+                    removeRichLinkPreviewSnapshot(richLinkSnapshotPath);
+                    richLinkSnapshotPath = nil;
+                    richLinkTransfer = nil;
+                }
+            }
+            NSString *payloadError = nil;
+            BOOL imageSubstituteInstalled = NO;
+            NSData *payloadData = buildURLPreviewPayloadData(richLinkPreview,
+                                                             fileTransferGuids.count > 0,
+                                                             previewMimeType,
+                                                             &imageSubstituteInstalled,
+                                                             &payloadError);
+            if (!payloadData) {
+                removeRichLinkPreviewSnapshot(richLinkSnapshotPath);
+                richLinkSnapshotPath = nil;
+                return errorResponse(requestId,
+                    payloadError.length ? payloadError : @"Could not build URL preview payload");
+            }
+            if (fileTransferGuids.count > 0 && !imageSubstituteInstalled) {
+                [fileTransferGuids removeAllObjects];
+                richLinkTransfer = nil;
+                removeRichLinkPreviewSnapshot(richLinkSnapshotPath);
+                richLinkSnapshotPath = nil;
+                debugLog(@"rich-link: image substitute unavailable; using metadata-only card");
+            }
+            NSDictionary *summaryInfo = @{
+                @"enc": @YES,
+                @"eogcd": @3,
+                @"ust": @YES
+            };
+            imMessage = buildBalloonIMMessage(urlPreviewBalloonBundleIdentifier(),
+                                              body,
+                                              payloadData,
+                                              summaryInfo,
+                                              fileTransferGuids,
+                                              threadIdentifier,
+                                              selectedMessageGuid,
+                                              parentMessage && [parentMessage respondsToSelector:@selector(guid)]
+                                                ? [parentMessage performSelector:@selector(guid)]
+                                                : nil,
+                                              nil,
+                                              parentItem);
+        } else {
+            imMessage = buildIMMessage(body, subjectAttr,
+                                       effectId,
+                                       threadIdentifier,
+                                       parentItem,
+                                       selectedMessageGuid,
+                                       associatedType,
+                                       zeroRange,
+                                       /*summaryInfo*/ nil,
+                                       /*fileTransferGuids*/ @[],
+                                       /*isAudio*/ NO,
+                                       ddScan);
+        }
         if (!imMessage) {
+            removeRichLinkPreviewSnapshot(richLinkSnapshotPath);
+            richLinkSnapshotPath = nil;
             return errorResponse(requestId, @"Could not construct IMMessage");
+        }
+        if (richLinkTransfer) {
+            NSString *registrationError = nil;
+            if (!registerPreparedTransfer(richLinkTransfer, &registrationError)) {
+                removeRichLinkPreviewSnapshot(richLinkSnapshotPath);
+                richLinkSnapshotPath = nil;
+                return errorResponse(requestId,
+                    registrationError ?: @"Could not register rich-link preview transfer");
+            }
+            richLinkTransferRegistered = YES;
+            richLinkImageUsed = YES;
         }
 
         // IMCore exposes separate originator types: IMMessageItem wants the
@@ -2774,8 +3666,12 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
         } mutableCopy];
         NSString *serviceName = serviceNameForChat(chat, chatGuid);
         if (serviceName.length) response[@"service"] = serviceName;
+        if (richLinkPreview) response[@"richLinkImageUsed"] = @(richLinkImageUsed);
         return successResponse(requestId, response);
     } @catch (NSException *exception) {
+        if (!richLinkTransferRegistered) {
+            removeRichLinkPreviewSnapshot(richLinkSnapshotPath);
+        }
         return errorResponse(requestId,
             [NSString stringWithFormat:@"send-message failed: %@", exception.reason]);
     }
@@ -2917,14 +3813,28 @@ static NSDictionary *handleSendPoll(NSInteger requestId, NSDictionary *params) {
 /// creation the data URL carries no `?src=p&c=` suffix.
 static NSData *buildPollVotePayloadData(NSString *optionIdentifier,
                                         NSString *voterHandle,
+                                        NSArray<NSString *> *remainingOptionIdentifiers,
+                                        BOOL removed,
                                         NSString **outError) {
-    NSDictionary *vote = @{
-        @"voteOptionIdentifier": optionIdentifier,
-        @"participantHandle": pollParticipantHandle(voterHandle) ?: @""
-    };
+    NSArray<NSString *> *voteOptionIdentifiers = removed
+        ? (remainingOptionIdentifiers ?: @[])
+        : @[(optionIdentifier ?: @"")];
+    NSMutableArray *votes = [NSMutableArray arrayWithCapacity:voteOptionIdentifiers.count];
+    NSString *participantHandle = pollParticipantHandle(voterHandle) ?: @"";
+    for (NSString *identifierValue in voteOptionIdentifiers) {
+        NSString *identifier = trimmedPollString(identifierValue);
+        if (!identifier.length) {
+            if (outError) *outError = @"Poll vote payload contains an empty option identifier";
+            return nil;
+        }
+        [votes addObject:@{
+            @"voteOptionIdentifier": identifier,
+            @"participantHandle": participantHandle
+        }];
+    }
     NSDictionary *root = @{
         @"version": @1,
-        @"item": @{ @"votes": @[vote] }
+        @"item": @{ @"votes": votes }
     };
     NSError *jsonError = nil;
     NSData *jsonData = [NSJSONSerialization dataWithJSONObject:root options:0 error:&jsonError];
@@ -2963,7 +3873,8 @@ static NSData *buildPollVotePayloadData(NSString *optionIdentifier,
 static id buildPollVoteIMMessage(NSAttributedString *body,
                                  NSData *payloadData,
                                  NSDictionary *summaryInfo,
-                                 NSString *pollMessageGuid) {
+                                 NSString *pollMessageGuid,
+                                 long long associatedType) {
     Class messageClass = NSClassFromString(@"IMMessage");
     if (!messageClass) return nil;
 
@@ -2983,7 +3894,6 @@ static id buildPollVoteIMMessage(NSAttributedString *body,
     NSDate *now = [NSDate date];
     NSArray *fileTransferGuids = @[];
     unsigned long long flags = flagsForAssociatedMessagePayload(nil, fileTransferGuids, NO);
-    long long associatedType = 4000;
     NSRange associatedRange = NSMakeRange(0, 1);
 
     [inv setArgument:&nilObj atIndex:2];            // sender
@@ -3027,19 +3937,36 @@ static id buildPollVoteIMMessage(NSAttributedString *body,
     return (balloonStamped && payloadStamped) ? result : nil;
 }
 
-/// `send-poll-vote`: cast a vote on an existing poll. Builds a Polls balloon
-/// carrying the vote payload, associated to the poll message via type 4000.
-/// The caller passes the original poll message GUID and the chosen option's
-/// UUID (resolved CLI-side from the poll's decoded options).
-static NSDictionary *handleSendPollVote(NSInteger requestId, NSDictionary *params) {
+static NSDictionary *handleSendPollVoteMutation(NSInteger requestId,
+                                                NSDictionary *params,
+                                                BOOL removed) {
     NSString *chatGuid = params[@"chatGuid"];
     NSString *pollMessageGuid = trimmedPollString(params[@"pollMessageGuid"]);
     NSString *optionIdentifier = trimmedPollString(params[@"optionIdentifier"]);
     NSString *optionText = trimmedPollString(params[@"optionText"]);
+    NSArray *remainingOptionIdentifiers = @[];
 
     if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
     if (!pollMessageGuid.length) return errorResponse(requestId, @"Missing pollMessageGuid");
     if (!optionIdentifier.length) return errorResponse(requestId, @"Missing optionIdentifier");
+    if (removed) {
+        id rawRemaining = params[@"remainingOptionIdentifiers"];
+        if (rawRemaining && ![rawRemaining isKindOfClass:[NSArray class]]) {
+            return errorResponse(requestId, @"remainingOptionIdentifiers must be an array");
+        }
+        NSMutableArray *normalizedRemaining = [NSMutableArray array];
+        for (id rawIdentifier in (NSArray *)(rawRemaining ?: @[])) {
+            if (![rawIdentifier isKindOfClass:[NSString class]]) {
+                return errorResponse(requestId, @"remainingOptionIdentifiers must contain strings");
+            }
+            NSString *identifier = trimmedPollString(rawIdentifier);
+            if (!identifier.length) {
+                return errorResponse(requestId, @"remainingOptionIdentifiers must not contain empty values");
+            }
+            [normalizedRemaining addObject:identifier];
+        }
+        remainingOptionIdentifiers = [normalizedRemaining copy];
+    }
     if (!pollVoteMessageInitializerAvailable()) {
         return errorResponse(requestId, @"Poll vote IMMessage initializer unavailable on this macOS");
     }
@@ -3057,7 +3984,11 @@ static NSDictionary *handleSendPollVote(NSInteger requestId, NSDictionary *param
     }
 
     NSString *payloadError = nil;
-    NSData *payloadData = buildPollVotePayloadData(optionIdentifier, voterHandle, &payloadError);
+    NSData *payloadData = buildPollVotePayloadData(optionIdentifier,
+                                                   voterHandle,
+                                                   remainingOptionIdentifiers,
+                                                   removed,
+                                                   &payloadError);
     if (!payloadData) {
         return errorResponse(requestId, payloadError ?: @"Could not build vote payload");
     }
@@ -3074,7 +4005,7 @@ static NSDictionary *handleSendPollVote(NSInteger requestId, NSDictionary *param
 
     @try {
         clearThreadContextForChat(chat, nil);
-        id imMessage = buildPollVoteIMMessage(body, payloadData, summary, pollMessageGuid);
+        id imMessage = buildPollVoteIMMessage(body, payloadData, summary, pollMessageGuid, 4000);
         if (!imMessage) {
             return errorResponse(requestId, @"Could not construct vote IMMessage");
         }
@@ -3086,12 +4017,28 @@ static NSDictionary *handleSendPollVote(NSInteger requestId, NSDictionary *param
             @"pollMessageGuid": pollMessageGuid,
             @"optionIdentifier": optionIdentifier,
             @"optionText": optionText ?: @"",
+            @"remainingOptionIdentifiers": remainingOptionIdentifiers,
+            @"removed": @(removed),
             @"balloonBundleID": pollsBalloonBundleIdentifier()
         });
     } @catch (NSException *exception) {
         return errorResponse(requestId,
             [NSString stringWithFormat:@"send-poll-vote failed: %@", exception.reason]);
     }
+}
+
+/// `send-poll-vote`: cast a vote on an existing poll. Builds a Polls balloon
+/// carrying the vote payload, associated to the poll message via type 4000.
+/// The caller passes the original poll message GUID and the chosen option's
+/// UUID (resolved CLI-side from the poll's decoded options).
+static NSDictionary *handleSendPollVote(NSInteger requestId, NSDictionary *params) {
+    return handleSendPollVoteMutation(requestId, params, NO);
+}
+
+/// `send-poll-unvote`: remove one selected option by sending the same native
+/// vote payload shape with the sender's remaining selected options.
+static NSDictionary *handleSendPollUnvote(NSInteger requestId, NSDictionary *params) {
+    return handleSendPollVoteMutation(requestId, params, YES);
 }
 
 /// `send-multipart`: at minimum, sends an attributedBody composed of multiple
@@ -3630,6 +4577,22 @@ static BOOL markTransferAsSticker(IMFileTransfer *transfer,
     return YES;
 }
 
+static NSAttributedString *annotateBodyForRichLink(NSAttributedString *body,
+                                                   NSString *urlString) {
+    if (!body.length || !urlString.length) return body;
+    NSURL *url = [NSURL URLWithString:urlString];
+    if (!url) return body;
+    NSMutableAttributedString *annotated = [body mutableCopy];
+    NSString *plain = annotated.string ?: @"";
+    NSRange range = [plain rangeOfString:urlString];
+    if (range.location == NSNotFound || range.length == 0 ||
+        range.location != 0 || range.length != annotated.length) return nil;
+    [annotated addAttribute:@"__kIMLinkAttributeName" value:url range:range];
+    [annotated addAttribute:@"__kIMLinkIsRichLinkAttributeName" value:@YES range:range];
+    [annotated addAttribute:NSLinkAttributeName value:url range:range];
+    return annotated;
+}
+
 /// Register an outgoing file transfer with IMFileTransferCenter so that
 /// Messages.app/imagent persists the attachment row and links it back to the
 /// outbound message. Mirrors BlueBubblesHelper's `prepareFileTransferForAttachment`:
@@ -3665,11 +4628,6 @@ static void retargetPreparedTransfer(id ftc, IMFileTransfer *transfer,
     }
 }
 
-typedef NS_ENUM(NSInteger, IMsgOutgoingTransferKind) {
-    IMsgOutgoingTransferKindAttachment = 0,
-    IMsgOutgoingTransferKindSticker = 1,
-};
-
 static BOOL pathsReferToSameFile(NSString *lhs, NSString *rhs) {
     if (!lhs.length || !rhs.length) return NO;
     if ([lhs.stringByStandardizingPath isEqualToString:rhs.stringByStandardizingPath]) {
@@ -3681,6 +4639,23 @@ static BOOL pathsReferToSameFile(NSString *lhs, NSString *rhs) {
         && stat(rhs.fileSystemRepresentation, &rightInfo) == 0
         && leftInfo.st_dev == rightInfo.st_dev
         && leftInfo.st_ino == rightInfo.st_ino;
+}
+
+static BOOL configurePreviewPayloadTransfer(IMFileTransfer *transfer,
+                                            NSString *mimeType,
+                                            NSString *filename) {
+    if (!transfer || !mimeType.length || !filename.length ||
+        ![transfer respondsToSelector:@selector(setHideAttachment:)] ||
+        ![transfer respondsToSelector:@selector(setMimeType:)] ||
+        ![transfer respondsToSelector:@selector(setTransferredFilename:)]) {
+        return NO;
+    }
+    ((void (*)(id, SEL, BOOL))objc_msgSend)(transfer,
+                                            @selector(setHideAttachment:),
+                                            YES);
+    [transfer performSelector:@selector(setMimeType:) withObject:mimeType];
+    [transfer performSelector:@selector(setTransferredFilename:) withObject:filename];
+    return YES;
 }
 
 static IMFileTransfer *prepareOutgoingTransfer(NSURL *originalURL, NSString *filename,
@@ -3733,7 +4708,7 @@ static IMFileTransfer *prepareOutgoingTransfer(NSURL *originalURL, NSString *fil
     // passing the real chat GUID is what gives IMD enough context to choose the
     // per-chat attachment-store path that Messages/imagent will accept.
     Class pacClass = NSClassFromString(@"IMDPersistentAttachmentController");
-    if (pacClass) {
+    if (pacClass && transferKind != IMsgOutgoingTransferKindRichLinkPreview) {
         id pac = [pacClass performSelector:@selector(sharedInstance)];
         SEL pathSel = @selector(_persistentPathForTransfer:filename:highQuality:chatGUID:storeAtExternalPath:);
         if (pac && [pac respondsToSelector:pathSel]) {
@@ -3860,6 +4835,14 @@ static IMFileTransfer *prepareOutgoingTransfer(NSURL *originalURL, NSString *fil
         }
     }
 
+    if (transferKind == IMsgOutgoingTransferKindRichLinkPreview) {
+        NSString *mimeType = transferMetadata[@"mimeType"];
+        if (!configurePreviewPayloadTransfer(transfer, mimeType, filename)) {
+            if (outErr) *outErr = @"Hidden preview transfer selectors unavailable";
+            return nil;
+        }
+    }
+
     if (transferKind == IMsgOutgoingTransferKindSticker) {
         NSString *stickerErr = nil;
         NSString *accessibilityLabel = transferMetadata[@"accessibilityLabel"];
@@ -3871,6 +4854,17 @@ static IMFileTransfer *prepareOutgoingTransfer(NSURL *originalURL, NSString *fil
     }
 
     return transfer;
+}
+
+static IMFileTransfer *prepareUnregisteredOutgoingTransfer(
+    NSURL *originalURL, NSString *filename, NSString *chatGuid,
+    BOOL hideAttachment, NSString *mimeType, NSString **outErr) {
+    IMsgOutgoingTransferKind kind = hideAttachment
+        ? IMsgOutgoingTransferKindRichLinkPreview
+        : IMsgOutgoingTransferKindAttachment;
+    NSDictionary *metadata = mimeType.length ? @{ @"mimeType": mimeType } : nil;
+    return prepareOutgoingTransfer(originalURL, filename, chatGuid, kind,
+                                   metadata, NULL, outErr);
 }
 
 static BOOL registerPreparedTransfer(IMFileTransfer *transfer, NSString **outErr) {
@@ -4581,54 +5575,13 @@ static NSDictionary *handleUnsendMessage(NSInteger requestId, NSDictionary *para
         return errorResponse(requestId, @"retractMessagePart: not available on this macOS");
     }
 
-    id messageItem = findMessageItem(chat, messageGuid);
-    if (!messageItem) {
+    id target = findMessagePart(chat, messageGuid, partIndex);
+    if (!target) {
         return errorResponse(requestId,
-            [NSString stringWithFormat:@"Message not found: %@", messageGuid]);
+            [NSString stringWithFormat:@"Message part not found: %ld", (long)partIndex]);
     }
 
     @try {
-        id newChatItems = nil;
-        SEL ncSel = @selector(_newChatItems);
-        if ([messageItem respondsToSelector:ncSel]) {
-            // Route through objc_msgSend to avoid ARC's "performSelector
-            // names a selector which retains the object" warning on the
-            // underscore-prefixed selector.
-            newChatItems = ((id (*)(id, SEL))objc_msgSend)(messageItem, ncSel);
-        }
-        id target = nil;
-        if ([newChatItems isKindOfClass:[NSArray class]]) {
-            NSArray *arr = newChatItems;
-            if (arr.count == 0) target = messageItem;
-            else if (arr.count == 1) target = arr.firstObject;
-            else {
-                for (id sub in arr) {
-                    // Aggregate attachment unwrap
-                    if ([sub respondsToSelector:@selector(aggregateAttachmentParts)]) {
-                        NSArray *agg = [sub performSelector:@selector(aggregateAttachmentParts)];
-                        for (id p in agg) {
-                            if ([p respondsToSelector:@selector(index)]
-                                && [(IMMessagePartChatItem *)p index] == partIndex) {
-                                target = p; break;
-                            }
-                        }
-                        if (target) break;
-                    }
-                    if ([sub respondsToSelector:@selector(index)]
-                        && [(IMMessagePartChatItem *)sub index] == partIndex) {
-                        target = sub; break;
-                    }
-                }
-            }
-        } else if (newChatItems != nil) {
-            target = newChatItems;
-        } else {
-            target = messageItem;
-        }
-        if (!target) {
-            return errorResponse(requestId,
-                [NSString stringWithFormat:@"Message part not found: %ld", (long)partIndex]);
-        }
         [chat performSelector:@selector(retractMessagePart:) withObject:target];
     } @catch (NSException *ex) {
         return errorResponse(requestId, ex.reason ?: @"unsend-message failed");
@@ -5189,12 +6142,24 @@ static NSDictionary* dispatchAction(NSInteger legacyId, NSString *action,
         return successResponse(legacyId, @{@"pong": @YES});
     }
     // v2 actions
-    if ([action isEqualToString:@"send-message"]) return handleSendMessage(legacyId, params);
+    if ([action isEqualToString:@"send-message"]) {
+        if (params[@"richLinkPreview"] || params[@"richLinkURL"]) {
+            return errorResponse(legacyId, @"Use send-rich-link for URL previews");
+        }
+        return handleSendMessage(legacyId, params);
+    }
+    if ([action isEqualToString:@"send-rich-link"]) {
+        if (![params[@"richLinkPreview"] isKindOfClass:[NSDictionary class]]) {
+            return errorResponse(legacyId, @"Missing rich-link descriptor");
+        }
+        return handleSendMessage(legacyId, params);
+    }
     if ([action isEqualToString:@"send-multipart"]) return handleSendMultipart(legacyId, params);
     if ([action isEqualToString:@"send-attachment"]) return handleSendAttachment(legacyId, params);
     if ([action isEqualToString:@"send-sticker"]) return handleSendSticker(legacyId, params);
     if ([action isEqualToString:@"send-poll"]) return handleSendPoll(legacyId, params);
     if ([action isEqualToString:@"send-poll-vote"]) return handleSendPollVote(legacyId, params);
+    if ([action isEqualToString:@"send-poll-unvote"]) return handleSendPollUnvote(legacyId, params);
     if ([action isEqualToString:@"send-reaction"]) return handleSendReaction(legacyId, params);
     if ([action isEqualToString:@"notify-anyways"]) return handleNotifyAnyways(legacyId, params);
     if ([action isEqualToString:@"edit-message"]) return handleEditMessage(legacyId, params);
