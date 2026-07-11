@@ -5066,10 +5066,6 @@ static NSDictionary *handleSendSticker(NSInteger requestId, NSDictionary *params
     NSInteger targetPartIndex = partIndexNum ? [partIndexNum integerValue] : 0;
 
     if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
-    if (![chatGuid hasPrefix:@"iMessage;"]
-        && ![chatGuid hasPrefix:@"iMessageLite;"]) {
-        return errorResponse(requestId, @"Stickers require an iMessage chat");
-    }
     if (!filePath.length) return errorResponse(requestId, @"Missing filePath");
     if (targetPartIndex < 0) {
         return errorResponse(requestId, @"targetPartIndex must be non-negative");
@@ -5155,8 +5151,7 @@ static NSDictionary *handleSendSticker(NSInteger requestId, NSDictionary *params
             return errorResponse(requestId,
                 @"Sticker target does not belong to the selected chat");
         }
-        parentChatItem = loadParentChatItem(
-            selectedMessageGuid, @(targetPartIndex), NULL);
+        parentChatItem = findMessagePart(chat, selectedMessageGuid, targetPartIndex);
         if (!parentChatItem
             || ![parentChatItem respondsToSelector:@selector(index)]
             || [(IMMessagePartChatItem *)parentChatItem index] != targetPartIndex

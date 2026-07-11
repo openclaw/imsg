@@ -36,6 +36,6 @@ func rpcSendStickerAcceptsBridgeGuidForAnyStoredGroupTarget() async throws {
   await server.handleLineForTesting(request)
 
   #expect(output.errors.isEmpty)
-  #expect(capturedParams["chatGuid"] as? String == "iMessage;+;chat123")
+  #expect(capturedParams["chatGuid"] as? String == "any;+;chat123")
   #expect(capturedParams["selectedMessageGuid"] as? String == "parent-guid")
 }

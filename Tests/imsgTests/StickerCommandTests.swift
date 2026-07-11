@@ -31,6 +31,7 @@ func stickerCommandStagesFileAndForwardsAttachTarget() async throws {
         capturedParams = params
         return ["messageGuid": "sent-guid", "transferGuid": "transfer-guid"]
       },
+      resolveChat: { chat, _ in (chat, "iMessage") },
       messageBelongsToChat: { messageGUID, chatGUID, _ in
         messageGUID == "parent-guid" && chatGUID == "iMessage;-;+15551234567"
       },

@@ -42,6 +42,21 @@ enum StickerCommand {
       action, params in
       try await IMsgBridgeClient.shared.invoke(action: action, params: params)
     },
+    resolveChat: @escaping (String, String) throws -> (guid: String, service: String)? = {
+      target, dbPath in
+      let store = try MessageStore(path: dbPath)
+      let info =
+        try store.chatInfo(
+          matchingTarget: target,
+          preferredServices: ["iMessage", "iMessageLite"]
+        )
+        ?? store.chatInfo(
+          matchingTarget: stickerChatLookupTarget(target),
+          preferredServices: ["iMessage", "iMessageLite"]
+        )
+      guard let info else { return nil }
+      return (info.guid, info.service)
+    },
     messageBelongsToChat: @escaping (String, String, String) throws -> Bool = {
       messageGUID, chatGUID, dbPath in
       try MessageStore(path: dbPath).messageBelongsToChat(
@@ -59,9 +74,14 @@ enum StickerCommand {
     guard let file = values.option("file"), !file.isEmpty else {
       throw ParsedValuesError.missingOption("file")
     }
-    guard isStickerIMessageChatGUID(chat) else {
+    let dbPath = values.option("db") ?? MessageStore.defaultPath
+    guard let resolvedChat = try resolveChat(chat, dbPath), !resolvedChat.guid.isEmpty else {
       throw StickerSendValidationError.iMessageRequired
     }
+    guard isStickerIMessageService(resolvedChat.service) else {
+      throw StickerSendValidationError.iMessageRequired
+    }
+    let chatGUID = resolvedChat.guid
 
     let explicitPart: Int?
     if let rawPart = values.option("targetPart") {
@@ -77,8 +97,7 @@ enum StickerCommand {
       explicitPart: explicitPart
     )
     if let target {
-      let dbPath = values.option("db") ?? MessageStore.defaultPath
-      guard try messageBelongsToChat(target.messageGUID, chat, dbPath) else {
+      guard try messageBelongsToChat(target.messageGUID, chatGUID, dbPath) else {
         throw StickerSendValidationError.targetNotInChat
       }
     }
@@ -87,7 +106,7 @@ enum StickerCommand {
     let asset = try prepareSticker(expanded)
     defer { StickerAssetPreparer.discard(asset) }
     var params: [String: Any] = [
-      "chatGuid": chat,
+      "chatGuid": chatGUID,
       "filePath": asset.stagedPath,
       "contentHash": asset.sha256,
       "pixelWidth": asset.pixelWidth,

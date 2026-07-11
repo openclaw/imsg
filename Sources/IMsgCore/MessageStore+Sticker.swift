@@ -31,7 +31,8 @@ extension MessageStore {
     let parts = trimmed.split(separator: ";", omittingEmptySubsequences: false).map(String.init)
     if parts.count == 3, !parts[2].isEmpty {
       ordered.append(parts[2])
-      ordered.append("any;\(parts[1]);\(parts[2])")
+      ordered.append("any;+;\(parts[2])")
+      ordered.append("any;-;\(parts[2])")
     }
     var seen = Set<String>()
     return ordered.compactMap { candidate -> Binding? in

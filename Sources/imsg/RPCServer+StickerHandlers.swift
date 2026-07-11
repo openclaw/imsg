@@ -25,13 +25,27 @@ extension RPCServer {
         throw RPCError.invalidParams("\(key) must be a nonempty string")
       }
     }
-    let chatGUID = try await resolveChatGUIDParam(
+    let requestedChatGUID = try await resolveChatGUIDParam(
       params,
       preferredServices: ["iMessage", "iMessageLite"]
     )
-    guard isStickerIMessageChatGUID(chatGUID) else {
+    let chatInfo =
+      try store.chatInfo(
+        matchingTarget: requestedChatGUID,
+        preferredServices: ["iMessage", "iMessageLite"]
+      )
+      ?? store.chatInfo(
+        matchingTarget: stickerChatLookupTarget(requestedChatGUID),
+        preferredServices: ["iMessage", "iMessageLite"]
+      )
+    guard
+      let chatInfo,
+      !chatInfo.guid.isEmpty,
+      isStickerIMessageService(chatInfo.service)
+    else {
       throw RPCError.invalidParams(StickerSendValidationError.iMessageRequired.description)
     }
+    let chatGUID = chatInfo.guid
     guard let file = params["file"] as? String, !file.isEmpty else {
       throw RPCError.invalidParams("file is required")
     }

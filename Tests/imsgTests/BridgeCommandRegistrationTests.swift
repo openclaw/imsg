@@ -87,7 +87,7 @@ func injectedHelperWiresStickerSendAction() throws {
   #expect(sendStickerBody.contains("selectedMessageGuid.length ? 1000 : 0"))
   #expect(sendStickerBody.contains(#"@{@"eogcd": @3, @"ust": @YES}"#))
   #expect(sendStickerBody.contains("buildAttachmentAttributed(transferGuid, filename, 0)"))
-  #expect(sendStickerBody.contains("loadParentChatItem"))
+  #expect(sendStickerBody.contains("findMessagePart(chat, selectedMessageGuid, targetPartIndex)"))
   #expect(sendStickerBody.contains("stickerMessageBelongsToChat"))
   #expect(sendStickerBody.contains("registerPreparedTransfer"))
   #expect(sendStickerBody.contains("targetPartIndex"))

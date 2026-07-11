@@ -56,8 +56,15 @@ struct StickerSendTarget: Equatable {
   }
 }
 
-func isStickerIMessageChatGUID(_ guid: String) -> Bool {
-  guid.hasPrefix("iMessage;") || guid.hasPrefix("iMessageLite;")
+func isStickerIMessageService(_ service: String) -> Bool {
+  let normalized = service.lowercased()
+  return normalized == "imessage" || normalized == "imessagelite"
+}
+
+func stickerChatLookupTarget(_ target: String) -> String {
+  let parts = target.split(separator: ";", omittingEmptySubsequences: false)
+  guard parts.count == 3, parts[0] != "any", !parts[2].isEmpty else { return target }
+  return String(parts[2])
 }
 
 enum StickerSendValidationError: LocalizedError, CustomStringConvertible, Equatable {
