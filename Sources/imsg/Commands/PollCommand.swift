@@ -167,6 +167,7 @@ enum PollCommand {
     storeFactory: @escaping (String) throws -> MessageStore,
     invokeBridge: @escaping (BridgeAction, [String: Any]) async throws -> [String: Any]
   ) async throws {
+    try validateOptionSelector(values)
     let chat = try resolveChatGUID(values: values, storeFactory: storeFactory)
     guard let pollGuid = values.option("poll")?.trimmingCharacters(in: .whitespacesAndNewlines),
       !pollGuid.isEmpty
@@ -225,11 +226,7 @@ enum PollCommand {
   }
 
   /// Resolve exactly one option selector against the poll's stable options.
-  private static func resolveOptionID(
-    values: ParsedValues,
-    pollGuid: String,
-    store: MessageStore
-  ) throws -> (id: String, text: String?) {
+  private static func validateOptionSelector(_ values: ParsedValues) throws {
     let directID = values.option("optionID")?.trimmingCharacters(in: .whitespacesAndNewlines)
     let indexValue = values.optionInt64("optionIndex")
     let textValue = values.option("option")?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -241,6 +238,17 @@ enum PollCommand {
       throw ParsedValuesError.invalidOption(
         "choose exactly one of --option-id, --option-index, or --option")
     }
+  }
+
+  private static func resolveOptionID(
+    values: ParsedValues,
+    pollGuid: String,
+    store: MessageStore
+  ) throws -> (id: String, text: String?) {
+    let directID = values.option("optionID")?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let indexValue = values.optionInt64("optionIndex")
+    let textValue = values.option("option")?.trimmingCharacters(in: .whitespacesAndNewlines)
+    try validateOptionSelector(values)
     let options = try store.pollOptions(guid: pollGuid)
     guard !options.isEmpty else {
       throw ParsedValuesError.invalidOption("poll (could not decode options for \(pollGuid))")
