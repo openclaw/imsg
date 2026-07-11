@@ -242,8 +242,8 @@ func injectedHelperUsesGuardedNamePhotoSelectorFamilies() throws {
     source.contains("allowHandlesForNicknameSharing:forChat:fromHandle:forceSend:")
   )
   #expect(source.contains("fromHandle:(NSString *)fromHandleID"))
-  #expect(source.contains("allowHandlesForNicknameSharing:forChat:"))
-  #expect(source.contains("whitelistHandlesForNicknameSharing:forChat:"))
+  #expect(!source.contains("allowHandlesForNicknameSharing:forChat:(NSArray"))
+  #expect(!source.contains("whitelistHandlesForNicknameSharing:forChat:"))
 
   let controllerBody = try #require(
     objectiveCFunctionBody(named: "sharedNicknameController", in: source)
@@ -276,6 +276,7 @@ func injectedHelperUsesGuardedNamePhotoSelectorFamilies() throws {
   #expect(shareBody.contains("participants"))
   #expect(shareBody.contains("nicknameSharingMutationSelectorName"))
   #expect(shareBody.contains("forceSend = YES"))
+  #expect(!shareBody.contains("else {"))
   #expect(shareBody.contains("objc_msgSend"))
   #expect(shareBody.contains(#"@"requested": @YES"#))
 }

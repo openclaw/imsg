@@ -484,8 +484,6 @@ static NSAttributedString *annotateBodyForRichLink(NSAttributedString *body,
                                forChat:(IMChat *)chat
                             fromHandle:(NSString *)fromHandleID
                              forceSend:(BOOL)forceSend;
-- (void)allowHandlesForNicknameSharing:(NSArray *)handles forChat:(IMChat *)chat;
-- (void)whitelistHandlesForNicknameSharing:(NSArray *)handles forChat:(IMChat *)chat;
 @end
 
 @interface IDSIDQueryController : NSObject
@@ -6094,15 +6092,11 @@ static id sharedNicknameController(void) {
 
 static NSString *nicknameSharingMutationSelectorName(Class nnClass) {
     if (!nnClass) return nil;
-    NSArray<NSString *> *selectors = @[
-        @"allowHandlesForNicknameSharing:forChat:fromHandle:forceSend:",
-        @"allowHandlesForNicknameSharing:forChat:",
-        @"whitelistHandlesForNicknameSharing:forChat:"
-    ];
-    for (NSString *name in selectors) {
-        if ([nnClass instancesRespondToSelector:NSSelectorFromString(name)]) return name;
-    }
-    return nil;
+    NSString *selectorName =
+        @"allowHandlesForNicknameSharing:forChat:fromHandle:forceSend:";
+    return [nnClass instancesRespondToSelector:NSSelectorFromString(selectorName)]
+        ? selectorName
+        : nil;
 }
 
 static NSDictionary *nicknameSharingSelectorStatus(void) {
@@ -6240,10 +6234,7 @@ static NSDictionary *handleShouldOfferNicknameSharing(NSInteger requestId,
     }
 
     NSString *shareSelector = nicknameSharingMutationSelectorName(nnClass);
-    BOOL forceSupported = [shareSelector isEqualToString:
-        @"allowHandlesForNicknameSharing:forChat:fromHandle:forceSend:"];
-    BOOL available = canShare && participants.count > 0 &&
-        (!forceSupported || senderHandleID.length > 0);
+    BOOL available = canShare && participants.count > 0 && senderHandleID.length > 0;
     return successResponse(requestId, @{
         @"chatGuid": chatGuid,
         @"available": @(available),
@@ -6254,7 +6245,7 @@ static NSDictionary *handleShouldOfferNicknameSharing(NSInteger requestId,
         @"from_handle_available": @(senderHandleID.length > 0),
         @"from_handle_source": senderSource ?: [NSNull null],
         @"share_selector": shareSelector ?: [NSNull null],
-        @"force_supported": @(forceSupported)
+        @"force_supported": @(canShare)
     });
 }
 
@@ -6285,25 +6276,18 @@ static NSDictionary *handleShareNickname(NSInteger requestId, NSDictionary *para
             return errorResponse(requestId, @"Name & Photo sharing selector unavailable");
         }
 
-        BOOL forceSend = NO;
+        BOOL forceSend = YES;
         NSString *senderSource = nil;
-        if ([selectorName isEqualToString:
-                @"allowHandlesForNicknameSharing:forChat:fromHandle:forceSend:"]) {
-            NSString *senderHandleID = nicknameSenderHandleID(chat, &senderSource);
-            if (senderHandleID.length == 0) {
-                return errorResponse(requestId, @"Could not resolve the chat's local sending handle");
-            }
-            // Explicit share requests must send even when the handles are already
-            // allow-listed; the private API otherwise only updates policy state.
-            // IMCore forwards fromHandle: unchanged as a local NSString handle ID;
-            // only the participants array contains IMHandle objects.
-            forceSend = YES;
-            ((void (*)(id, SEL, id, id, id, BOOL))objc_msgSend)(
-                controller, selector, participants, chat, senderHandleID, forceSend);
-        } else {
-            ((void (*)(id, SEL, id, id))objc_msgSend)(
-                controller, selector, participants, chat);
+        NSString *senderHandleID = nicknameSenderHandleID(chat, &senderSource);
+        if (senderHandleID.length == 0) {
+            return errorResponse(requestId, @"Could not resolve the chat's local sending handle");
         }
+        // Explicit share requests must send even when the handles are already
+        // allow-listed; the private API otherwise only updates policy state.
+        // IMCore forwards fromHandle: unchanged as a local NSString handle ID;
+        // only the participants array contains IMHandle objects.
+        ((void (*)(id, SEL, id, id, id, BOOL))objc_msgSend)(
+            controller, selector, participants, chat, senderHandleID, forceSend);
 
         return successResponse(requestId, @{
             @"chatGuid": chatGuid,
