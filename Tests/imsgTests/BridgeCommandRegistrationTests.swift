@@ -62,6 +62,8 @@ func injectedHelperWiresStickerSendAction() throws {
   let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
   let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
   let sendStickerBody = try #require(functionBody(named: "handleSendSticker", in: source))
+  let secureOpenBody = try #require(
+    functionBody(named: "openStickerDirectorySecurely", in: source))
 
   #expect(source.contains("send-sticker"))
   #expect(source.contains("markTransferAsSticker"))
@@ -91,6 +93,12 @@ func injectedHelperWiresStickerSendAction() throws {
   #expect(sendStickerBody.contains("stickerMessageBelongsToChat"))
   #expect(sendStickerBody.contains("registerPreparedTransfer"))
   #expect(sendStickerBody.contains("targetPartIndex"))
+  #expect(secureOpenBody.contains("open(home.fileSystemRepresentation"))
+  #expect(secureOpenBody.contains("O_DIRECTORY | O_NOFOLLOW"))
+  #expect(secureOpenBody.contains("fstat(directoryFD, &homeInfo)"))
+  #expect(secureOpenBody.contains("substringFromIndex:home.length + 1"))
+  #expect(secureOpenBody.contains("openat(directoryFD"))
+  #expect(secureOpenBody.contains("fstat(nextFD, &componentInfo)"))
 }
 
 @Test
@@ -122,6 +130,8 @@ func bridgeAttachmentStagingUsesChatGuid() throws {
     prepareBody.contains(
       "_persistentPathForTransfer:filename:highQuality:chatGUID:storeAtExternalPath:"))
   #expect(prepareBody.contains("[inv setArgument:&cg atIndex:5];"))
+  #expect(prepareBody.contains("BOOL canRetargetSticker"))
+  #expect(prepareBody.contains("transferKind != IMsgOutgoingTransferKindSticker || retargeted"))
   #expect(sendAttachmentBody.contains("IMsgOutgoingTransferKindAttachment"))
 }
 

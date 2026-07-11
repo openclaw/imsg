@@ -21,6 +21,7 @@
 
 ### Advanced IMCore
 - feat: add bridge-backed Apple URL preview sends through `send-rich --url` and `send.rich`, with an eight-second out-of-process preparation deadline, capped image decode/staging, and metadata-only fallback (#165, thanks @omarshahine).
+- feat: send standalone or message-attached native stickers through `imsg send-sticker` and `send.sticker`, with bounded image validation and secure staging (#164, thanks @omarshahine).
 
 ## 0.12.3 - 2026-07-06
 

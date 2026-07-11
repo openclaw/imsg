@@ -4192,18 +4192,18 @@ static int openStickerDirectorySecurely(NSString *directoryPath) {
         return -1;
     }
 
-    int directoryFD = open(root.fileSystemRepresentation,
-                           O_RDONLY | O_CLOEXEC | O_DIRECTORY);
+    NSString *home = [actualUserHomeDirectory() stringByStandardizingPath];
+    if (!home.length || ![root hasPrefix:[home stringByAppendingString:@"/"]]) return -1;
+    int directoryFD = open(home.fileSystemRepresentation,
+                           O_RDONLY | O_CLOEXEC | O_DIRECTORY | O_NOFOLLOW);
     if (directoryFD < 0) return -1;
-    struct stat rootInfo = {0};
-    if (fstat(directoryFD, &rootInfo) != 0 || !S_ISDIR(rootInfo.st_mode)
-        || rootInfo.st_uid != getuid() || (rootInfo.st_mode & S_IWOTH)) {
+    struct stat homeInfo = {0};
+    if (fstat(directoryFD, &homeInfo) != 0 || !S_ISDIR(homeInfo.st_mode)
+        || homeInfo.st_uid != getuid() || (homeInfo.st_mode & S_IWOTH)) {
         close(directoryFD);
         return -1;
     }
-
-    if ([directory isEqualToString:root]) return directoryFD;
-    NSString *relative = [directory substringFromIndex:root.length + 1];
+    NSString *relative = [directory substringFromIndex:home.length + 1];
     NSArray<NSString *> *components = relative.pathComponents;
     for (NSString *component in components) {
         if ([component isEqualToString:@"."] || [component isEqualToString:@".."]
@@ -4215,6 +4215,12 @@ static int openStickerDirectorySecurely(NSString *directoryPath) {
                             O_RDONLY | O_CLOEXEC | O_DIRECTORY | O_NOFOLLOW);
         close(directoryFD);
         if (nextFD < 0) return -1;
+        struct stat componentInfo = {0};
+        if (fstat(nextFD, &componentInfo) != 0 || !S_ISDIR(componentInfo.st_mode)
+            || componentInfo.st_uid != getuid() || (componentInfo.st_mode & S_IWOTH)) {
+            close(nextFD);
+            return -1;
+        }
         directoryFD = nextFD;
     }
     return directoryFD;
@@ -4604,13 +4610,14 @@ static NSAttributedString *annotateBodyForRichLink(NSAttributedString *body,
 /// The caller registers the prepared transfer only after message construction
 /// succeeds, avoiding daemon-visible orphan transfers on builder failures.
 /// On failure returns `nil`; the caller emits the error.
-static void retargetPreparedTransfer(id ftc, IMFileTransfer *transfer,
+static BOOL retargetPreparedTransfer(id ftc, IMFileTransfer *transfer,
                                      NSString *transferGuid, NSString *path) {
-    if (!path.length) return;
+    if (!path.length) return NO;
     // Updating only `localURL` is not enough: IMFileTransferCenter keeps its
     // own guid -> path map, and imagent reads that map when daemon registration
     // happens.
-    if ([ftc respondsToSelector:@selector(retargetTransfer:toPath:)]) {
+    BOOL retargetedCenter = [ftc respondsToSelector:@selector(retargetTransfer:toPath:)];
+    if (retargetedCenter) {
         NSMethodSignature *rsig = [ftc methodSignatureForSelector:
             @selector(retargetTransfer:toPath:)];
         NSInvocation *rinv = [NSInvocation invocationWithMethodSignature:rsig];
@@ -4626,6 +4633,7 @@ static void retargetPreparedTransfer(id ftc, IMFileTransfer *transfer,
         [transfer performSelector:@selector(setLocalURL:)
                        withObject:[NSURL fileURLWithPath:path]];
     }
+    return retargetedCenter;
 }
 
 static BOOL pathsReferToSameFile(NSString *lhs, NSString *rhs) {
@@ -4739,7 +4747,9 @@ static IMFileTransfer *prepareOutgoingTransfer(NSURL *originalURL, NSString *fil
             NSError *legacyErr = nil;
             BOOL legacyStaged = NO;
             BOOL persistentMatchesSource = NO;
-            if (persistentPath.length) {
+            BOOL canRetargetSticker = transferKind != IMsgOutgoingTransferKindSticker
+                || [ftc respondsToSelector:@selector(retargetTransfer:toPath:)];
+            if (persistentPath.length && canRetargetSticker) {
                 NSURL *persistentURL = [NSURL fileURLWithPath:persistentPath];
                 NSURL *parent = [persistentURL URLByDeletingLastPathComponent];
                 [[NSFileManager defaultManager] createDirectoryAtURL:parent
@@ -4770,9 +4780,12 @@ static IMFileTransfer *prepareOutgoingTransfer(NSURL *originalURL, NSString *fil
                         }
                     }
                     if (!legacyErr) {
-                        if (outActivePath) *outActivePath = persistentPath;
-                        retargetPreparedTransfer(ftc, transfer, transferGuid, persistentPath);
-                        legacyStaged = YES;
+                        BOOL retargeted = retargetPreparedTransfer(
+                            ftc, transfer, transferGuid, persistentPath);
+                        if (transferKind != IMsgOutgoingTransferKindSticker || retargeted) {
+                            if (outActivePath) *outActivePath = persistentPath;
+                            legacyStaged = YES;
+                        }
                     }
                 }
             }
