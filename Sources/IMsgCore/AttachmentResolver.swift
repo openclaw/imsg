@@ -136,25 +136,40 @@ enum AttachmentResolver {
 
     try process.run()
 
-    let deadline = Date().addingTimeInterval(max(0.05, timeout))
+    // Monotonic deadline so wall-clock jumps cannot stretch the bound.
+    let clock = ContinuousClock()
+    let bound = Duration.seconds(max(0.05, timeout))
+    let deadline = clock.now + bound
     while process.isRunning {
-      if Date() >= deadline {
-        process.terminate()
-        // Allow a brief grace period for SIGTERM cleanup, then force-kill.
-        let killDeadline = Date().addingTimeInterval(0.5)
-        while process.isRunning, Date() < killDeadline {
-          Thread.sleep(forTimeInterval: 0.02)
-        }
-        if process.isRunning {
-          process.interrupt()
-          kill(process.processIdentifier, SIGKILL)
-        }
+      if clock.now >= deadline {
+        terminateConversionProcess(process)
         process.waitUntilExit()
         return 128 + SIGTERM
       }
       Thread.sleep(forTimeInterval: 0.05)
     }
     return process.terminationStatus
+  }
+
+  /// SIGTERM the process, then SIGKILL process and process-group after grace.
+  private static func terminateConversionProcess(_ process: Process) {
+    let pid = process.processIdentifier
+    guard pid > 0 else { return }
+    process.terminate()
+    // Negative pid targets the process group when the child is the group leader
+    // (common for simple exec'd converters; best-effort for multi-process trees).
+    kill(-pid, SIGTERM)
+
+    let clock = ContinuousClock()
+    let killDeadline = clock.now + .milliseconds(500)
+    while process.isRunning, clock.now < killDeadline {
+      Thread.sleep(forTimeInterval: 0.02)
+    }
+    if process.isRunning {
+      process.interrupt()
+      kill(pid, SIGKILL)
+      kill(-pid, SIGKILL)
+    }
   }
 
   private static func conversionPlan(

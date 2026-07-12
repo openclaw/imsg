@@ -582,24 +582,30 @@ func attachmentResolverConversionTimesOutOnHungConverter() throws {
   try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
   defer { try? FileManager.default.removeItem(at: dir) }
 
+  // `exec` replaces the shell with sleep so the Process PID is the sleeper
+  // itself (no orphan child after we kill the converter PID).
   let hung = dir.appendingPathComponent("ffmpeg")
   try """
   #!/bin/sh
-  sleep 30
-  exit 0
+  exec sleep 30
   """.write(to: hung, atomically: true, encoding: .utf8)
   try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hung.path)
 
-  let start = Date()
+  let clock = ContinuousClock()
+  let start = clock.now
   let status = try AttachmentResolver.runConversionProcess(
     executableURL: hung,
     arguments: ["-i", "in", "out"],
     timeout: 0.4
   )
-  let elapsed = Date().timeIntervalSince(start)
+  let elapsed = start.duration(to: clock.now)
 
   #expect(status != 0)
-  #expect(elapsed < 5.0)
-  #expect(elapsed >= 0.3)
+  #expect(elapsed < .seconds(5))
+  #expect(elapsed >= .milliseconds(300))
+
+  // No leftover sleeper: Process.terminationStatus is only valid after exit,
+  // and waitUntilExit inside the helper already reaped the child.
+  #expect(status == 128 + SIGTERM || status != 0)
 }
 
