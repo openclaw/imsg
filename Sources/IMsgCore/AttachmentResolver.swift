@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 #if canImport(CryptoKit)
@@ -118,7 +119,15 @@ enum AttachmentResolver {
     }
   }
 
-  static func runConversionProcess(executableURL: URL, arguments: [String]) throws -> Int32 {
+  /// Default bound for external converters (ffmpeg). Hung converters must not
+  /// block attachment metadata resolution indefinitely.
+  static let conversionProcessTimeout: TimeInterval = 60
+
+  static func runConversionProcess(
+    executableURL: URL,
+    arguments: [String],
+    timeout: TimeInterval = conversionProcessTimeout
+  ) throws -> Int32 {
     let process = Process()
     process.executableURL = executableURL
     process.arguments = arguments
@@ -126,7 +135,25 @@ enum AttachmentResolver {
     process.standardError = FileHandle(forWritingAtPath: "/dev/null")
 
     try process.run()
-    process.waitUntilExit()
+
+    let deadline = Date().addingTimeInterval(max(0.05, timeout))
+    while process.isRunning {
+      if Date() >= deadline {
+        process.terminate()
+        // Allow a brief grace period for SIGTERM cleanup, then force-kill.
+        let killDeadline = Date().addingTimeInterval(0.5)
+        while process.isRunning, Date() < killDeadline {
+          Thread.sleep(forTimeInterval: 0.02)
+        }
+        if process.isRunning {
+          process.interrupt()
+          kill(process.processIdentifier, SIGKILL)
+        }
+        process.waitUntilExit()
+        return 128 + SIGTERM
+      }
+      Thread.sleep(forTimeInterval: 0.05)
+    }
     return process.terminationStatus
   }
 

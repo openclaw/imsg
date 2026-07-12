@@ -575,3 +575,31 @@ func errorDescriptionsIncludeDetails() {
   #expect(permissionDescription.contains("built-in Terminal.app") == true)
   #expect(permissionDescription.contains("stale entries") == true)
 }
+
+@Test
+func attachmentResolverConversionTimesOutOnHungConverter() throws {
+  let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: dir) }
+
+  let hung = dir.appendingPathComponent("ffmpeg")
+  try """
+  #!/bin/sh
+  sleep 30
+  exit 0
+  """.write(to: hung, atomically: true, encoding: .utf8)
+  try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hung.path)
+
+  let start = Date()
+  let status = try AttachmentResolver.runConversionProcess(
+    executableURL: hung,
+    arguments: ["-i", "in", "out"],
+    timeout: 0.4
+  )
+  let elapsed = Date().timeIntervalSince(start)
+
+  #expect(status != 0)
+  #expect(elapsed < 5.0)
+  #expect(elapsed >= 0.3)
+}
+
