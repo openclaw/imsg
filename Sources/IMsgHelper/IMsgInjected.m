@@ -950,6 +950,15 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
     NSDictionary *nicknameSelectors = nicknameSharingSelectorStatus();
     Class stickerTransferClass = NSClassFromString(@"IMFileTransfer");
     Class transferCenterClass = NSClassFromString(@"IMFileTransferCenter");
+    Class chatClass = NSClassFromString(@"IMChat");
+    BOOL addParticipant =
+        [chatClass instancesRespondToSelector:NSSelectorFromString(@"inviteParticipants:reason:")]
+        || [chatClass instancesRespondToSelector:
+            NSSelectorFromString(@"inviteParticipantsToiMessageChat:reason:")];
+    BOOL removeParticipant =
+        [chatClass instancesRespondToSelector:NSSelectorFromString(@"removeParticipants:reason:")]
+        || [chatClass instancesRespondToSelector:
+            NSSelectorFromString(@"removeParticipantsFromiMessageChat:reason:")];
     BOOL stickerSetIsSticker = [stickerTransferClass instancesRespondToSelector:
         NSSelectorFromString(@"setIsSticker:")];
     BOOL stickerSetUserInfo = [stickerTransferClass instancesRespondToSelector:
@@ -992,6 +1001,8 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"nicknameLookup": nicknameSelectors[@"nickname_lookup"],
         @"namePhotoShouldOffer": nicknameSelectors[@"should_offer"],
         @"namePhotoShare": nicknameSelectors[@"share"],
+        @"groupAddParticipant": @(addParticipant),
+        @"groupRemoveParticipant": @(removeParticipant),
         @"stickerSetIsSticker": @(stickerSetIsSticker),
         @"stickerSetUserInfo": @(stickerSetUserInfo),
         @"stickerSetAttribution": @(stickerSetAttribution),
@@ -5775,19 +5786,20 @@ static NSDictionary *handleAddParticipant(NSInteger requestId, NSDictionary *par
 
     Class hrClass = NSClassFromString(@"IMHandleRegistrar");
     id hr = hrClass ? [hrClass performSelector:@selector(sharedInstance)] : nil;
-    id handle = (hr && [hr respondsToSelector:@selector(IMHandleWithID:)])
-        ? [hr performSelector:@selector(IMHandleWithID:) withObject:address]
-        : nil;
+    // Route through the robust candidate/service-aware path already used by
+    // chat creation. Bare IMHandleWithID: returns an unusable handle for
+    // reachable iMessage addresses on macOS 26.
+    id handle = vendIMHandle(hr, address, @"iMessage", YES);
     if (!handle) return errorResponse(requestId, @"Could not vend handle");
 
     @try {
-        // BB-verified macOS 11+ selector: `inviteParticipantsToiMessageChat:reason:`.
-        // `addParticipantsToiMessageChat:reason:` (what we used before) is not
-        // declared on IMChat; respondsToSelector returned NO and the call
-        // failed with "selector not available".
-        SEL sel = @selector(inviteParticipantsToiMessageChat:reason:);
-        if (![chat respondsToSelector:sel]) {
-            return errorResponse(requestId, @"inviteParticipantsToiMessageChat:reason: not available");
+        // Tahoe renamed the invite selector; retain the pre-26 fallback.
+        SEL selNew = @selector(inviteParticipants:reason:);
+        SEL selOld = @selector(inviteParticipantsToiMessageChat:reason:);
+        SEL sel = [chat respondsToSelector:selNew] ? selNew
+                : ([chat respondsToSelector:selOld] ? selOld : NULL);
+        if (!sel) {
+            return errorResponse(requestId, @"invite participant selector not available");
         }
         NSMethodSignature *sig = [chat methodSignatureForSelector:sel];
         NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
@@ -5795,7 +5807,7 @@ static NSDictionary *handleAddParticipant(NSInteger requestId, NSDictionary *par
         [inv setTarget:chat];
         NSArray *handles = @[handle];
         [inv setArgument:&handles atIndex:2];
-        NSInteger reason = 0;
+        id reason = nil;
         [inv setArgument:&reason atIndex:3];
         [inv invoke];
     } @catch (NSException *ex) { return errorResponse(requestId, ex.reason ?: @"failed"); }
@@ -5823,9 +5835,13 @@ static NSDictionary *handleRemoveParticipant(NSInteger requestId, NSDictionary *
     if (!targetHandle) return errorResponse(requestId, @"Participant not found on chat");
 
     @try {
-        SEL sel = @selector(removeParticipantsFromiMessageChat:reason:);
-        if (![chat respondsToSelector:sel]) {
-            return errorResponse(requestId, @"removeParticipantsFromiMessageChat:reason: not available");
+        // Tahoe renamed the removal selector; retain the pre-26 fallback.
+        SEL selNew = @selector(removeParticipants:reason:);
+        SEL selOld = @selector(removeParticipantsFromiMessageChat:reason:);
+        SEL sel = [chat respondsToSelector:selNew] ? selNew
+                : ([chat respondsToSelector:selOld] ? selOld : NULL);
+        if (!sel) {
+            return errorResponse(requestId, @"remove participant selector not available");
         }
         NSMethodSignature *sig = [chat methodSignatureForSelector:sel];
         NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
@@ -5833,7 +5849,7 @@ static NSDictionary *handleRemoveParticipant(NSInteger requestId, NSDictionary *
         [inv setTarget:chat];
         NSArray *handles = @[targetHandle];
         [inv setArgument:&handles atIndex:2];
-        NSInteger reason = 0;
+        id reason = nil;
         [inv setArgument:&reason atIndex:3];
         [inv invoke];
     } @catch (NSException *ex) { return errorResponse(requestId, ex.reason ?: @"failed"); }
