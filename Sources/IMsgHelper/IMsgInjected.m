@@ -429,6 +429,7 @@ static void probeSelectors(void) {
 @interface IMFileTransferCenter : NSObject
 + (instancetype)sharedInstance;
 - (NSString *)guidForNewOutgoingTransferWithLocalURL:(NSURL *)url;
+- (NSString *)createNewOutgoingGroupPhotoTransferWithLocalFileURL:(NSURL *)url;
 - (IMFileTransfer *)transferForGUID:(NSString *)guid;
 - (void)retargetTransfer:(NSString *)guid toPath:(NSString *)path;
 - (void)registerTransferWithDaemon:(NSString *)guid;
@@ -950,6 +951,13 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
     NSDictionary *nicknameSelectors = nicknameSharingSelectorStatus();
     Class stickerTransferClass = NSClassFromString(@"IMFileTransfer");
     Class transferCenterClass = NSClassFromString(@"IMFileTransferCenter");
+    Class chatClass = NSClassFromString(@"IMChat");
+    BOOL groupPhotoUpdate =
+        [transferCenterClass instancesRespondToSelector:
+            NSSelectorFromString(@"createNewOutgoingGroupPhotoTransferWithLocalFileURL:")]
+        && ([chatClass instancesRespondToSelector:NSSelectorFromString(@"sendGroupPhotoUpdate:")]
+            || [registryClass instancesRespondToSelector:
+                NSSelectorFromString(@"_chat:sendGroupPhotoUpdate:")]);
     BOOL stickerSetIsSticker = [stickerTransferClass instancesRespondToSelector:
         NSSelectorFromString(@"setIsSticker:")];
     BOOL stickerSetUserInfo = [stickerTransferClass instancesRespondToSelector:
@@ -992,6 +1000,7 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"nicknameLookup": nicknameSelectors[@"nickname_lookup"],
         @"namePhotoShouldOffer": nicknameSelectors[@"should_offer"],
         @"namePhotoShare": nicknameSelectors[@"share"],
+        @"groupPhotoUpdate": @(groupPhotoUpdate),
         @"stickerSetIsSticker": @(stickerSetIsSticker),
         @"stickerSetUserInfo": @(stickerSetUserInfo),
         @"stickerSetAttribution": @(stickerSetAttribution),
@@ -5861,6 +5870,35 @@ static NSDictionary *handleSetDisplayName(NSInteger requestId, NSDictionary *par
     return successResponse(requestId, @{@"chatGuid": chatGuid, @"name": newName ?: @""});
 }
 
+/// Prefer the daemon-facing registry dispatch on macOS 26, falling back to
+/// the older chat instance method where necessary.
+static void dispatchGroupPhotoUpdate(IMChat *chat, NSString *transferGuid) {
+    id registry = nil;
+    if ([chat respondsToSelector:@selector(chatRegistry)]) {
+        registry = [chat performSelector:@selector(chatRegistry)];
+    }
+    if (!registry) {
+        Class registryClass = NSClassFromString(@"IMChatRegistry");
+        if (registryClass && [registryClass respondsToSelector:@selector(sharedInstance)]) {
+            registry = [registryClass performSelector:@selector(sharedInstance)];
+        }
+    }
+    SEL registrySel = NSSelectorFromString(@"_chat:sendGroupPhotoUpdate:");
+    if (registry && [registry respondsToSelector:registrySel]) {
+        NSMethodSignature *sig = [registry methodSignatureForSelector:registrySel];
+        NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+        [inv setSelector:registrySel];
+        [inv setTarget:registry];
+        __unsafe_unretained IMChat *chatArg = chat;
+        __unsafe_unretained NSString *guidArg = transferGuid;
+        [inv setArgument:&chatArg atIndex:2];
+        [inv setArgument:&guidArg atIndex:3];
+        [inv invoke];
+        return;
+    }
+    [chat performSelector:@selector(sendGroupPhotoUpdate:) withObject:transferGuid];
+}
+
 static NSDictionary *handleUpdateGroupPhoto(NSInteger requestId, NSDictionary *params) {
     NSString *chatGuid = params[@"chatGuid"];
     NSString *filePath = params[@"filePath"];
@@ -5869,39 +5907,37 @@ static NSDictionary *handleUpdateGroupPhoto(NSInteger requestId, NSDictionary *p
     if (!chat) return errorResponse(requestId, @"Chat not found");
 
     @try {
-        // BB-verified: group-photo updates go through the file-transfer
-        // pipeline, not raw bytes. Stage the photo via prepareOutgoingTransfer
-        // (so it lives in IMD's attachments tree), then call
-        // sendGroupPhotoUpdate: with the transfer guid. Passing nil/empty
-        // file path clears the photo.
+        // Group photos use a dedicated transfer kind. Native rows are orphan
+        // attachments named GroupPhotoImage with an `at_0_` guid; they are
+        // not normal attachment-bearing messages.
         SEL sel = @selector(sendGroupPhotoUpdate:);
         if (![chat respondsToSelector:sel]) {
             return errorResponse(requestId, @"sendGroupPhotoUpdate: not available");
         }
         if (filePath.length == 0) {
-            [chat performSelector:sel withObject:nil];
+            dispatchGroupPhotoUpdate(chat, nil);
             return successResponse(requestId,
                 @{@"chatGuid": chatGuid, @"cleared": @YES, @"size": @0});
         }
         NSURL *fileURL = [NSURL fileURLWithPath:filePath];
-        NSString *prepErr = nil;
-        IMFileTransfer *transfer = prepareOutgoingTransfer(
-            fileURL, [fileURL lastPathComponent], chatGuid,
-            IMsgOutgoingTransferKindAttachment, nil, NULL, &prepErr);
-        if (!transfer || ![transfer guid].length) {
+        Class centerClass = NSClassFromString(@"IMFileTransferCenter");
+        IMFileTransferCenter *center = centerClass
+            ? [centerClass performSelector:@selector(sharedInstance)] : nil;
+        SEL createSel = @selector(createNewOutgoingGroupPhotoTransferWithLocalFileURL:);
+        if (!center || ![center respondsToSelector:createSel]) {
             return errorResponse(requestId,
-                prepErr.length ? prepErr : @"Could not prepare group-photo transfer");
+                @"createNewOutgoingGroupPhotoTransferWithLocalFileURL: not available");
         }
-        NSString *registerErr = nil;
-        if (!registerPreparedTransfer(transfer, &registerErr)) {
-            return errorResponse(requestId,
-                registerErr.length ? registerErr : @"Could not register group-photo transfer");
+        id rawGuid = [center performSelector:createSel withObject:fileURL];
+        if (![rawGuid isKindOfClass:[NSString class]] || ![(NSString *)rawGuid length]) {
+            return errorResponse(requestId, @"Could not create group-photo transfer");
         }
-        [chat performSelector:sel withObject:[transfer guid]];
+        NSString *transferGuid = (NSString *)rawGuid;
+        dispatchGroupPhotoUpdate(chat, transferGuid);
         return successResponse(requestId, @{
             @"chatGuid": chatGuid,
             @"cleared": @NO,
-            @"transferGuid": [transfer guid]
+            @"transferGuid": transferGuid
         });
     } @catch (NSException *ex) { return errorResponse(requestId, ex.reason ?: @"failed"); }
 }
