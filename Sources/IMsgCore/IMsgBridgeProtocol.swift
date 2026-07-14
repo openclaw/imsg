@@ -100,6 +100,9 @@ public enum BridgeAction: String, Sendable, CaseIterable {
 ///
 /// Constants are stable across macOS 11–15. Add 1000 to the kind id to send a
 /// removal (e.g. `love` → 2000, `remove-love` → 3000).
+///
+/// Arbitrary iOS-18 emoji tapbacks (`associated_message_type` 2006) bypass
+/// this whitelist through the dedicated `emoji` bridge parameter.
 public enum BridgeReactionKind: String, Sendable, CaseIterable {
   case love
   case like

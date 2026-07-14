@@ -227,6 +227,36 @@ func rpcNormalizesTapbackReactionAliases() throws {
 }
 
 @Test
+func rpcTapbackForwardsCustomEmojiOutsideTheClassicKindWhitelist() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, params in
+      capturedAction = action
+      capturedParams = params
+      return [:]
+    }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"emoji","method":"tapback","params":{"chat_id":1,"message_guid":"parent-guid","emoji":"💀","remove":true}}"#
+  )
+
+  #expect(capturedAction == .sendReaction)
+  #expect(capturedParams["emoji"] as? String == "💀")
+  #expect(capturedParams["remove"] as? Bool == true)
+  #expect(capturedParams["reactionType"] == nil)
+  let result = output.responses.first?["result"] as? [String: Any]
+  #expect(result?["ok"] as? Bool == true)
+  #expect(result?["emoji"] as? String == "💀")
+}
+
+@Test
 func rpcSendRichInvokesBridgeWithResolvedChat() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()

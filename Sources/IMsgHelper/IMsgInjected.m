@@ -950,6 +950,16 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
     NSDictionary *nicknameSelectors = nicknameSharingSelectorStatus();
     Class stickerTransferClass = NSClassFromString(@"IMFileTransfer");
     Class transferCenterClass = NSClassFromString(@"IMFileTransferCenter");
+    Class emojiTapbackClass = NSClassFromString(@"IMEmojiTapback");
+    Class tapbackSenderClass = NSClassFromString(@"IMTapbackSender");
+    BOOL emojiTapbackSend =
+        [emojiTapbackClass instancesRespondToSelector:
+            NSSelectorFromString(@"initWithEmoji:isRemoved:")]
+        && ([tapbackSenderClass instancesRespondToSelector:
+                NSSelectorFromString(@"initWithTapback:chat:messagePartChatItem:")]
+            || [tapbackSenderClass instancesRespondToSelector:
+                NSSelectorFromString(@"initWithTapback:chat:messageGUID:messagePartRange:messageSummaryInfo:threadIdentifier:")])
+        && [tapbackSenderClass instancesRespondToSelector:NSSelectorFromString(@"send")];
     BOOL stickerSetIsSticker = [stickerTransferClass instancesRespondToSelector:
         NSSelectorFromString(@"setIsSticker:")];
     BOOL stickerSetUserInfo = [stickerTransferClass instancesRespondToSelector:
@@ -992,6 +1002,7 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"nicknameLookup": nicknameSelectors[@"nickname_lookup"],
         @"namePhotoShouldOffer": nicknameSelectors[@"should_offer"],
         @"namePhotoShare": nicknameSelectors[@"share"],
+        @"emojiTapbackSend": @(emojiTapbackSend),
         @"stickerSetIsSticker": @(stickerSetIsSticker),
         @"stickerSetUserInfo": @(stickerSetUserInfo),
         @"stickerSetAttribution": @(stickerSetAttribution),
@@ -5302,22 +5313,120 @@ static NSDictionary *handleSendSticker(NSInteger requestId, NSDictionary *params
     }
 }
 
-/// `send-reaction`: builds a reaction IMMessage tied to the target guid.
+/// `send-reaction`: builds a reaction tied to the target guid. Arbitrary
+/// emoji use IMEmojiTapback/IMTapbackSender; classic kinds use IMMessage.
 static NSDictionary *handleSendReaction(NSInteger requestId, NSDictionary *params) {
     NSString *chatGuid = params[@"chatGuid"];
     NSString *selectedMessageGuid = params[@"selectedMessageGuid"];
     NSString *reactionType = params[@"reactionType"];
+    NSString *emoji = params[@"emoji"];
+    BOOL removeEmoji = [params[@"remove"] boolValue];
     NSNumber *partIndexNum = params[@"partIndex"];
     NSInteger partIndex = partIndexNum ? [partIndexNum integerValue] : 0;
 
     if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
     if (!selectedMessageGuid.length) return errorResponse(requestId, @"Missing selectedMessageGuid");
-    if (!reactionType.length) return errorResponse(requestId, @"Missing reactionType");
+    if (!emoji.length && !reactionType.length) {
+        return errorResponse(requestId, @"Missing reactionType");
+    }
 
     IMChat *chat = resolveChatByGuid(chatGuid);
     if (!chat) {
         return errorResponse(requestId,
             [NSString stringWithFormat:@"Chat not found: %@", chatGuid]);
+    }
+
+    id parentMsg = nil;
+    id parentChatItem = loadParentFirstChatItem(selectedMessageGuid, &parentMsg);
+    NSString *parentText = nil;
+    if (parentMsg && [parentMsg respondsToSelector:@selector(text)]) {
+        id t = [parentMsg performSelector:@selector(text)];
+        if ([t isKindOfClass:[NSAttributedString class]]) {
+            parentText = [(NSAttributedString *)t string];
+        }
+    }
+    NSRange targetRange = NSMakeRange(0, 1);
+    if (parentChatItem
+        && [parentChatItem respondsToSelector:@selector(messagePartRange)]) {
+        targetRange = [(IMMessagePartChatItem *)parentChatItem messagePartRange];
+        if (targetRange.length == 0) targetRange = NSMakeRange(0, 1);
+    }
+    NSDictionary *summary = @{ @"amc": @1,
+                               @"ams": parentText ?: @"" };
+
+    if (emoji.length) {
+        @try {
+            Class tapbackClass = NSClassFromString(@"IMEmojiTapback");
+            Class senderClass = NSClassFromString(@"IMTapbackSender");
+            SEL tapbackInitSel = @selector(initWithEmoji:isRemoved:);
+            if (!tapbackClass || !senderClass
+                || ![tapbackClass instancesRespondToSelector:tapbackInitSel]) {
+                return errorResponse(requestId,
+                    @"Emoji tapbacks unsupported on this macOS version");
+            }
+
+            id tapback = [tapbackClass alloc];
+            NSMethodSignature *tsig =
+                [tapbackClass instanceMethodSignatureForSelector:tapbackInitSel];
+            NSInvocation *tinv = [NSInvocation invocationWithMethodSignature:tsig];
+            [tinv setSelector:tapbackInitSel];
+            [tinv setTarget:tapback];
+            [tinv setArgument:&emoji atIndex:2];
+            [tinv setArgument:&removeEmoji atIndex:3];
+            [tinv retainArguments];
+            tapback = invokeReturningObject(tinv);
+            if (!tapback) {
+                return errorResponse(requestId, @"Could not construct IMEmojiTapback");
+            }
+
+            SEL senderPartSel = @selector(initWithTapback:chat:messagePartChatItem:);
+            SEL senderRangeSel = @selector(initWithTapback:chat:messageGUID:messagePartRange:messageSummaryInfo:threadIdentifier:);
+            id sender = nil;
+            if (parentChatItem && [senderClass instancesRespondToSelector:senderPartSel]) {
+                id senderAlloc = [senderClass alloc];
+                NSMethodSignature *ssig =
+                    [senderClass instanceMethodSignatureForSelector:senderPartSel];
+                NSInvocation *sinv = [NSInvocation invocationWithMethodSignature:ssig];
+                [sinv setSelector:senderPartSel];
+                [sinv setTarget:senderAlloc];
+                [sinv setArgument:&tapback atIndex:2];
+                [sinv setArgument:&chat atIndex:3];
+                [sinv setArgument:&parentChatItem atIndex:4];
+                [sinv retainArguments];
+                sender = invokeReturningObject(sinv);
+            } else if ([senderClass instancesRespondToSelector:senderRangeSel]) {
+                id senderAlloc = [senderClass alloc];
+                NSMethodSignature *ssig =
+                    [senderClass instanceMethodSignatureForSelector:senderRangeSel];
+                NSInvocation *sinv = [NSInvocation invocationWithMethodSignature:ssig];
+                [sinv setSelector:senderRangeSel];
+                [sinv setTarget:senderAlloc];
+                [sinv setArgument:&tapback atIndex:2];
+                [sinv setArgument:&chat atIndex:3];
+                [sinv setArgument:&selectedMessageGuid atIndex:4];
+                [sinv setArgument:&targetRange atIndex:5];
+                [sinv setArgument:&summary atIndex:6];
+                id nilThreadId = nil;
+                [sinv setArgument:&nilThreadId atIndex:7];
+                [sinv retainArguments];
+                sender = invokeReturningObject(sinv);
+            }
+            if (!sender || ![sender respondsToSelector:@selector(send)]) {
+                return errorResponse(requestId, @"Could not construct IMTapbackSender");
+            }
+
+            [sender performSelector:@selector(send)];
+            NSString *guid = lastSentMessageGuid(chat);
+            return successResponse(requestId, @{
+                @"chatGuid": chatGuid,
+                @"selectedMessageGuid": selectedMessageGuid,
+                @"emoji": emoji,
+                @"messageGuid": guid ?: @""
+            });
+        } @catch (NSException *exception) {
+            return errorResponse(requestId,
+                [NSString stringWithFormat:@"send-reaction (emoji) failed: %@", exception.reason]);
+        }
     }
 
     long long associatedType = -1;
@@ -5367,39 +5476,10 @@ static NSDictionary *handleSendReaction(NSInteger requestId, NSDictionary *param
         }
         verb = removed;
     }
-    id parentMsg = nil;
-    id parentChatItem = loadParentFirstChatItem(selectedMessageGuid, &parentMsg);
-    NSString *parentText = nil;
-    if (parentMsg && [parentMsg respondsToSelector:@selector(text)]) {
-        id t = [parentMsg performSelector:@selector(text)];
-        if ([t isKindOfClass:[NSAttributedString class]]) {
-            parentText = [(NSAttributedString *)t string];
-        }
-    }
-    // BB-verified: derive `associatedMessageRange` from the parent's first
-    // chat item — `[item messagePartRange]`. Hardcoding `{0,1}` (what we did
-    // before) targets the wrong part on multipart parents (e.g. tapback on
-    // the second image of a photo grid). For non-text parts (attachments)
-    // BB substitutes "an attachment" for the quoted text.
-    NSRange targetRange = NSMakeRange(0, 1);
-    if (parentChatItem
-        && [parentChatItem respondsToSelector:@selector(messagePartRange)]) {
-        targetRange = [(IMMessagePartChatItem *)parentChatItem messagePartRange];
-        if (targetRange.length == 0) targetRange = NSMakeRange(0, 1);
-    }
     NSString *quoted = parentText.length
         ? [NSString stringWithFormat:@"%@“%@”", verb, parentText]
         : [verb stringByAppendingString:@"a message"];
     NSAttributedString *body = buildPlainAttributed(quoted, partIndex);
-
-    // BB-verified `messageSummaryInfo` shape: `amc` is an integer count
-    // (always `@1` for single-target tapbacks), `ams` is the parent text
-    // (the receiver's notification preview reads `<verb> "<ams>"`). Earlier
-    // we were stuffing the parent guid into `amc` as a string — the
-    // resulting `message_summary_info` blob was malformed and on macOS 26
-    // imagent silently dropped the reaction.
-    NSDictionary *summary = @{ @"amc": @1,
-                               @"ams": parentText ?: @"" };
     debugLog(@"handleSendReaction: target=%@ type=%lld range={%lu,%lu} body=%@",
              associatedRef, associatedType,
              (unsigned long)targetRange.location, (unsigned long)targetRange.length,

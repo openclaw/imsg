@@ -42,6 +42,7 @@ func statusCommandProducesJsonOutput() async throws {
   #expect(output.contains(#""version":"\#(IMsgVersion.current)""#))
   #expect(output.contains("basic_features"))
   #expect(output.contains("advanced_features"))
+  #expect(output.contains(#""rpc_features":["tapback.emoji"]"#))
 }
 
 @Test

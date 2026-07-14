@@ -340,6 +340,9 @@ enum BridgeReactCommand {
           .make(
             label: "kind", names: [.long("kind")],
             help: "love|like|dislike|laugh|emphasize|question"),
+          .make(
+            label: "emoji", names: [.long("emoji")],
+            help: "arbitrary emoji tapback (iOS 18+, e.g. 🎉) — --kind not required when set"),
           .make(label: "part", names: [.long("part")], help: "part index"),
         ],
         flags: [
@@ -350,7 +353,8 @@ enum BridgeReactCommand {
       )
     ),
     usageExamples: [
-      "imsg tapback --chat 'iMessage;-;+15551234567' --message ABCD-EFGH --kind love"
+      "imsg tapback --chat 'iMessage;-;+15551234567' --message ABCD-EFGH --kind love",
+      "imsg tapback --chat 'iMessage;-;+15551234567' --message ABCD-EFGH --emoji 🎉",
     ]
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
@@ -363,16 +367,33 @@ enum BridgeReactCommand {
     guard let message = values.option("message"), !message.isEmpty else {
       throw ParsedValuesError.missingOption("message")
     }
+    let remove = values.flag("remove")
+    let partIndex = Int(values.option("part") ?? "0") ?? 0
+
+    if let emoji = values.option("emoji"), !emoji.isEmpty {
+      let params: [String: Any] = [
+        "chatGuid": chat,
+        "selectedMessageGuid": message,
+        "emoji": emoji,
+        "remove": remove,
+        "partIndex": partIndex,
+      ]
+      _ = try await BridgeOutput.invokeAndEmit(
+        action: .sendReaction, params: params, runtime: runtime
+      ) { _ in "tapback: \(emoji) sent" }
+      return
+    }
+
     guard let kind = values.option("kind"), !kind.isEmpty else {
       throw ParsedValuesError.missingOption("kind")
     }
     let normalized = kind.lowercased()
-    let prefixed = values.flag("remove") ? "remove-\(normalized)" : normalized
+    let prefixed = remove ? "remove-\(normalized)" : normalized
     let params: [String: Any] = [
       "chatGuid": chat,
       "selectedMessageGuid": message,
       "reactionType": prefixed,
-      "partIndex": Int(values.option("part") ?? "0") ?? 0,
+      "partIndex": partIndex,
     ]
     _ = try await BridgeOutput.invokeAndEmit(
       action: .sendReaction, params: params, runtime: runtime

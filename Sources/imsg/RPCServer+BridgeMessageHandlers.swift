@@ -347,11 +347,25 @@ extension RPCServer {
     guard let messageGUID = rpcMessageGUIDParam(params) else {
       throw RPCError.invalidParams("message_id or message_guid is required")
     }
-    let rawReaction = stringParam(params["reaction"] ?? params["kind"] ?? params["emoji"]) ?? ""
-    let reactionType = try normalizeBridgeReactionType(
-      rawReaction,
-      remove: boolParam(params["remove"]) ?? false
-    )
+    let remove = boolParam(params["remove"]) ?? false
+
+    if let emoji = stringParam(params["emoji"]), !emoji.isEmpty {
+      _ = try await invokeBridge(
+        action: .sendReaction,
+        params: [
+          "chatGuid": chatGUID,
+          "selectedMessageGuid": messageGUID,
+          "emoji": emoji,
+          "remove": remove,
+          "partIndex": intParam(params["part_index"] ?? params["partIndex"]) ?? 0,
+        ]
+      )
+      respond(id: id, result: ["ok": true, "emoji": emoji])
+      return
+    }
+
+    let rawReaction = stringParam(params["reaction"] ?? params["kind"]) ?? ""
+    let reactionType = try normalizeBridgeReactionType(rawReaction, remove: remove)
     _ = try await invokeBridge(
       action: .sendReaction,
       params: [

@@ -69,7 +69,8 @@ enum StatusCommand {
         bridgeVersion: bridgeVersion,
         v2Ready: v2Ready,
         selectors: selectors,
-        rpcMethods: kSupportedRPCMethods
+        rpcMethods: kSupportedRPCMethods,
+        rpcFeatures: ["tapback.emoji"]
       )
       try JSONLines.print(payload)
     } else {
@@ -153,6 +154,7 @@ private struct StatusPayload: Encodable {
   let v2Ready: Bool
   let selectors: [String: Bool]
   let rpcMethods: [String]
+  let rpcFeatures: [String]
 
   enum CodingKeys: String, CodingKey {
     case version
@@ -166,5 +168,6 @@ private struct StatusPayload: Encodable {
     case v2Ready = "v2_ready"
     case selectors
     case rpcMethods = "rpc_methods"
+    case rpcFeatures = "rpc_features"
   }
 }
