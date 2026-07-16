@@ -155,10 +155,11 @@ enum AttachmentResolver {
   private static func terminateConversionProcess(_ process: Process) {
     let pid = process.processIdentifier
     guard pid > 0 else { return }
+    let ownsProcessGroup = getpgid(pid) == pid
     process.terminate()
-    // Negative pid targets the process group when the child is the group leader
-    // (common for simple exec'd converters; best-effort for multi-process trees).
-    kill(-pid, SIGTERM)
+    if ownsProcessGroup {
+      kill(-pid, SIGTERM)
+    }
 
     let clock = ContinuousClock()
     let killDeadline = clock.now + .milliseconds(500)
@@ -166,8 +167,11 @@ enum AttachmentResolver {
       Thread.sleep(forTimeInterval: 0.02)
     }
     if process.isRunning {
-      process.interrupt()
       kill(pid, SIGKILL)
+    }
+    // The leader may exit on SIGTERM while a descendant ignores it. Escalate
+    // the captured group independently of the leader's state.
+    if ownsProcessGroup {
       kill(-pid, SIGKILL)
     }
   }
