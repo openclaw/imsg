@@ -9,6 +9,7 @@ enum MessageDatabaseFixture {
     var includeThreadOriginatorGUID = false
     var includeThreadOriginatorPart = false
     var includeDestinationCallerID = false
+    var includeGUID = false
     var includeAudioMessage = false
     var includeBalloonBundleID = false
     var includePayloadData = false
@@ -34,6 +35,8 @@ enum MessageDatabaseFixture {
       options.includeThreadOriginatorPart ? "thread_originator_part TEXT," : ""
     let destinationCallerColumn =
       options.includeDestinationCallerID ? "destination_caller_id TEXT," : ""
+    let guidColumn =
+      options.includeGUID && !options.includeReactionColumns ? "guid TEXT," : ""
     let audioMessageColumn = options.includeAudioMessage ? "is_audio_message INTEGER," : ""
     let balloonColumn = options.includeBalloonBundleID ? "balloon_bundle_id TEXT," : ""
     let payloadDataColumn = options.includePayloadData ? "payload_data BLOB," : ""
@@ -57,6 +60,7 @@ enum MessageDatabaseFixture {
         \(threadOriginatorColumn)
         \(threadOriginatorPartColumn)
         \(destinationCallerColumn)
+        \(guidColumn)
         \(audioMessageColumn)
         \(balloonColumn)
         \(payloadDataColumn)

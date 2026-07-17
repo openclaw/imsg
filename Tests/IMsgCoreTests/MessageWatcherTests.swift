@@ -153,6 +153,91 @@ func messageWatcherYieldsExistingMessages() async throws {
 }
 
 @Test
+func messageWatcherYieldsOneLogicalEventForGUIDLinkedURLPreview() async throws {
+  let db = try makeURLPreviewTestDB()
+  let now = Date()
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
+  try insertURLPreviewTestMessage(
+    db,
+    rowID: 1,
+    text: "Check this out",
+    guid: "text-guid",
+    date: now
+  )
+  try insertURLPreviewTestMessage(
+    db,
+    rowID: 2,
+    text: "https://example.com",
+    guid: "preview-guid",
+    replyToGUID: "text-guid",
+    balloonBundleID: MessageStore.urlPreviewBalloonBundleID,
+    date: now.addingTimeInterval(0.399)
+  )
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let watcher = MessageWatcher(store: store)
+  let stream = watcher.stream(
+    chatID: 1,
+    sinceRowID: -1,
+    configuration: MessageWatcherConfiguration(
+      debounceInterval: 0.01,
+      fallbackPollInterval: nil,
+      batchLimit: 10
+    )
+  )
+
+  let first = try await nextMessage(from: stream)
+  let second = try await nextMessage(from: stream, timeoutNanoseconds: 100_000_000)
+
+  #expect(first?.rowID == 1)
+  #expect(first?.urlPreview?.rowID == 2)
+  #expect(second == nil)
+}
+
+@Test
+func messageWatcherYieldsOneLogicalEventForAssociatedGUIDLinkedURLPreview() async throws {
+  let db = try makeURLPreviewTestDB()
+  let now = Date()
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
+  try insertURLPreviewTestMessage(
+    db,
+    rowID: 1,
+    text: "Check this out",
+    guid: "text-guid",
+    date: now
+  )
+  try insertURLPreviewTestMessage(
+    db,
+    rowID: 2,
+    text: "https://example.com",
+    guid: "preview-guid",
+    associatedMessageGUID: "p:0/text-guid",
+    associatedMessageType: 0,
+    balloonBundleID: MessageStore.urlPreviewBalloonBundleID,
+    date: now.addingTimeInterval(0.399)
+  )
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let watcher = MessageWatcher(store: store)
+  let stream = watcher.stream(
+    chatID: 1,
+    sinceRowID: -1,
+    configuration: MessageWatcherConfiguration(
+      debounceInterval: 0.01,
+      fallbackPollInterval: nil,
+      batchLimit: 10
+    )
+  )
+
+  let first = try await nextMessage(from: stream)
+  let second = try await nextMessage(from: stream, timeoutNanoseconds: 100_000_000)
+
+  #expect(first?.rowID == 1)
+  #expect(first?.urlPreview?.rowID == 2)
+  #expect(second == nil)
+}
+
+@Test
 func messageWatcherFallbackPollYieldsMessagesWithoutFileEvents() async throws {
   let fixture = try WatcherTestDatabase.makeMutableStore()
   let watcher = MessageWatcher(store: fixture.store)

@@ -149,6 +149,87 @@ func listChatsUsesTextRowReadStateForSplitURLPreview() throws {
 }
 
 @Test
+func listChatsCoalescesGUIDLinkedPreviewWhenTextOmitsURL() throws {
+  let db = try Connection(.inMemory)
+  try MessageDatabaseFixture.createSchema(
+    db,
+    options: MessageDatabaseFixture.SchemaOptions(
+      includeGUID: true,
+      includeBalloonBundleID: true,
+      includeReplyToGUID: true,
+      includeReadState: true
+    )
+  )
+  let now = Date()
+  try db.run(
+    """
+    INSERT INTO chat(ROWID, chat_identifier, guid, display_name, service_name)
+    VALUES (1, '+111', 'iMessage;-;+111', 'Links', 'iMessage')
+    """
+  )
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+111')")
+  try db.run(
+    """
+    INSERT INTO message(
+      ROWID, handle_id, text, guid, reply_to_guid, balloon_bundle_id,
+      date, is_from_me, service, is_read, date_read
+    )
+    VALUES
+      (1, 1, 'Check this out', 'text-guid', NULL, NULL, ?, 0, 'iMessage', 0, 0),
+      (2, 1, 'https://example.com', 'preview-guid', 'p:0/text-guid', ?, ?, 0, 'iMessage', 0, 0)
+    """,
+    TestDatabase.appleEpoch(now),
+    MessageStore.urlPreviewBalloonBundleID,
+    TestDatabase.appleEpoch(now.addingTimeInterval(0.399))
+  )
+  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 1), (1, 2)")
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  #expect(try store.listChats(limit: 1).first?.unreadCount == 1)
+  #expect(try store.listChats(limit: 1, unreadOnly: true).first?.unreadCount == 1)
+}
+
+@Test
+func listChatsCoalescesAssociatedGUIDLinkedPreviewWhenTextOmitsURL() throws {
+  let db = try Connection(.inMemory)
+  try MessageDatabaseFixture.createSchema(
+    db,
+    options: MessageDatabaseFixture.SchemaOptions(
+      includeReactionColumns: true,
+      includeBalloonBundleID: true,
+      includeReadState: true
+    )
+  )
+  let now = Date()
+  try db.run(
+    """
+    INSERT INTO chat(ROWID, chat_identifier, guid, display_name, service_name)
+    VALUES (1, '+111', 'iMessage;-;+111', 'Links', 'iMessage')
+    """
+  )
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+111')")
+  try db.run(
+    """
+    INSERT INTO message(
+      ROWID, handle_id, text, guid, associated_message_guid, associated_message_type,
+      balloon_bundle_id, date, is_from_me, service, is_read, date_read
+    )
+    VALUES
+      (1, 1, 'Check this out', 'text-guid', NULL, NULL, NULL, ?, 0, 'iMessage', 0, 0),
+      (2, 1, 'https://example.com', 'preview-guid', 'p:0/text-guid', 0, ?, ?, 0, 'iMessage', 0, 0)
+    """,
+    TestDatabase.appleEpoch(now),
+    MessageStore.urlPreviewBalloonBundleID,
+    TestDatabase.appleEpoch(now.addingTimeInterval(0.399))
+  )
+  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 1), (1, 2)")
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  #expect(try store.listChats(limit: 1).first?.unreadCount == 1)
+  #expect(try store.listChats(limit: 1, unreadOnly: true).first?.unreadCount == 1)
+}
+
+@Test
 func listChatsDoesNotCoalesceURLPreviewAcrossInterveningMessage() throws {
   let db = try Connection(.inMemory)
   try MessageDatabaseFixture.createSchema(

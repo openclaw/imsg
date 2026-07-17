@@ -396,16 +396,28 @@ extension MessageStore {
   }
 
   func routedReplyToGUID(_ row: DecodedMessageRow) -> String? {
-    if let associatedType = row.associatedType, ReactionType.isReaction(associatedType) {
+    routedReplyToGUID(
+      databaseReplyToGUID: row.databaseReplyToGUID,
+      associatedGUID: row.associatedGUID,
+      associatedType: row.associatedType
+    )
+  }
+
+  func routedReplyToGUID(
+    databaseReplyToGUID: String,
+    associatedGUID: String,
+    associatedType: Int?
+  ) -> String? {
+    if let associatedType, ReactionType.isReaction(associatedType) {
       return nil
     }
-    let databaseReplyToGUID = normalizeAssociatedGUID(row.databaseReplyToGUID)
-    if !databaseReplyToGUID.isEmpty {
-      return databaseReplyToGUID
+    let normalizedDatabaseGUID = normalizeAssociatedGUID(databaseReplyToGUID)
+    if !normalizedDatabaseGUID.isEmpty {
+      return normalizedDatabaseGUID
     }
     return replyToGUID(
-      associatedGuid: row.associatedGUID,
-      associatedType: row.associatedType
+      associatedGuid: associatedGUID,
+      associatedType: associatedType
     )
   }
 }

@@ -330,6 +330,11 @@ extension MessageStore {
       ? TypedStreamParser.parseAttributedBody(try dataValue(row, "\(prefix)_body")) : rawText
     let rawSender = try stringValue(row, "\(prefix)_sender")
     let destination = try stringValue(row, "\(prefix)_destination_caller_id")
+    let replyToGUID = routedReplyToGUID(
+      databaseReplyToGUID: try stringValue(row, "\(prefix)_reply_to_guid"),
+      associatedGUID: try stringValue(row, "\(prefix)_associated_guid"),
+      associatedType: try intValue(row, "\(prefix)_associated_type")
+    )
     return Message(
       rowID: rowID,
       chatID: chatID,
@@ -340,6 +345,8 @@ extension MessageStore {
       service: try stringValue(row, "\(prefix)_service").nilIfEmpty ?? "unknown",
       handleID: try int64Value(row, "\(prefix)_handle_id"),
       attachmentsCount: 0,
+      guid: try stringValue(row, "\(prefix)_guid"),
+      routing: Message.RoutingMetadata(replyToGUID: replyToGUID),
       balloonBundleID: try stringValue(row, "\(prefix)_balloon_bundle_id").nilIfEmpty
     )
   }

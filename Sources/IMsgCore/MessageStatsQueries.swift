@@ -110,6 +110,18 @@ struct StatsPreviewQuery {
       ? "previous.balloon_bundle_id" : "NULL"
     let previewBody = schema.hasAttributedBody ? "preview.attributedBody" : "NULL"
     let previousBody = schema.hasAttributedBody ? "previous.attributedBody" : "NULL"
+    let previewGUID = schema.hasGUIDColumn ? "preview.guid" : "NULL"
+    let previousGUID = schema.hasGUIDColumn ? "previous.guid" : "NULL"
+    let previewReplyToGUID = schema.hasReplyToGUIDColumn ? "preview.reply_to_guid" : "NULL"
+    let previousReplyToGUID = schema.hasReplyToGUIDColumn ? "previous.reply_to_guid" : "NULL"
+    let previewAssociatedGUID =
+      schema.hasReactionColumns ? "preview.associated_message_guid" : "NULL"
+    let previousAssociatedGUID =
+      schema.hasReactionColumns ? "previous.associated_message_guid" : "NULL"
+    let previewAssociatedType =
+      schema.hasReactionColumns ? "preview.associated_message_type" : "NULL"
+    let previousAssociatedType =
+      schema.hasReactionColumns ? "previous.associated_message_type" : "NULL"
     self.sql = """
       WITH base AS (
         SELECT cmj.chat_id, m.ROWID AS message_id
@@ -124,6 +136,10 @@ struct StatsPreviewQuery {
       )
       SELECT s.chat_id AS chat_id,
              preview.ROWID AS preview_rowid,
+             IFNULL(\(previewGUID), '') AS preview_guid,
+             IFNULL(\(previewReplyToGUID), '') AS preview_reply_to_guid,
+             IFNULL(\(previewAssociatedGUID), '') AS preview_associated_guid,
+             \(previewAssociatedType) AS preview_associated_type,
              preview.handle_id AS preview_handle_id,
              IFNULL(preview_handle.id, '') AS preview_sender,
              IFNULL(preview.text, '') AS preview_text,
@@ -134,6 +150,10 @@ struct StatsPreviewQuery {
              IFNULL(\(previewDestination), '') AS preview_destination_caller_id,
              IFNULL(\(previewBalloon), '') AS preview_balloon_bundle_id,
              previous.ROWID AS previous_rowid,
+             IFNULL(\(previousGUID), '') AS previous_guid,
+             IFNULL(\(previousReplyToGUID), '') AS previous_reply_to_guid,
+             IFNULL(\(previousAssociatedGUID), '') AS previous_associated_guid,
+             \(previousAssociatedType) AS previous_associated_type,
              previous.handle_id AS previous_handle_id,
              IFNULL(previous_handle.id, '') AS previous_sender,
              IFNULL(previous.text, '') AS previous_text,

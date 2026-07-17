@@ -15,6 +15,7 @@ func makeURLPreviewTestDB() throws -> Connection {
       guid TEXT,
       associated_message_guid TEXT,
       associated_message_type INTEGER,
+      reply_to_guid TEXT,
       balloon_bundle_id TEXT,
       is_read INTEGER, date_read INTEGER,
       date INTEGER,
@@ -39,6 +40,7 @@ func insertURLPreviewTestMessage(
   guid: String,
   associatedMessageGUID: String? = nil,
   associatedMessageType: Int? = nil,
+  replyToGUID: String? = nil,
   balloonBundleID: String? = nil,
   date: Date,
   isFromMe: Bool = false,
@@ -49,9 +51,9 @@ func insertURLPreviewTestMessage(
     """
     INSERT INTO message(
       ROWID, handle_id, text, guid, associated_message_guid, associated_message_type,
-      balloon_bundle_id, is_read, date_read, date, is_from_me, service
+      reply_to_guid, balloon_bundle_id, is_read, date_read, date, is_from_me, service
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'iMessage')
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'iMessage')
     """,
     rowID,
     handleID,
@@ -59,6 +61,7 @@ func insertURLPreviewTestMessage(
     guid,
     associatedMessageGUID,
     associatedMessageType,
+    replyToGUID,
     balloonBundleID,
     isRead ? 1 : 0,
     dateRead.map(TestDatabase.appleEpoch) ?? 0,
@@ -242,6 +245,100 @@ func messagesAfterCoalescesURLPreviewSplitSend() throws {
     balloonBundleID: MessageStore.urlPreviewBalloonBundleID,
     date: now.addingTimeInterval(1)
   )
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let messages = try store.messagesAfter(afterRowID: 0, chatID: 1, limit: 10)
+
+  #expect(messages.map(\.rowID) == [1])
+  #expect(messages.first?.urlPreview?.rowID == 2)
+}
+
+@Test
+func messagesAfterCoalescesGUIDLinkedURLPreviewWhenTextOmitsURL() throws {
+  let db = try makeURLPreviewTestDB()
+  let now = Date()
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
+  try insertURLPreviewTestMessage(
+    db,
+    rowID: 1,
+    text: "Check this out",
+    guid: "text-guid",
+    date: now
+  )
+  try insertURLPreviewTestMessage(
+    db,
+    rowID: 2,
+    text: "https://example.com",
+    guid: "preview-guid",
+    replyToGUID: "p:0/text-guid",
+    balloonBundleID: MessageStore.urlPreviewBalloonBundleID,
+    date: now.addingTimeInterval(0.399)
+  )
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let messages = try store.messagesAfter(afterRowID: 0, chatID: 1, limit: 10)
+
+  #expect(messages.map(\.rowID) == [1])
+  #expect(messages.first?.text == "Check this out")
+  #expect(messages.first?.urlPreview?.rowID == 2)
+}
+
+@Test
+func messagesAfterKeepsUnlinkedURLPreviewWhenTextOmitsURL() throws {
+  let db = try makeURLPreviewTestDB()
+  let now = Date()
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
+  try insertURLPreviewTestMessage(
+    db,
+    rowID: 1,
+    text: "Check this out",
+    guid: "text-guid",
+    date: now
+  )
+  try insertURLPreviewTestMessage(
+    db,
+    rowID: 2,
+    text: "https://example.com",
+    guid: "preview-guid",
+    balloonBundleID: MessageStore.urlPreviewBalloonBundleID,
+    date: now.addingTimeInterval(0.206)
+  )
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let messages = try store.messagesAfter(afterRowID: 0, chatID: 1, limit: 10)
+
+  #expect(messages.map(\.rowID) == [1, 2])
+  #expect(messages.allSatisfy { $0.urlPreview == nil })
+}
+
+@Test
+func messagesAfterCoalescesGUIDLinkedPreviewWithoutReactionColumns() throws {
+  let db = try Connection(.inMemory)
+  try MessageDatabaseFixture.createSchema(
+    db,
+    options: MessageDatabaseFixture.SchemaOptions(
+      includeGUID: true,
+      includeBalloonBundleID: true,
+      includeReplyToGUID: true
+    )
+  )
+  let now = Date()
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
+  try db.run(
+    """
+    INSERT INTO message(
+      ROWID, handle_id, text, guid, reply_to_guid, balloon_bundle_id,
+      date, is_from_me, service
+    )
+    VALUES
+      (1, 1, 'Check this out', 'text-guid', NULL, NULL, ?, 0, 'iMessage'),
+      (2, 1, 'https://example.com', 'preview-guid', 'text-guid', ?, ?, 0, 'iMessage')
+    """,
+    TestDatabase.appleEpoch(now),
+    MessageStore.urlPreviewBalloonBundleID,
+    TestDatabase.appleEpoch(now.addingTimeInterval(0.399))
+  )
+  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 1), (1, 2)")
 
   let store = try MessageStore(connection: db, path: ":memory:")
   let messages = try store.messagesAfter(afterRowID: 0, chatID: 1, limit: 10)

@@ -86,6 +86,9 @@ extension MessageStore {
     guard delta >= 0 && delta <= MessageStore.urlPreviewCoalescingWindow else {
       return false
     }
+    if previewMessageTargetsTextMessage(previewMessage, textMessage: textMessage) {
+      return true
+    }
     return textMessageContainsPreviewURL(
       textMessage.text,
       previewText: previewMessage.text
@@ -124,6 +127,16 @@ extension MessageStore {
     return candidates.contains { candidate in
       !candidate.isEmpty && text.range(of: candidate, options: [.caseInsensitive]) != nil
     }
+  }
+
+  private func previewMessageTargetsTextMessage(
+    _ previewMessage: Message,
+    textMessage: Message
+  ) -> Bool {
+    guard let replyToGUID = previewMessage.replyToGUID else { return false }
+    let previewTarget = normalizeAssociatedGUID(replyToGUID)
+    let textGUID = normalizeAssociatedGUID(textMessage.guid)
+    return !previewTarget.isEmpty && !textGUID.isEmpty && previewTarget == textGUID
   }
 
   private func isLikelyURLPreviewText(_ text: String) -> Bool {

@@ -225,6 +225,77 @@ func messageStatsCoalescesConsecutivePreviewsLikeHistory() throws {
 }
 
 @Test
+func messageStatsCoalescesGUIDLinkedPreviewWhenTextOmitsURL() throws {
+  let db = try Connection(.inMemory)
+  try MessageDatabaseFixture.createSchema(
+    db,
+    options: MessageDatabaseFixture.SchemaOptions(
+      includeGUID: true,
+      includeBalloonBundleID: true,
+      includeReplyToGUID: true
+    )
+  )
+  let date = TestDatabase.appleEpoch(Date(timeIntervalSince1970: 1_735_691_400))
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+111')")
+  try db.run(
+    "INSERT INTO chat(ROWID, chat_identifier, guid, display_name, service_name) VALUES (1, '+111', 'iMessage;-;+111', 'Alpha', 'iMessage')"
+  )
+  try db.run(
+    """
+    INSERT INTO message(
+      ROWID, handle_id, text, guid, reply_to_guid, balloon_bundle_id,
+      date, is_from_me, service
+    )
+    VALUES
+      (1, 1, 'Check this out', 'text-guid', NULL, NULL, ?, 0, 'iMessage'),
+      (2, 1, 'https://example.com', 'preview-guid', 'p:0/text-guid', ?, ?, 0, 'iMessage')
+    """,
+    date,
+    MessageStore.urlPreviewBalloonBundleID,
+    date + 399_000_000
+  )
+  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 1), (1, 2)")
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  #expect(try store.messageStats(timeZoneIdentifier: "UTC").totalMessages == 1)
+}
+
+@Test
+func messageStatsCoalescesAssociatedGUIDLinkedPreviewWhenTextOmitsURL() throws {
+  let db = try Connection(.inMemory)
+  try MessageDatabaseFixture.createSchema(
+    db,
+    options: MessageDatabaseFixture.SchemaOptions(
+      includeReactionColumns: true,
+      includeBalloonBundleID: true
+    )
+  )
+  let date = TestDatabase.appleEpoch(Date(timeIntervalSince1970: 1_735_691_400))
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+111')")
+  try db.run(
+    "INSERT INTO chat(ROWID, chat_identifier, guid, display_name, service_name) VALUES (1, '+111', 'iMessage;-;+111', 'Alpha', 'iMessage')"
+  )
+  try db.run(
+    """
+    INSERT INTO message(
+      ROWID, handle_id, text, guid, associated_message_guid, associated_message_type,
+      balloon_bundle_id, date, is_from_me, service
+    )
+    VALUES
+      (1, 1, 'Check this out', 'text-guid', NULL, NULL, NULL, ?, 0, 'iMessage'),
+      (2, 1, 'https://example.com', 'preview-guid', 'p:0/text-guid', 0, ?, ?, 0, 'iMessage')
+    """,
+    date,
+    MessageStore.urlPreviewBalloonBundleID,
+    date + 399_000_000
+  )
+  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 1), (1, 2)")
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  #expect(try store.messageStats(timeZoneIdentifier: "UTC").totalMessages == 1)
+}
+
+@Test
 func messageStatsOnlyRequiresMediaTablesWhenRequested() throws {
   let db = try Connection(.inMemory)
   try MessageDatabaseFixture.createSchema(db)

@@ -6,6 +6,7 @@ struct MessageStoreSchema: Sendable {
   let hasThreadOriginatorGUIDColumn: Bool
   let hasThreadOriginatorPartColumn: Bool
   let hasDestinationCallerID: Bool
+  let hasGUIDColumn: Bool
   let hasAudioMessageColumn: Bool
   let hasAttachmentUserInfo: Bool
   let hasBalloonBundleIDColumn: Bool
@@ -35,6 +36,7 @@ struct MessageStoreSchema: Sendable {
     self.hasThreadOriginatorGUIDColumn = messageColumns.contains("thread_originator_guid")
     self.hasThreadOriginatorPartColumn = messageColumns.contains("thread_originator_part")
     self.hasDestinationCallerID = messageColumns.contains("destination_caller_id")
+    self.hasGUIDColumn = messageColumns.contains("guid")
     self.hasAudioMessageColumn = messageColumns.contains("is_audio_message")
     self.hasAttachmentUserInfo = attachmentColumns.contains("user_info")
     self.hasBalloonBundleIDColumn = messageColumns.contains("balloon_bundle_id")
@@ -78,6 +80,7 @@ struct MessageStoreSchema: Sendable {
     self.hasThreadOriginatorPartColumn =
       hasThreadOriginatorPartColumn ?? base.hasThreadOriginatorPartColumn
     self.hasDestinationCallerID = hasDestinationCallerID ?? base.hasDestinationCallerID
+    self.hasGUIDColumn = base.hasGUIDColumn
     self.hasAudioMessageColumn = hasAudioMessageColumn ?? base.hasAudioMessageColumn
     self.hasAttachmentUserInfo = hasAttachmentUserInfo ?? base.hasAttachmentUserInfo
     self.hasBalloonBundleIDColumn = hasBalloonBundleIDColumn ?? base.hasBalloonBundleIDColumn

@@ -49,6 +49,7 @@ func schemaDetectsOptionalMessageColumns() throws {
   let store = try MessageStore(connection: db, path: ":memory:")
   #expect(store.schema.hasAttributedBody)
   #expect(store.schema.hasReactionColumns)
+  #expect(store.schema.hasGUIDColumn)
   #expect(store.schema.hasThreadOriginatorGUIDColumn)
   #expect(store.schema.hasThreadOriginatorPartColumn)
   #expect(store.schema.hasDestinationCallerID)

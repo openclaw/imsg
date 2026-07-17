@@ -99,7 +99,7 @@ struct MessageRowSelection {
     let columns = MessageRowColumns.message(chatID: includeChatID ? "chat_id" : nil)
     let schema = store.schema
     let bodyColumn = schema.hasAttributedBody ? "m.attributedBody" : "NULL"
-    let guidColumn = schema.hasReactionColumns ? "m.guid" : "NULL"
+    let guidColumn = schema.hasGUIDColumn ? "m.guid" : "NULL"
     let associatedGuidColumn = schema.hasReactionColumns ? "m.associated_message_guid" : "NULL"
     let associatedTypeColumn = schema.hasReactionColumns ? "m.associated_message_type" : "NULL"
     let destinationCallerColumn =

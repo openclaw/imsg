@@ -263,6 +263,9 @@ extension MessageStore {
           handleID: decoded.handleID,
           attachmentsCount: decoded.attachments,
           guid: decoded.guid,
+          routing: Message.RoutingMetadata(
+            replyToGUID: routedReplyToGUID(decoded)
+          ),
           balloonBundleID: decoded.balloonBundleID.nilIfEmpty,
           reaction: Message.ReactionMetadata(
             isReaction: reaction.isReaction,
