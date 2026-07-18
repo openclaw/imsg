@@ -1,6 +1,10 @@
 import Foundation
 
 extension Message {
+  var physicalCompletionRowID: Int64 {
+    max(rowID, urlPreview?.rowID ?? rowID)
+  }
+
   public struct URLPreviewMetadata: Sendable, Equatable {
     public let rowID: Int64
     public let guid: String
@@ -39,6 +43,42 @@ extension Message {
       ),
       balloonBundleID: balloonBundleID,
       urlPreview: preview,
+      cursorRowID: cursorRowID,
+      reaction: ReactionMetadata(
+        isReaction: isReaction,
+        reactionType: reactionType,
+        isReactionAdd: isReactionAdd,
+        reactedToGUID: reactedToGUID
+      ),
+      poll: poll,
+      isRead: isRead,
+      dateRead: dateRead
+    )
+  }
+
+  func withCursorRowID(_ cursorRowID: Int64) -> Message {
+    Message(
+      rowID: rowID,
+      chatID: chatID,
+      sender: sender,
+      text: text,
+      date: date,
+      isFromMe: isFromMe,
+      service: service,
+      handleID: handleID,
+      attachmentsCount: attachmentsCount,
+      guid: guid,
+      routing: RoutingMetadata(
+        replyToGUID: replyToGUID,
+        threadOriginatorGUID: threadOriginatorGUID,
+        threadOriginatorPart: threadOriginatorPart,
+        destinationCallerID: destinationCallerID,
+        replyToText: replyToText,
+        replyToSender: replyToSender
+      ),
+      balloonBundleID: balloonBundleID,
+      urlPreview: urlPreview,
+      cursorRowID: cursorRowID,
       reaction: ReactionMetadata(
         isReaction: isReaction,
         reactionType: reactionType,

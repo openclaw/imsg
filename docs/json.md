@@ -40,7 +40,8 @@ Returned by `imsg history`, `imsg search`, `imsg watch`, and the JSON-RPC `messa
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | int | rowid. Use as the `--since-rowid` cursor in watch. |
+| `id` | int | Logical message rowid. A coalesced URL preview keeps the originating text rowid. |
+| `cursor` | int | Live watch only. Monotonic exclusive resume cursor covering every applicable physical row emitted so far. Persist this value for `--since-rowid` or `watch.subscribe` resumes. |
 | `chat_id` | int | Always present. Preferred routing handle. |
 | `chat_identifier` | string | Portable handle. |
 | `chat_guid` | string | Portable GUID. |
@@ -118,6 +119,13 @@ Messages may store a link send as two rows: the user's text row and a later `com
 | `created_at` | ISO8601 | Preview row timestamp. |
 
 Live watch holds newly observed text rows for up to two seconds so a delayed linked preview can arrive before emission. Backlog rows are not held. If a linked preview arrives after the settling window, it is emitted separately rather than dropping the URL.
+For coalesced events, the outer message keeps the text row's `id`. Live watch
+orders events by physical completion and emits a monotonic `cursor` only after
+every applicable row through that point has been delivered, so resuming cannot
+skip an interleaved message. An early interleaved event can repeat the prior
+cursor until the frontier is complete and can therefore replay after a
+reconnect. Watch delivery is at-least-once; deduplicate by stable `chat_id` plus
+`id` or `guid`. Batch reads omit `cursor`.
 
 ### Reaction extensions
 

@@ -42,9 +42,22 @@ func messageWatcherCoalescesGUIDLinkedURLPreviewAcrossBatchBoundary() async thro
   let second = try await nextMessage(from: stream, timeoutNanoseconds: 100_000_000)
 
   #expect(first?.rowID == 1)
+  #expect(first?.cursorRowID == 2)
   #expect(first?.urlPreview?.rowID == 2)
   #expect(first?.text == "Check this out\nhttps://example.com")
   #expect(second == nil)
+
+  let resumedStream = MessageWatcher(store: store).stream(
+    chatID: 1,
+    sinceRowID: first?.cursorRowID,
+    configuration: MessageWatcherConfiguration(
+      debounceInterval: 0.01,
+      fallbackPollInterval: nil,
+      batchLimit: 1
+    )
+  )
+  let replay = try await nextMessage(from: resumedStream, timeoutNanoseconds: 100_000_000)
+  #expect(replay == nil)
 }
 
 @Test
@@ -100,10 +113,12 @@ func messageWatcherCoalescesLivePreviewPastInterleavedChatRow() async throws {
   let second = try await nextMessage(from: stream)
   let third = try await nextMessage(from: stream, timeoutNanoseconds: 100_000_000)
 
-  #expect(first?.rowID == 1)
-  #expect(first?.urlPreview?.rowID == 3)
-  #expect(first?.text == "Check this out\nhttps://example.com")
-  #expect(second?.rowID == 2)
+  #expect(first?.rowID == 2)
+  #expect(first?.cursorRowID == 0)
+  #expect(second?.rowID == 1)
+  #expect(second?.cursorRowID == 3)
+  #expect(second?.urlPreview?.rowID == 3)
+  #expect(second?.text == "Check this out\nhttps://example.com")
   #expect(third == nil)
 }
 
@@ -168,10 +183,13 @@ func messageWatcherDoesNotSkipRowsBeforeLookedAheadPreview() async throws {
   let third = try await nextMessage(from: stream)
   let fourth = try await nextMessage(from: stream, timeoutNanoseconds: 100_000_000)
 
-  #expect(first?.rowID == 1)
-  #expect(first?.urlPreview?.rowID == 4)
-  #expect(second?.rowID == 2)
-  #expect(third?.rowID == 3)
+  #expect(first?.rowID == 2)
+  #expect(first?.cursorRowID == 0)
+  #expect(second?.rowID == 3)
+  #expect(second?.cursorRowID == 0)
+  #expect(third?.rowID == 1)
+  #expect(third?.cursorRowID == 4)
+  #expect(third?.urlPreview?.rowID == 4)
   #expect(fourth == nil)
 }
 
@@ -265,10 +283,12 @@ func messageWatcherCoalescesBacklogPreviewPastInterleavedChatRow() async throws 
   let second = try await nextMessage(from: stream, timeoutNanoseconds: 200_000_000)
   let third = try await nextMessage(from: stream, timeoutNanoseconds: 100_000_000)
 
-  #expect(first?.rowID == 2)
-  #expect(first?.urlPreview?.rowID == 4)
-  #expect(first?.text == "Check this out\nhttps://example.com")
-  #expect(second?.rowID == 3)
+  #expect(first?.rowID == 3)
+  #expect(first?.cursorRowID == 1)
+  #expect(second?.rowID == 2)
+  #expect(second?.cursorRowID == 4)
+  #expect(second?.urlPreview?.rowID == 4)
+  #expect(second?.text == "Check this out\nhttps://example.com")
   #expect(third == nil)
 }
 

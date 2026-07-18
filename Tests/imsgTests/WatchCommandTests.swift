@@ -119,6 +119,33 @@ func watchCommandRunsWithJsonOutput() async throws {
 }
 
 @Test
+func messagePayloadUsesFoldedPreviewRowAsCursor() throws {
+  let message = Message(
+    rowID: 5,
+    chatID: 1,
+    sender: "+123",
+    text: "hello\nhttps://example.com",
+    date: Date(),
+    isFromMe: false,
+    service: "iMessage",
+    handleID: nil,
+    attachmentsCount: 0,
+    urlPreview: Message.URLPreviewMetadata(
+      rowID: 6,
+      guid: "preview-guid",
+      balloonBundleID: "com.apple.messages.URLBalloonProvider",
+      date: Date()
+    ),
+    cursorRowID: 6
+  )
+
+  let payload = try MessagePayload(message: message, attachments: []).asDictionary()
+
+  #expect(payload["id"] as? Int == 5)
+  #expect(payload["cursor"] as? Int == 6)
+}
+
+@Test
 func watchCommandJsonReportsDirectChatMetadata() async throws {
   let values = ParsedValues(
     positional: [],

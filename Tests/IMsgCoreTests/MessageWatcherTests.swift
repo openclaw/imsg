@@ -347,6 +347,32 @@ func messageWatcherSkipsPersistentlyUnresolvedChatMetadata() async throws {
   #expect(message?.text == "after orphan")
 }
 
+@Test
+func messageWatcherMakesProgressPastMultipleUnresolvedRows() async throws {
+  let fixture = try WatcherTestDatabase.makeMutableStore()
+  let watcher = MessageWatcher(store: fixture.store)
+  let stream = watcher.stream(
+    chatID: nil,
+    sinceRowID: 0,
+    configuration: MessageWatcherConfiguration(
+      debounceInterval: 0.001,
+      fallbackPollInterval: 0.01,
+      urlPreviewSettleInterval: 0,
+      batchLimit: 10
+    )
+  )
+
+  try await Task.sleep(nanoseconds: 20_000_000)
+  try fixture.insertUnjoinedMessage(2, "first orphan")
+  try fixture.insertUnjoinedMessage(3, "second orphan")
+  try fixture.insertMessage(4, "after orphans")
+
+  let message = try await nextMessage(from: stream, timeoutNanoseconds: 1_000_000_000)
+  #expect(message?.rowID == 4)
+  #expect(message?.chatID == 1)
+  #expect(message?.text == "after orphans")
+}
+
 #if os(macOS)
   @Test
   func messageWatcherRearmsSidecarAfterRotation() async throws {

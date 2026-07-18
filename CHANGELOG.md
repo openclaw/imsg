@@ -3,7 +3,7 @@
 ## 0.13.2 - Unreleased
 
 ### Read Commands
-- fix: coalesce GUID-linked Apple URL previews even when the originating text row omits the URL, preserving one logical message across history, search, stats, unread counts, and live watch (#181, thanks @omarshahine).
+- fix: coalesce GUID-linked Apple URL previews even when the originating text row omits the URL, preserving one logical message across history, search, stats, unread counts, and at-least-once live watch with a no-skip physical `cursor` (#181, thanks @omarshahine).
 
 ## 0.13.1 - 2026-07-17
 

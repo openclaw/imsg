@@ -23,13 +23,21 @@ imsg watch --chat-id 42 --json
 
 ## Resuming from a cursor
 
-For long-lived consumers — agents, sync jobs — store the last `id` (rowid) you successfully processed and resume:
+For long-lived consumers — agents, sync jobs — store the last `cursor` you successfully processed and resume:
 
 ```bash
 imsg watch --chat-id 42 --since-rowid 9000 --json
 ```
 
 `--since-rowid` is exclusive: `9000` means "everything strictly after rowid 9000."
+The `cursor` normally equals `id`. For a logical message with a folded URL
+preview, watch first emits any applicable interleaved rows, then advances past
+both physical rows so reconnecting cannot skip another message. An interleaved
+event's cursor can therefore remain at the prior value until that frontier is
+complete. A reconnect from a repeated cursor can replay an already processed
+event, so treat watch as at-least-once and deduplicate by stable `chat_id` plus
+`id` or `guid`. Keep `id` as the message identity; use only `cursor` for
+resuming.
 
 If you don't pass `--since-rowid`, watch starts at the newest message at the moment of launch. Messages written before then are not replayed; use [`history`](history.md) for that.
 

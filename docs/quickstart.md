@@ -66,7 +66,7 @@ Leave it running. Send yourself a message from another device — you'll see the
 imsg watch --chat-id 42 --reactions --json
 ```
 
-To resume from a saved cursor (useful for agents that store the last seen `id`):
+To resume from a saved cursor (useful for agents that store the last seen `cursor` field):
 
 ```bash
 imsg watch --chat-id 42 --since-rowid 9000 --json

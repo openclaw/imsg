@@ -96,6 +96,7 @@ private final class WatchState: @unchecked Sendable {
   private var pending = false
   private var stopped = false
   private var unresolvedChatAttempts: [Int64: Int] = [:]
+  private var terminallySkippedRowIDs = Set<Int64>()
   private var urlPreviewSettleCohorts: [URLPreviewSettleCohort] = []
   private var deliveredURLPreviewRowIDs = Set<Int64>()
 
@@ -274,15 +275,34 @@ private final class WatchState: @unchecked Sendable {
         observedAt: Date()
       )
       let settlingTextRowID = urlPreviewSettlingBoundary(messages: batch.messages)
-      let messagesToDeliver = batch.messages.filter { message in
-        guard let settlingTextRowID else { return true }
-        return message.rowID < settlingTextRowID
+      let firstHeldRowID = settlingTextRowID.flatMap { boundary in
+        batch.messages
+          .filter { $0.physicalCompletionRowID >= boundary }
+          .map(\.rowID)
+          .min()
       }
+      let messagesToDeliver = batch.messages
+        .filter { message in
+          guard let settlingTextRowID else { return true }
+          guard message.physicalCompletionRowID < settlingTextRowID else { return false }
+          guard let firstHeldRowID else { return false }
+          return message.rowID < firstHeldRowID
+        }
+        .sorted { lhs, rhs in
+          if lhs.physicalCompletionRowID == rhs.physicalCompletionRowID {
+            return lhs.rowID < rhs.rowID
+          }
+          return lhs.physicalCompletionRowID < rhs.physicalCompletionRowID
+        }
+      var deliverableMessages: [Message] = []
+      var pendingURLPreviewRowIDs = deliveredURLPreviewRowIDs
       for message in messagesToDeliver {
         switch yieldDecision(for: message) {
         case .yield:
           break
         case .retry:
+          // Abort before any yield or cursor update so this unresolved row
+          // remains inside both the internal and published frontiers.
           return
         case .skip:
           continue
@@ -290,7 +310,7 @@ private final class WatchState: @unchecked Sendable {
         let urlPreviewRowID =
           message.urlPreview?.rowID
           ?? (store.isURLPreviewBalloon(message) ? message.rowID : nil)
-        if let urlPreviewRowID, deliveredURLPreviewRowIDs.contains(urlPreviewRowID) {
+        if let urlPreviewRowID, !pendingURLPreviewRowIDs.insert(urlPreviewRowID).inserted {
           continue
         }
         if store.isURLPreviewBalloon(message),
@@ -305,15 +325,32 @@ private final class WatchState: @unchecked Sendable {
         {
           continue
         }
-        continuation.yield(message)
-        if let urlPreviewRowID {
+        deliverableMessages.append(message)
+      }
+
+      var eventCursors = Array(repeating: cursor, count: deliverableMessages.count)
+      var nextUndeliveredRowID = firstHeldRowID
+      for index in deliverableMessages.indices.reversed() {
+        if let nextUndeliveredRowID {
+          eventCursors[index] = max(cursor, nextUndeliveredRowID - 1)
+        } else {
+          eventCursors[index] = max(cursor, batch.maxScannedRowID)
+        }
+        let rowID = deliverableMessages[index].rowID
+        nextUndeliveredRowID = min(nextUndeliveredRowID ?? rowID, rowID)
+      }
+
+      for (index, message) in deliverableMessages.enumerated() {
+        continuation.yield(message.withCursorRowID(eventCursors[index]))
+        if let urlPreviewRowID = message.urlPreview?.rowID
+          ?? (store.isURLPreviewBalloon(message) ? message.rowID : nil)
+        {
           deliveredURLPreviewRowIDs.insert(urlPreviewRowID)
         }
-        if message.rowID > cursor {
-          cursor = message.rowID
-        }
       }
-      if let settlingTextRowID {
+      if let firstHeldRowID {
+        cursor = max(cursor, firstHeldRowID - 1)
+      } else if let settlingTextRowID {
         cursor = max(cursor, settlingTextRowID - 1)
       } else if batch.maxScannedRowID > cursor {
         cursor = batch.maxScannedRowID
@@ -377,9 +414,13 @@ extension WatchState {
   fileprivate func pruneURLPreviewSettleState() {
     urlPreviewSettleCohorts.removeAll { $0.throughRowID <= cursor }
     deliveredURLPreviewRowIDs = deliveredURLPreviewRowIDs.filter { $0 > cursor }
+    terminallySkippedRowIDs = terminallySkippedRowIDs.filter { $0 > cursor }
   }
 
   fileprivate func yieldDecision(for message: Message) -> MessageYieldDecision {
+    if terminallySkippedRowIDs.contains(message.rowID) {
+      return .skip
+    }
     guard message.chatID <= 0 else {
       unresolvedChatAttempts.removeValue(forKey: message.rowID)
       return .yield
@@ -393,9 +434,7 @@ extension WatchState {
     }
 
     unresolvedChatAttempts.removeValue(forKey: message.rowID)
-    if message.rowID > cursor {
-      cursor = message.rowID
-    }
+    terminallySkippedRowIDs.insert(message.rowID)
     return .skip
   }
 }

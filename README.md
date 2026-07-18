@@ -233,8 +233,13 @@ Before handing the file to Messages, `imsg` stages it under
 ## Watch Behavior
 
 `imsg watch` starts at the newest message by default and streams messages
-written after it starts. Use `--since-rowid <id>` to resume from a stored
-cursor.
+written after it starts. Use `--since-rowid <cursor>` to resume from a stored
+`cursor` field. The cursor normally matches `id`, but advances past a folded
+URL-preview row only after applicable interleaved rows have been emitted, so
+resuming does not skip part of the stream. Until that frontier is complete, an
+interleaved event can repeat the prior cursor and may be replayed after a
+reconnect; deduplicate at-least-once delivery by stable `chat_id` plus `id` or
+`guid`.
 
 New live text rows are held for up to two seconds so a delayed, GUID-linked
 Apple URL preview can be folded into the same logical event. Backlog and resume

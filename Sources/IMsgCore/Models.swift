@@ -330,6 +330,9 @@ public struct Message: Sendable, Equatable {
   /// message. The message keeps the originating row's id, guid, and timestamp;
   /// its text also carries the preview URL when Apple omitted it from that row.
   public let urlPreview: URLPreviewMetadata?
+  /// Exclusive resume cursor for a live watch event. Batch read results leave
+  /// this nil because cursor safety depends on stream emission order.
+  public let cursorRowID: Int64?
 
   // Reaction metadata (populated when message is a reaction event)
   /// Whether this message is a reaction event (tapback add/remove)
@@ -359,6 +362,7 @@ public struct Message: Sendable, Equatable {
     routing: RoutingMetadata = RoutingMetadata(),
     balloonBundleID: String? = nil,
     urlPreview: URLPreviewMetadata? = nil,
+    cursorRowID: Int64? = nil,
     reaction: ReactionMetadata = ReactionMetadata(),
     poll: MessagePollEvent? = nil,
     isRead: Bool? = nil,
@@ -383,6 +387,7 @@ public struct Message: Sendable, Equatable {
     self.balloonBundleID = balloonBundleID
     self.poll = poll
     self.urlPreview = urlPreview
+    self.cursorRowID = cursorRowID
     self.isReaction = reaction.isReaction
     self.reactionType = reaction.reactionType
     self.isReactionAdd = reaction.isReactionAdd
@@ -408,6 +413,7 @@ public struct Message: Sendable, Equatable {
     destinationCallerID: String? = nil,
     balloonBundleID: String? = nil,
     urlPreview: URLPreviewMetadata? = nil,
+    cursorRowID: Int64? = nil,
     replyToText: String? = nil,
     replyToSender: String? = nil,
     isReaction: Bool = false,
@@ -439,6 +445,7 @@ public struct Message: Sendable, Equatable {
       ),
       balloonBundleID: balloonBundleID,
       urlPreview: urlPreview,
+      cursorRowID: cursorRowID,
       reaction: ReactionMetadata(
         isReaction: isReaction,
         reactionType: reactionType,

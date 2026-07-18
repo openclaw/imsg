@@ -79,6 +79,7 @@ struct MessagePayload: Codable {
   }
 
   let id: Int64
+  let cursor: Int64?
   let chatID: Int64
   let guid: String
   let replyToGUID: String?
@@ -122,6 +123,7 @@ struct MessagePayload: Codable {
     reactionSenderNames: [Int64: String] = [:]
   ) {
     self.id = message.rowID
+    self.cursor = message.cursorRowID
     self.chatID = message.chatID
     self.guid = message.guid
     self.replyToGUID = message.replyToGUID
@@ -171,6 +173,7 @@ struct MessagePayload: Codable {
 
   enum CodingKeys: String, CodingKey {
     case id
+    case cursor
     case chatID = "chat_id"
     case guid
     case replyToGUID = "reply_to_guid"
