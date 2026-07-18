@@ -155,3 +155,33 @@ func messageWatcherDoesNotRestartSettleDeadlineAcrossLimitedPages() async throws
 
   #expect([first?.rowID, second?.rowID, third?.rowID, fourth?.rowID] == [1, 2, 3, 4])
 }
+
+@Test
+func watcherTailQueryExcludesReactionsWhenConfigured() throws {
+  let db = try makeURLPreviewTestDB()
+  let now = Date()
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
+  try insertURLPreviewTestMessage(
+    db,
+    rowID: 1,
+    text: "message",
+    guid: "message-guid",
+    date: now
+  )
+  try insertURLPreviewTestMessage(
+    db,
+    rowID: 2,
+    text: "Loved message",
+    guid: "reaction-guid",
+    associatedMessageGUID: "message-guid",
+    associatedMessageType: 2001,
+    date: now.addingTimeInterval(1)
+  )
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+
+  #expect(try store.maxRowID(chatID: 1, includeReactions: false) == 1)
+  #expect(try store.maxRowID(chatID: 1, includeReactions: true) == 2)
+  #expect(try store.maxRowID(chatID: nil, includeReactions: false) == 1)
+  #expect(try store.maxRowID(chatID: nil, includeReactions: true) == 2)
+}

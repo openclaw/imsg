@@ -124,7 +124,8 @@ extension MessageStore {
     let textCandidates = candidates.filter { !isURLPreviewBalloon($0) }
     guard !textCandidates.isEmpty else { return [] }
 
-    let candidateRowIDs = Set(textCandidates.map(\.rowID))
+    let candidateChatIDsByRowID = Dictionary(grouping: textCandidates, by: \.rowID)
+      .mapValues { Set($0.map(\.chatID)) }
     let selection = MessageRowSelection(store: self, includeChatID: true)
     var previews: [Message] = []
     var seenPreviewRowIDs = Set<Int64>()
@@ -180,7 +181,7 @@ extension MessageStore {
         )
         guard
           let preceding = try precedingTextMessageForURLPreview(preview, db: db),
-          candidateRowIDs.contains(preceding.rowID)
+          candidateChatIDsByRowID[preceding.rowID]?.contains(preview.chatID) == true
         else {
           continue
         }

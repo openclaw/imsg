@@ -292,3 +292,37 @@ func messagesAfterFindsEligibleAssociationForMultiChatPreview() throws {
   #expect(messages.map(\.rowID) == [1])
   #expect(messages.first?.urlPreview?.rowID == 2)
 }
+
+@Test
+func searchLookaheadKeepsCandidateChatAssociation() throws {
+  let db = try makeURLPreviewTestDB()
+  let now = Date()
+  try db.run("PRAGMA automatic_index = OFF")
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
+  try insertURLPreviewTestMessage(
+    db,
+    rowID: 1,
+    chatID: 1,
+    text: "Check this out",
+    guid: "text-guid",
+    date: now
+  )
+  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (2, 1)")
+  try insertURLPreviewTestMessage(
+    db,
+    rowID: 2,
+    chatID: 2,
+    text: "https://example.com",
+    guid: "preview-guid",
+    replyToGUID: "text-guid",
+    balloonBundleID: MessageStore.urlPreviewBalloonBundleID,
+    date: now.addingTimeInterval(1)
+  )
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let messages = try store.searchMessages(query: "Check this", match: "contains", limit: 1)
+
+  #expect(messages.map(\.rowID) == [1])
+  #expect(messages.first?.chatID == 1)
+  #expect(messages.first?.urlPreview == nil)
+}

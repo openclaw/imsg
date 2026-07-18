@@ -9,18 +9,28 @@ extension MessageStore {
     }
   }
 
-  func maxRowID(chatID: Int64?) throws -> Int64 {
-    guard let chatID else { return try maxRowID() }
+  func maxRowID(chatID: Int64?, includeReactions: Bool) throws -> Int64 {
     return try withConnection { db in
-      let value = try db.scalar(
-        """
-        SELECT MAX(m.ROWID)
-        FROM message m
-        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-        WHERE cmj.chat_id = ?
-        """,
-        chatID
-      )
+      let reactionFilter =
+        includeReactions || !schema.hasReactionColumns
+        ? ""
+        : " AND (m.associated_message_type IS NULL OR m.associated_message_type < 2000 OR m.associated_message_type > 3006)"
+      let value: Binding?
+      if let chatID {
+        value = try db.scalar(
+          """
+          SELECT MAX(m.ROWID)
+          FROM message m
+          JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+          WHERE cmj.chat_id = ?\(reactionFilter)
+          """,
+          chatID
+        )
+      } else {
+        value = try db.scalar(
+          "SELECT MAX(m.ROWID) FROM message m WHERE 1 = 1\(reactionFilter)"
+        )
+      }
       return int64Value(value) ?? 0
     }
   }

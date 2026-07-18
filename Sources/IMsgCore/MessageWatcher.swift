@@ -265,7 +265,10 @@ private final class WatchState: @unchecked Sendable {
         suppressLateURLPreviews: false,
         deduplicateURLBalloons: false
       )
-      let observedTailRowID = try store.maxRowID(chatID: chatID)
+      let observedTailRowID = try store.maxRowID(
+        chatID: chatID,
+        includeReactions: configuration.includeReactions
+      )
       registerURLPreviewSettleCohort(
         throughRowID: max(observedTailRowID, batch.maxScannedRowID),
         observedAt: Date()
