@@ -109,9 +109,12 @@ private final class WatchState: @unchecked Sendable {
   }
 
   func start() {
-    queue.async {
-      do {
-        let tailRowID = try self.store.maxRowID()
+    do {
+      // Capture the tail before returning the stream. Otherwise a message can
+      // arrive between subscription and asynchronous startup, be mistaken for
+      // pre-existing history, and bypass the URL-preview settle window.
+      let tailRowID = try store.maxRowID()
+      queue.async {
         if self.cursor == 0 {
           self.cursor = tailRowID
         }
@@ -122,9 +125,9 @@ private final class WatchState: @unchecked Sendable {
         #endif
         self.poll()
         self.scheduleFallbackPoll()
-      } catch {
-        self.continuation.finish(throwing: error)
       }
+    } catch {
+      continuation.finish(throwing: error)
     }
   }
 

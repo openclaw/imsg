@@ -397,12 +397,11 @@ func messageWatcherCoalescesGUIDLinkedURLPreviewInsertedAfterTextRow() async thr
     configuration: MessageWatcherConfiguration(
       debounceInterval: 0.01,
       fallbackPollInterval: 0.01,
-      urlPreviewSettleInterval: 0.05,
+      urlPreviewSettleInterval: 2,
       batchLimit: 10
     )
   )
 
-  try await Task.sleep(nanoseconds: 20_000_000)
   _ = try store.withConnection { connection in
     try insertURLPreviewTestMessage(
       connection,
