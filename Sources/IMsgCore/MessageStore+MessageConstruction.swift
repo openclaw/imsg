@@ -128,7 +128,7 @@ extension MessageStore {
       .mapValues { Set($0.map(\.chatID)) }
     let selection = MessageRowSelection(store: self, includeChatID: true)
     var previews: [Message] = []
-    var seenPreviewRowIDs = Set<Int64>()
+    var seenPreviewChatIDsByRowID: [Int64: Set<Int64>] = [:]
     var parentCache: ReplyParentCache = [:]
     var pollOptionCache = PollOptionTextCache()
     let maximumDateWindowsPerQuery = 200
@@ -185,7 +185,9 @@ extension MessageStore {
         else {
           continue
         }
-        guard seenPreviewRowIDs.insert(decoded.rowID).inserted else { continue }
+        guard
+          seenPreviewChatIDsByRowID[decoded.rowID, default: []].insert(preview.chatID).inserted
+        else { continue }
         previews.append(preview)
       }
     }

@@ -78,13 +78,17 @@ extension MessageStore {
         }
         let queriedMessageCount = messages.count
         if let firstTextRowID = messages.filter({ !isURLPreviewBalloon($0) }).map(\.rowID).min() {
-          let existingRowIDs = Set(messages.map(\.rowID))
+          let existingChatIDsByRowID = Dictionary(grouping: messages, by: \.rowID)
+            .mapValues { Set($0.map(\.chatID)) }
           let linkedPreviews = try linkedURLPreviewLookahead(
             afterRowID: firstTextRowID,
             candidates: messages,
             db: db
           )
-          messages.append(contentsOf: linkedPreviews.filter { !existingRowIDs.contains($0.rowID) })
+          messages.append(
+            contentsOf: linkedPreviews.filter {
+              existingChatIDsByRowID[$0.rowID]?.contains($0.chatID) != true
+            })
         }
         var usedFallbackReplacement = false
         let coalesced = try coalesceURLPreviewMessages(
