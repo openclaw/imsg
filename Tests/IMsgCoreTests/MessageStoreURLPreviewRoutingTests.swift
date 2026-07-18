@@ -259,3 +259,36 @@ func messagesAfterKeepsLimitWhenPreviewLookaheadCrossesInterleavedRows() throws 
   #expect(messages.map(\.rowID) == [1])
   #expect(messages.first?.urlPreview?.rowID == 3)
 }
+
+@Test
+func messagesAfterFindsEligibleAssociationForMultiChatPreview() throws {
+  let db = try makeURLPreviewTestDB()
+  let now = Date()
+  try db.run("PRAGMA automatic_index = OFF")
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
+  try insertURLPreviewTestMessage(
+    db,
+    rowID: 1,
+    chatID: 1,
+    text: "Check this out",
+    guid: "text-guid",
+    date: now
+  )
+  try insertURLPreviewTestMessage(
+    db,
+    rowID: 2,
+    chatID: 2,
+    text: "https://example.com",
+    guid: "preview-guid",
+    replyToGUID: "text-guid",
+    balloonBundleID: MessageStore.urlPreviewBalloonBundleID,
+    date: now.addingTimeInterval(1)
+  )
+  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 2)")
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let messages = try store.messagesAfter(afterRowID: 0, chatID: 1, limit: 1)
+
+  #expect(messages.map(\.rowID) == [1])
+  #expect(messages.first?.urlPreview?.rowID == 2)
+}

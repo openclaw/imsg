@@ -125,53 +125,68 @@ extension MessageStore {
     guard !textCandidates.isEmpty else { return [] }
 
     let candidateRowIDs = Set(textCandidates.map(\.rowID))
-    let dates = textCandidates.map(\.date)
-    guard let earliestDate = dates.min(), let latestDate = dates.max() else { return [] }
-
     let selection = MessageRowSelection(store: self, includeChatID: true)
-    let sql = """
-      SELECT \(selection.selectList)
-      FROM message m
-      LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-      LEFT JOIN handle h ON m.handle_id = h.ROWID
-      WHERE m.ROWID > ?
-        AND m.balloon_bundle_id = ?
-        AND m.date >= ?
-        AND m.date <= ?
-      ORDER BY m.ROWID ASC
-      """
-    let bindings: [Binding?] = [
-      afterRowID,
-      MessageStore.urlPreviewBalloonBundleID,
-      MessageStore.appleEpoch(earliestDate),
-      MessageStore.appleEpoch(
-        latestDate.addingTimeInterval(MessageStore.urlPreviewCoalescingWindow)
-      ),
-    ]
-
     var previews: [Message] = []
+    var seenPreviewRowIDs = Set<Int64>()
     var parentCache: ReplyParentCache = [:]
     var pollOptionCache = PollOptionTextCache()
-    let rows = try db.prepareRowIterator(sql, bindings: bindings)
-    while let row = try rows.failableNext() {
-      let decoded = try decodeMessageRow(
-        row,
-        columns: selection.columns,
-        fallbackChatID: nil
-      )
-      let preview = try message(
-        from: decoded,
-        db,
-        parentCache: &parentCache,
-        pollOptionCache: &pollOptionCache
-      )
-      guard
-        let preceding = try precedingTextMessageForURLPreview(preview, db: db),
-        candidateRowIDs.contains(preceding.rowID)
-      else {
-        continue
+    let maximumDateWindowsPerQuery = 200
+
+    for startIndex in stride(
+      from: 0,
+      to: textCandidates.count,
+      by: maximumDateWindowsPerQuery
+    ) {
+      let endIndex = min(startIndex + maximumDateWindowsPerQuery, textCandidates.count)
+      let chunk = textCandidates[startIndex..<endIndex]
+      let datePredicate = Array(
+        repeating: "(m.date >= ? AND m.date <= ?)",
+        count: chunk.count
+      ).joined(separator: " OR ")
+      let sql = """
+        SELECT \(selection.selectList)
+        FROM message m
+        LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        LEFT JOIN handle h ON m.handle_id = h.ROWID
+        WHERE m.ROWID > ?
+          AND m.balloon_bundle_id = ?
+          AND (\(datePredicate))
+        ORDER BY m.ROWID ASC
+        """
+      var bindings: [Binding?] = [
+        afterRowID,
+        MessageStore.urlPreviewBalloonBundleID,
+      ]
+      for candidate in chunk {
+        bindings.append(MessageStore.appleEpoch(candidate.date))
+        bindings.append(
+          MessageStore.appleEpoch(
+            candidate.date.addingTimeInterval(MessageStore.urlPreviewCoalescingWindow)
+          ))
       }
-      previews.append(preview)
+
+      let rows = try db.prepareRowIterator(sql, bindings: bindings)
+      while let row = try rows.failableNext() {
+        let decoded = try decodeMessageRow(
+          row,
+          columns: selection.columns,
+          fallbackChatID: nil
+        )
+        let preview = try message(
+          from: decoded,
+          db,
+          parentCache: &parentCache,
+          pollOptionCache: &pollOptionCache
+        )
+        guard
+          let preceding = try precedingTextMessageForURLPreview(preview, db: db),
+          candidateRowIDs.contains(preceding.rowID)
+        else {
+          continue
+        }
+        guard seenPreviewRowIDs.insert(decoded.rowID).inserted else { continue }
+        previews.append(preview)
+      }
     }
     return previews
   }

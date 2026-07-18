@@ -60,10 +60,15 @@ public final class MessageWatcher: @unchecked Sendable {
 private final class WatchState: @unchecked Sendable {
   private static let unresolvedChatRetryLimit = 20
 
-  private enum MessageYieldDecision {
+  fileprivate enum MessageYieldDecision {
     case yield
     case retry
     case skip
+  }
+
+  private struct URLPreviewSettleCohort {
+    let throughRowID: Int64
+    let deadline: Date
   }
 
   private let store: MessageStore
@@ -91,7 +96,7 @@ private final class WatchState: @unchecked Sendable {
   private var pending = false
   private var stopped = false
   private var unresolvedChatAttempts: [Int64: Int] = [:]
-  private var urlPreviewSettleDeadlines: [Int64: Date] = [:]
+  private var urlPreviewSettleCohorts: [URLPreviewSettleCohort] = []
   private var deliveredURLPreviewRowIDs = Set<Int64>()
 
   init(
@@ -260,10 +265,12 @@ private final class WatchState: @unchecked Sendable {
         suppressLateURLPreviews: false,
         deduplicateURLBalloons: false
       )
-      let settlingTextRowID = urlPreviewSettlingBoundary(
-        messages: batch.messages,
-        maxScannedRowID: batch.maxScannedRowID
+      let observedTailRowID = try store.maxRowID(chatID: chatID)
+      registerURLPreviewSettleCohort(
+        throughRowID: max(observedTailRowID, batch.maxScannedRowID),
+        observedAt: Date()
       )
+      let settlingTextRowID = urlPreviewSettlingBoundary(messages: batch.messages)
       let messagesToDeliver = batch.messages.filter { message in
         guard let settlingTextRowID else { return true }
         return message.rowID < settlingTextRowID
@@ -313,31 +320,38 @@ private final class WatchState: @unchecked Sendable {
       continuation.finish(throwing: error)
     }
   }
+}
 
-  private func urlPreviewSettlingBoundary(
-    messages: [Message],
-    maxScannedRowID: Int64
-  ) -> Int64? {
+extension WatchState {
+  fileprivate func registerURLPreviewSettleCohort(throughRowID: Int64, observedAt: Date) {
     let interval = configuration.urlPreviewSettleInterval
-    guard interval > 0, maxScannedRowID > cursor else {
+    guard interval > 0 else { return }
+    let coveredThroughRowID = urlPreviewSettleCohorts.last?.throughRowID ?? startupTailRowID
+    guard throughRowID > max(startupTailRowID, coveredThroughRowID) else { return }
+    urlPreviewSettleCohorts.append(
+      URLPreviewSettleCohort(
+        throughRowID: throughRowID,
+        deadline: observedAt.addingTimeInterval(interval)
+      ))
+  }
+
+  fileprivate func urlPreviewSettlingBoundary(messages: [Message]) -> Int64? {
+    guard configuration.urlPreviewSettleInterval > 0 else {
       return nil
     }
 
     let uncoalescedLiveTextRows = messages.filter {
       $0.rowID > startupTailRowID && !store.isURLPreviewBalloon($0) && $0.urlPreview == nil
     }
-    for message in messages where message.urlPreview != nil {
-      urlPreviewSettleDeadlines.removeValue(forKey: message.rowID)
-    }
 
     let now = Date()
-    for message in uncoalescedLiveTextRows
-    where urlPreviewSettleDeadlines[message.rowID] == nil {
-      urlPreviewSettleDeadlines[message.rowID] = now.addingTimeInterval(interval)
-    }
-
     let waitingRows = uncoalescedLiveTextRows.compactMap { message -> (Int64, Date)? in
-      guard let deadline = urlPreviewSettleDeadlines[message.rowID], now < deadline else {
+      guard
+        let deadline = urlPreviewSettleCohorts.first(where: {
+          message.rowID <= $0.throughRowID
+        })?.deadline,
+        now < deadline
+      else {
         return nil
       }
       return (message.rowID, deadline)
@@ -349,7 +363,7 @@ private final class WatchState: @unchecked Sendable {
     return boundary.0
   }
 
-  private func scheduleURLPreviewSettlePoll(at date: Date) {
+  fileprivate func scheduleURLPreviewSettlePoll(at date: Date) {
     let delay = max(0, date.timeIntervalSinceNow)
     queue.asyncAfter(deadline: .now() + delay) { [weak self] in
       guard let self, !self.stopped else { return }
@@ -357,12 +371,12 @@ private final class WatchState: @unchecked Sendable {
     }
   }
 
-  private func pruneURLPreviewSettleState() {
-    urlPreviewSettleDeadlines = urlPreviewSettleDeadlines.filter { $0.key > cursor }
+  fileprivate func pruneURLPreviewSettleState() {
+    urlPreviewSettleCohorts.removeAll { $0.throughRowID <= cursor }
     deliveredURLPreviewRowIDs = deliveredURLPreviewRowIDs.filter { $0 > cursor }
   }
 
-  private func yieldDecision(for message: Message) -> MessageYieldDecision {
+  fileprivate func yieldDecision(for message: Message) -> MessageYieldDecision {
     guard message.chatID <= 0 else {
       unresolvedChatAttempts.removeValue(forKey: message.rowID)
       return .yield

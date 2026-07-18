@@ -9,6 +9,22 @@ extension MessageStore {
     }
   }
 
+  func maxRowID(chatID: Int64?) throws -> Int64 {
+    guard let chatID else { return try maxRowID() }
+    return try withConnection { db in
+      let value = try db.scalar(
+        """
+        SELECT MAX(m.ROWID)
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        WHERE cmj.chat_id = ?
+        """,
+        chatID
+      )
+      return int64Value(value) ?? 0
+    }
+  }
+
   public func messages(chatID: Int64, limit: Int) throws -> [Message] {
     return try messages(chatID: chatID, limit: limit, filter: nil)
   }
