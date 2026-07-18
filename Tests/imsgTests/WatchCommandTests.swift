@@ -6,6 +6,23 @@ import Testing
 @testable import IMsgCore
 @testable import imsg
 
+private final class WatchStartupRecorder: @unchecked Sendable {
+  private let lock = NSLock()
+  private var events: [String] = []
+
+  func append(_ event: String) {
+    lock.lock()
+    events.append(event)
+    lock.unlock()
+  }
+
+  func snapshot() -> [String] {
+    lock.lock()
+    defer { lock.unlock() }
+    return events
+  }
+}
+
 private func singleMessageStreamProvider(
   _ message: Message
 ) -> (
@@ -20,6 +37,38 @@ private func singleMessageStreamProvider(
       continuation.finish()
     }
   }
+}
+
+@Test
+func watchCommandSubscribesBeforeResolvingContacts() async throws {
+  let values = ParsedValues(
+    positional: [],
+    options: ["db": ["/tmp/unused"], "debounce": ["1ms"]],
+    flags: []
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let recorder = WatchStartupRecorder()
+
+  _ = try await StdoutCapture.capture {
+    try await WatchCommand.run(
+      values: values,
+      runtime: runtime,
+      storeFactory: { _ in store },
+      contactResolverFactory: {
+        recorder.append("contacts")
+        return NoOpContactResolver()
+      },
+      streamProvider: { _, _, _, _ in
+        recorder.append("stream")
+        return AsyncThrowingStream { continuation in
+          continuation.finish()
+        }
+      }
+    )
+  }
+
+  #expect(recorder.snapshot() == ["stream", "contacts"])
 }
 
 @Test

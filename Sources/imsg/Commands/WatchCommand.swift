@@ -90,12 +90,15 @@ enum WatchCommand {
     let store = try storeFactory(dbPath)
     let watcher = MessageWatcher(store: store)
     let cache = ChatCache(store: store)
-    let contacts = await contactResolverFactory()
     let config = MessageWatcherConfiguration(
       debounceInterval: debounceInterval,
       batchLimit: 100,
       includeReactions: includeReactions
     )
+    // Subscribe before contact discovery so messages arriving during that
+    // asynchronous startup work are buffered instead of becoming history.
+    let stream = streamProvider(watcher, chatID, sinceRowID, config)
+    let contacts = await contactResolverFactory()
 
     let bbEvents = values.flag("bbEvents")
     if bbEvents {
@@ -119,7 +122,6 @@ enum WatchCommand {
       }
     }
 
-    let stream = streamProvider(watcher, chatID, sinceRowID, config)
     for try await message in stream {
       if !filter.allows(message) {
         continue
