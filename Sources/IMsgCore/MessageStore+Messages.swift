@@ -112,7 +112,7 @@ extension MessageStore {
         includeReactions: includeReactions
       )
       if !batch.messages.isEmpty {
-        return batch.messages
+        return Array(batch.messages.prefix(limit))
       }
       guard batch.maxScannedRowID > cursor else {
         return []
@@ -125,7 +125,9 @@ extension MessageStore {
     afterRowID: Int64,
     chatID: Int64?,
     limit: Int,
-    includeReactions: Bool
+    includeReactions: Bool,
+    suppressLateURLPreviews: Bool = true,
+    deduplicateURLBalloons: Bool = true
   ) throws -> MessagesAfterBatch {
     let query = MessagesAfterQuery(
       store: self,
@@ -157,6 +159,37 @@ extension MessageStore {
             pollOptionCache: &pollOptionCache
           ))
       }
+      let previewLookahead = try linkedURLPreviewLookahead(
+        afterRowID: maxScannedRowID,
+        candidates: messages,
+        db: db
+      )
+      if let lookaheadMaxRowID = previewLookahead.map(\.rowID).max() {
+        let gapQuery = MessagesAfterQuery(
+          store: self,
+          afterRowID: MessageID(rawValue: maxScannedRowID),
+          chatID: chatID.map { ChatID(rawValue: $0) },
+          limit: Int.max,
+          includeReactions: includeReactions,
+          throughRowID: MessageID(rawValue: lookaheadMaxRowID)
+        )
+        let gapRows = try db.prepareRowIterator(gapQuery.sql, bindings: gapQuery.bindings)
+        while let row = try gapRows.failableNext() {
+          let decoded = try decodeMessageRow(
+            row,
+            columns: gapQuery.selection.columns,
+            fallbackChatID: gapQuery.fallbackChatID
+          )
+          maxScannedRowID = max(maxScannedRowID, decoded.rowID)
+          messages.append(
+            try message(
+              from: decoded,
+              db,
+              parentCache: &parentCache,
+              pollOptionCache: &pollOptionCache
+            ))
+        }
+      }
       let coalesced = try coalesceURLPreviewMessages(
         messages,
         validateExistingCoalescence: { text, preview in
@@ -166,10 +199,11 @@ extension MessageStore {
           guard try self.precedingTextMessageForURLPreview(preview, db: db) != nil else {
             return nil
           }
-          return .suppress
+          return suppressLateURLPreviews ? .suppress : nil
         }
       )
       let visibleMessages = coalesced.filter { message in
+        guard deduplicateURLBalloons else { return true }
         guard isURLPreviewBalloon(message) else { return true }
         return !shouldSkipURLBalloonDuplicate(
           chatID: message.chatID,

@@ -76,6 +76,16 @@ extension MessageStore {
               pollOptionCache: &pollOptionCache
             ))
         }
+        let queriedMessageCount = messages.count
+        if let firstTextRowID = messages.filter({ !isURLPreviewBalloon($0) }).map(\.rowID).min() {
+          let existingRowIDs = Set(messages.map(\.rowID))
+          let linkedPreviews = try linkedURLPreviewLookahead(
+            afterRowID: firstTextRowID,
+            candidates: messages,
+            db: db
+          )
+          messages.append(contentsOf: linkedPreviews.filter { !existingRowIDs.contains($0.rowID) })
+        }
         var usedFallbackReplacement = false
         let coalesced = try coalesceURLPreviewMessages(
           messages,
@@ -86,7 +96,10 @@ extension MessageStore {
             guard let previous = try self.precedingTextMessageForURLPreview(preview, db: db) else {
               return nil
             }
-            guard self.searchMessage(previous, matches: trimmed, exact: exact) else {
+            guard
+              self.searchMessage(previous, matches: trimmed, exact: exact)
+                || (!exact && self.searchMessage(preview, matches: trimmed, exact: false))
+            else {
               return nil
             }
             return .replace(previous)
@@ -96,7 +109,8 @@ extension MessageStore {
           }
         ).sorted(by: searchMessagesNewestFirst)
 
-        if messages.count < physicalLimit || (coalesced.count >= limit && !usedFallbackReplacement)
+        if queriedMessageCount < physicalLimit
+          || (coalesced.count >= limit && !usedFallbackReplacement)
         {
           return Array(coalesced.prefix(limit))
         }

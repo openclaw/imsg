@@ -113,4 +113,66 @@ extension MessageStore {
     }
     return nil
   }
+
+  func linkedURLPreviewLookahead(
+    afterRowID: Int64,
+    candidates: [Message],
+    db: Connection
+  ) throws -> [Message] {
+    guard schema.hasBalloonBundleIDColumn else { return [] }
+
+    let textCandidates = candidates.filter { !isURLPreviewBalloon($0) }
+    guard !textCandidates.isEmpty else { return [] }
+
+    let candidateRowIDs = Set(textCandidates.map(\.rowID))
+    let dates = textCandidates.map(\.date)
+    guard let earliestDate = dates.min(), let latestDate = dates.max() else { return [] }
+
+    let selection = MessageRowSelection(store: self, includeChatID: true)
+    let sql = """
+      SELECT \(selection.selectList)
+      FROM message m
+      LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+      LEFT JOIN handle h ON m.handle_id = h.ROWID
+      WHERE m.ROWID > ?
+        AND m.balloon_bundle_id = ?
+        AND m.date >= ?
+        AND m.date <= ?
+      ORDER BY m.ROWID ASC
+      """
+    let bindings: [Binding?] = [
+      afterRowID,
+      MessageStore.urlPreviewBalloonBundleID,
+      MessageStore.appleEpoch(earliestDate),
+      MessageStore.appleEpoch(
+        latestDate.addingTimeInterval(MessageStore.urlPreviewCoalescingWindow)
+      ),
+    ]
+
+    var previews: [Message] = []
+    var parentCache: ReplyParentCache = [:]
+    var pollOptionCache = PollOptionTextCache()
+    let rows = try db.prepareRowIterator(sql, bindings: bindings)
+    while let row = try rows.failableNext() {
+      let decoded = try decodeMessageRow(
+        row,
+        columns: selection.columns,
+        fallbackChatID: nil
+      )
+      let preview = try message(
+        from: decoded,
+        db,
+        parentCache: &parentCache,
+        pollOptionCache: &pollOptionCache
+      )
+      guard
+        let preceding = try precedingTextMessageForURLPreview(preview, db: db),
+        candidateRowIDs.contains(preceding.rowID)
+      else {
+        continue
+      }
+      previews.append(preview)
+    }
+    return previews
+  }
 }

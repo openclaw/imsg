@@ -279,7 +279,7 @@ func messagesAfterCoalescesGUIDLinkedURLPreviewWhenTextOmitsURL() throws {
   let messages = try store.messagesAfter(afterRowID: 0, chatID: 1, limit: 10)
 
   #expect(messages.map(\.rowID) == [1])
-  #expect(messages.first?.text == "Check this out")
+  #expect(messages.first?.text == "Check this out\nhttps://example.com")
   #expect(messages.first?.urlPreview?.rowID == 2)
 }
 

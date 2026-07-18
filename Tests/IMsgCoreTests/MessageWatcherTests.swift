@@ -113,7 +113,7 @@ private enum WatcherTestDatabase {
   }
 }
 
-private func nextMessage(
+func nextMessage(
   from stream: AsyncThrowingStream<Message, Error>,
   timeoutNanoseconds: UInt64 = 2_000_000_000
 ) async throws -> Message? {
@@ -191,6 +191,7 @@ func messageWatcherYieldsOneLogicalEventForGUIDLinkedURLPreview() async throws {
 
   #expect(first?.rowID == 1)
   #expect(first?.urlPreview?.rowID == 2)
+  #expect(first?.text == "Check this out\nhttps://example.com")
   #expect(second == nil)
 }
 
@@ -234,6 +235,7 @@ func messageWatcherYieldsOneLogicalEventForAssociatedGUIDLinkedURLPreview() asyn
 
   #expect(first?.rowID == 1)
   #expect(first?.urlPreview?.rowID == 2)
+  #expect(first?.text == "Check this out\nhttps://example.com")
   #expect(second == nil)
 }
 
@@ -247,6 +249,7 @@ func messageWatcherFallbackPollYieldsMessagesWithoutFileEvents() async throws {
     configuration: MessageWatcherConfiguration(
       debounceInterval: 60,
       fallbackPollInterval: 0.01,
+      urlPreviewSettleInterval: 0,
       batchLimit: 10
     )
   )
@@ -265,6 +268,31 @@ func messageWatcherFallbackPollYieldsMessagesWithoutFileEvents() async throws {
 }
 
 @Test
+func messageWatcherDoesNotSettleEachBacklogPage() async throws {
+  let fixture = try WatcherTestDatabase.makeMutableStore()
+  try fixture.insertMessage(2, "first")
+  try fixture.insertMessage(3, "second")
+  try fixture.insertMessage(4, "third")
+
+  let watcher = MessageWatcher(store: fixture.store)
+  let stream = watcher.stream(
+    chatID: nil,
+    sinceRowID: 1,
+    configuration: MessageWatcherConfiguration(
+      debounceInterval: 0.005,
+      fallbackPollInterval: 0.005,
+      urlPreviewSettleInterval: 1,
+      batchLimit: 1
+    )
+  )
+
+  let first = try await nextMessage(from: stream, timeoutNanoseconds: 200_000_000)
+
+  #expect(first?.rowID == 2)
+  #expect(first?.text == "first")
+}
+
+@Test
 func messageWatcherRetriesUnresolvedChatMetadata() async throws {
   let fixture = try WatcherTestDatabase.makeMutableStore()
   let watcher = MessageWatcher(store: fixture.store)
@@ -274,6 +302,7 @@ func messageWatcherRetriesUnresolvedChatMetadata() async throws {
     configuration: MessageWatcherConfiguration(
       debounceInterval: 0.01,
       fallbackPollInterval: 0.01,
+      urlPreviewSettleInterval: 0,
       batchLimit: 10
     )
   )
@@ -301,6 +330,7 @@ func messageWatcherSkipsPersistentlyUnresolvedChatMetadata() async throws {
     configuration: MessageWatcherConfiguration(
       debounceInterval: 0.001,
       fallbackPollInterval: 0.01,
+      urlPreviewSettleInterval: 0,
       batchLimit: 10
     )
   )
@@ -347,6 +377,7 @@ func messageWatcherSkipsPersistentlyUnresolvedChatMetadata() async throws {
       configuration: MessageWatcherConfiguration(
         debounceInterval: 0.01,
         fallbackPollInterval: nil,
+        urlPreviewSettleInterval: 0,
         batchLimit: 10
       )
     )

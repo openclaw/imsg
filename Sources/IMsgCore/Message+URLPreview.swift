@@ -15,12 +15,14 @@ extension Message {
     }
   }
 
-  public func withURLPreview(_ preview: URLPreviewMetadata) -> Message {
+  public func withURLPreview(_ preview: URLPreviewMetadata, text replacementText: String? = nil)
+    -> Message
+  {
     Message(
       rowID: rowID,
       chatID: chatID,
       sender: sender,
-      text: text,
+      text: replacementText ?? text,
       date: date,
       isFromMe: isFromMe,
       service: service,

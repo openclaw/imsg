@@ -7,7 +7,7 @@ enum URLPreviewCoalescingFallback {
 
 extension MessageStore {
   static let urlPreviewBalloonBundleID = "com.apple.messages.URLBalloonProvider"
-  private static let urlPreviewCoalescingWindow: TimeInterval = 5
+  static let urlPreviewCoalescingWindow: TimeInterval = 5
 
   func coalesceURLPreviewMessages(
     _ messages: [Message],
@@ -41,7 +41,11 @@ extension MessageStore {
           && canCoalesceURLPreview(textMessage: textMessage, previewMessage: preview.element)
         {
           replacements[candidate.offset] = textMessage.withURLPreview(
-            urlPreviewMetadata(from: preview.element)
+            urlPreviewMetadata(from: preview.element),
+            text: coalescedURLPreviewText(
+              textMessage: textMessage,
+              previewMessage: preview.element
+            )
           )
           suppressed.insert(preview.offset)
           continue
@@ -57,7 +61,11 @@ extension MessageStore {
       case .replace(let textMessage):
         fallbackReplacementUsed?()
         replacements[preview.offset] = textMessage.withURLPreview(
-          urlPreviewMetadata(from: preview.element)
+          urlPreviewMetadata(from: preview.element),
+          text: coalescedURLPreviewText(
+            textMessage: textMessage,
+            previewMessage: preview.element
+          )
         )
       }
     }
@@ -127,6 +135,19 @@ extension MessageStore {
     return candidates.contains { candidate in
       !candidate.isEmpty && text.range(of: candidate, options: [.caseInsensitive]) != nil
     }
+  }
+
+  private func coalescedURLPreviewText(
+    textMessage: Message,
+    previewMessage: Message
+  ) -> String {
+    let previewText = previewMessage.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard isLikelyURLPreviewText(previewText) else { return textMessage.text }
+    guard !textMessageContainsPreviewURL(textMessage.text, previewText: previewText) else {
+      return textMessage.text
+    }
+    guard !textMessage.text.isEmpty else { return previewText }
+    return "\(textMessage.text)\n\(previewText)"
   }
 
   private func previewMessageTargetsTextMessage(

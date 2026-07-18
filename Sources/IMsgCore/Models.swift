@@ -327,8 +327,8 @@ public struct Message: Sendable, Equatable {
   /// or a Polls vote update.
   public let poll: MessagePollEvent?
   /// Metadata for an Apple URL preview balloon row that was folded into this
-  /// message. The message itself still uses the originating text row's id,
-  /// guid, text, and timestamp.
+  /// message. The message keeps the originating row's id, guid, and timestamp;
+  /// its text also carries the preview URL when Apple omitted it from that row.
   public let urlPreview: URLPreviewMetadata?
 
   // Reaction metadata (populated when message is a reaction event)

@@ -64,7 +64,8 @@ struct MessagesAfterQuery {
     afterRowID: MessageID,
     chatID: ChatID?,
     limit: Int,
-    includeReactions: Bool
+    includeReactions: Bool,
+    throughRowID: MessageID? = nil
   ) {
     self.selection = MessageRowSelection(store: store, includeChatID: true)
     let reactionFilter: String
@@ -82,6 +83,10 @@ struct MessagesAfterQuery {
       WHERE m.ROWID > ?\(reactionFilter)
       """
     var bindings: [Binding?] = [afterRowID.rawValue]
+    if let throughRowID {
+      sql += " AND m.ROWID <= ?"
+      bindings.append(throughRowID.rawValue)
+    }
     if let chatID {
       sql += " AND cmj.chat_id = ?"
       bindings.append(chatID.rawValue)
