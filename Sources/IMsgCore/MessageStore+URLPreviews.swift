@@ -150,7 +150,7 @@ extension MessageStore {
     return "\(textMessage.text)\n\(previewText)"
   }
 
-  private func previewMessageTargetsTextMessage(
+  func previewMessageTargetsTextMessage(
     _ previewMessage: Message,
     textMessage: Message
   ) -> Bool {

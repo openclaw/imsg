@@ -225,7 +225,7 @@ func messageWatcherKeepsUnlinkedLiveURLPreviewSeparateWhileSettling() async thro
 }
 
 @Test
-func messageWatcherExtendsSettleDeadlineForNewerLiveText() async throws {
+func messageWatcherDoesNotExtendOlderSettleDeadlineForNewerLiveText() async throws {
   let db = try makeURLPreviewTestDB()
   let now = Date()
   try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
@@ -238,7 +238,7 @@ func messageWatcherExtendsSettleDeadlineForNewerLiveText() async throws {
     configuration: MessageWatcherConfiguration(
       debounceInterval: 0.005,
       fallbackPollInterval: 0.005,
-      urlPreviewSettleInterval: 0.05,
+      urlPreviewSettleInterval: 0.1,
       batchLimit: 10
     )
   )
@@ -253,7 +253,7 @@ func messageWatcherExtendsSettleDeadlineForNewerLiveText() async throws {
       date: now
     )
   }
-  try await Task.sleep(nanoseconds: 30_000_000)
+  try await Task.sleep(nanoseconds: 70_000_000)
   _ = try store.withConnection { connection in
     try insertURLPreviewTestMessage(
       connection,
@@ -263,7 +263,9 @@ func messageWatcherExtendsSettleDeadlineForNewerLiveText() async throws {
       date: now.addingTimeInterval(0.5)
     )
   }
-  try await Task.sleep(nanoseconds: 30_000_000)
+
+  let first = try await nextMessage(from: stream, timeoutNanoseconds: 70_000_000)
+
   _ = try store.withConnection { connection in
     try insertURLPreviewTestMessage(
       connection,
@@ -276,7 +278,6 @@ func messageWatcherExtendsSettleDeadlineForNewerLiveText() async throws {
     )
   }
 
-  let first = try await nextMessage(from: stream)
   let second = try await nextMessage(from: stream)
   let third = try await nextMessage(from: stream, timeoutNanoseconds: 100_000_000)
 

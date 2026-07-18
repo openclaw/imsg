@@ -98,7 +98,12 @@ extension MessageStore {
             }
             guard
               self.searchMessage(previous, matches: trimmed, exact: exact)
-                || (!exact && self.searchMessage(preview, matches: trimmed, exact: false))
+                || (self.searchMessage(preview, matches: trimmed, exact: exact)
+                  && (!exact
+                    || self.previewMessageTargetsTextMessage(
+                      preview,
+                      textMessage: previous
+                    )))
             else {
               return nil
             }

@@ -91,8 +91,8 @@ private final class WatchState: @unchecked Sendable {
   private var pending = false
   private var stopped = false
   private var unresolvedChatAttempts: [Int64: Int] = [:]
-  private var settleUntil: Date?
-  private var settleMaxTextRowID: Int64?
+  private var urlPreviewSettleDeadlines: [Int64: Date] = [:]
+  private var deliveredURLPreviewRowIDs = Set<Int64>()
 
   init(
     store: MessageStore,
@@ -260,19 +260,27 @@ private final class WatchState: @unchecked Sendable {
         suppressLateURLPreviews: false,
         deduplicateURLBalloons: false
       )
-      if shouldWaitForURLPreviewCompanion(
+      let settlingTextRowID = urlPreviewSettlingBoundary(
         messages: batch.messages,
         maxScannedRowID: batch.maxScannedRowID
-      ) {
-        return
+      )
+      let messagesToDeliver = batch.messages.filter { message in
+        guard let settlingTextRowID else { return true }
+        return message.rowID < settlingTextRowID
       }
-      for message in batch.messages {
+      for message in messagesToDeliver {
         switch yieldDecision(for: message) {
         case .yield:
           break
         case .retry:
           return
         case .skip:
+          continue
+        }
+        let urlPreviewRowID =
+          message.urlPreview?.rowID
+          ?? (store.isURLPreviewBalloon(message) ? message.rowID : nil)
+        if let urlPreviewRowID, deliveredURLPreviewRowIDs.contains(urlPreviewRowID) {
           continue
         }
         if store.isURLPreviewBalloon(message),
@@ -288,54 +296,57 @@ private final class WatchState: @unchecked Sendable {
           continue
         }
         continuation.yield(message)
+        if let urlPreviewRowID {
+          deliveredURLPreviewRowIDs.insert(urlPreviewRowID)
+        }
         if message.rowID > cursor {
           cursor = message.rowID
         }
       }
-      if batch.maxScannedRowID > cursor {
+      if let settlingTextRowID {
+        cursor = max(cursor, settlingTextRowID - 1)
+      } else if batch.maxScannedRowID > cursor {
         cursor = batch.maxScannedRowID
       }
-      clearURLPreviewSettleState()
+      pruneURLPreviewSettleState()
     } catch {
       continuation.finish(throwing: error)
     }
   }
 
-  private func shouldWaitForURLPreviewCompanion(
+  private func urlPreviewSettlingBoundary(
     messages: [Message],
     maxScannedRowID: Int64
-  ) -> Bool {
+  ) -> Int64? {
     let interval = configuration.urlPreviewSettleInterval
     guard interval > 0, maxScannedRowID > cursor else {
-      return false
+      return nil
     }
-    // A preview-only batch is already the companion row. Emit it now; querying
-    // it twice would also feed the stateful URL-balloon dedupe cache twice.
-    let hasLiveTextRow = messages.contains {
-      $0.rowID > startupTailRowID && !store.isURLPreviewBalloon($0)
-    }
-    guard settleUntil != nil || hasLiveTextRow else { return false }
 
     let uncoalescedLiveTextRows = messages.filter {
       $0.rowID > startupTailRowID && !store.isURLPreviewBalloon($0) && $0.urlPreview == nil
     }
-    if settleUntil != nil, uncoalescedLiveTextRows.isEmpty {
-      return false
+    for message in messages where message.urlPreview != nil {
+      urlPreviewSettleDeadlines.removeValue(forKey: message.rowID)
     }
 
     let now = Date()
-    let newestUncoalescedTextRowID = uncoalescedLiveTextRows.map(\.rowID).max()
-    if let newestUncoalescedTextRowID,
-      settleMaxTextRowID == nil || newestUncoalescedTextRowID > (settleMaxTextRowID ?? 0)
-    {
-      let deadline = now.addingTimeInterval(interval)
-      settleMaxTextRowID = newestUncoalescedTextRowID
-      settleUntil = deadline
-      scheduleURLPreviewSettlePoll(at: deadline)
+    for message in uncoalescedLiveTextRows
+    where urlPreviewSettleDeadlines[message.rowID] == nil {
+      urlPreviewSettleDeadlines[message.rowID] = now.addingTimeInterval(interval)
     }
 
-    guard let settleUntil, now < settleUntil else { return false }
-    return true
+    let waitingRows = uncoalescedLiveTextRows.compactMap { message -> (Int64, Date)? in
+      guard let deadline = urlPreviewSettleDeadlines[message.rowID], now < deadline else {
+        return nil
+      }
+      return (message.rowID, deadline)
+    }
+    guard let boundary = waitingRows.min(by: { $0.0 < $1.0 }) else { return nil }
+    if let nextDeadline = waitingRows.map(\.1).min() {
+      scheduleURLPreviewSettlePoll(at: nextDeadline)
+    }
+    return boundary.0
   }
 
   private func scheduleURLPreviewSettlePoll(at date: Date) {
@@ -346,9 +357,9 @@ private final class WatchState: @unchecked Sendable {
     }
   }
 
-  private func clearURLPreviewSettleState() {
-    settleUntil = nil
-    settleMaxTextRowID = nil
+  private func pruneURLPreviewSettleState() {
+    urlPreviewSettleDeadlines = urlPreviewSettleDeadlines.filter { $0.key > cursor }
+    deliveredURLPreviewRowIDs = deliveredURLPreviewRowIDs.filter { $0 > cursor }
   }
 
   private func yieldDecision(for message: Message) -> MessageYieldDecision {
