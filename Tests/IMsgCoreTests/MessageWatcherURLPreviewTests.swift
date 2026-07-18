@@ -61,6 +61,43 @@ func messageWatcherCoalescesGUIDLinkedURLPreviewAcrossBatchBoundary() async thro
 }
 
 @Test
+func messageWatcherKeepsMultiChatPreviewAssociationsDistinct() async throws {
+  let db = try makeURLPreviewTestDB()
+  let now = Date()
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
+  try insertURLPreviewTestMessage(
+    db,
+    rowID: 1,
+    chatID: 1,
+    text: "https://example.com",
+    guid: "preview-guid",
+    balloonBundleID: MessageStore.urlPreviewBalloonBundleID,
+    date: now
+  )
+  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (2, 1)")
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let stream = MessageWatcher(store: store).stream(
+    chatID: nil,
+    sinceRowID: -1,
+    configuration: MessageWatcherConfiguration(
+      debounceInterval: 0.01,
+      fallbackPollInterval: nil,
+      batchLimit: 10
+    )
+  )
+
+  let first = try await nextMessage(from: stream)
+  let second = try await nextMessage(from: stream)
+  let third = try await nextMessage(from: stream, timeoutNanoseconds: 100_000_000)
+
+  #expect(Set([first?.chatID, second?.chatID].compactMap { $0 }) == Set([1, 2]))
+  #expect(first?.rowID == 1)
+  #expect(second?.rowID == 1)
+  #expect(third == nil)
+}
+
+@Test
 func messageWatcherCoalescesLivePreviewPastInterleavedChatRow() async throws {
   let db = try makeURLPreviewTestDB()
   let now = Date()

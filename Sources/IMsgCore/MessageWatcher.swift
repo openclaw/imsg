@@ -71,6 +71,11 @@ private final class WatchState: @unchecked Sendable {
     let deadline: Date
   }
 
+  fileprivate struct URLPreviewDeliveryKey: Hashable {
+    let rowID: Int64
+    let chatID: Int64
+  }
+
   private let store: MessageStore
   private let chatID: Int64?
   private let configuration: MessageWatcherConfiguration
@@ -98,7 +103,7 @@ private final class WatchState: @unchecked Sendable {
   private var unresolvedChatAttempts: [Int64: Int] = [:]
   private var terminallySkippedRowIDs = Set<Int64>()
   private var urlPreviewSettleCohorts: [URLPreviewSettleCohort] = []
-  private var deliveredURLPreviewRowIDs = Set<Int64>()
+  private var deliveredURLPreviews = Set<URLPreviewDeliveryKey>()
 
   init(
     store: MessageStore,
@@ -295,7 +300,7 @@ private final class WatchState: @unchecked Sendable {
           return lhs.physicalCompletionRowID < rhs.physicalCompletionRowID
         }
       var deliverableMessages: [Message] = []
-      var pendingURLPreviewRowIDs = deliveredURLPreviewRowIDs
+      var pendingURLPreviews = deliveredURLPreviews
       for message in messagesToDeliver {
         switch yieldDecision(for: message) {
         case .yield:
@@ -307,10 +312,8 @@ private final class WatchState: @unchecked Sendable {
         case .skip:
           continue
         }
-        let urlPreviewRowID =
-          message.urlPreview?.rowID
-          ?? (store.isURLPreviewBalloon(message) ? message.rowID : nil)
-        if let urlPreviewRowID, !pendingURLPreviewRowIDs.insert(urlPreviewRowID).inserted {
+        let urlPreviewKey = urlPreviewDeliveryKey(for: message)
+        if let urlPreviewKey, deliveredURLPreviews.contains(urlPreviewKey) {
           continue
         }
         if store.isURLPreviewBalloon(message),
@@ -323,6 +326,9 @@ private final class WatchState: @unchecked Sendable {
             rowID: message.rowID
           )
         {
+          continue
+        }
+        if let urlPreviewKey, !pendingURLPreviews.insert(urlPreviewKey).inserted {
           continue
         }
         deliverableMessages.append(message)
@@ -342,10 +348,8 @@ private final class WatchState: @unchecked Sendable {
 
       for (index, message) in deliverableMessages.enumerated() {
         continuation.yield(message.withCursorRowID(eventCursors[index]))
-        if let urlPreviewRowID = message.urlPreview?.rowID
-          ?? (store.isURLPreviewBalloon(message) ? message.rowID : nil)
-        {
-          deliveredURLPreviewRowIDs.insert(urlPreviewRowID)
+        if let urlPreviewKey = urlPreviewDeliveryKey(for: message) {
+          deliveredURLPreviews.insert(urlPreviewKey)
         }
       }
       if let firstHeldRowID {
@@ -380,8 +384,11 @@ extension WatchState {
       return nil
     }
 
+    // Reactions do not create their own settle gap. The poll's firstHeldRowID
+    // frontier still keeps every later event behind an earlier pending text.
     let uncoalescedLiveTextRows = messages.filter {
-      $0.rowID > startupTailRowID && !store.isURLPreviewBalloon($0) && $0.urlPreview == nil
+      $0.rowID > startupTailRowID && !$0.isReaction && !store.isURLPreviewBalloon($0)
+        && $0.urlPreview == nil
     }
 
     let now = Date()
@@ -413,8 +420,15 @@ extension WatchState {
 
   fileprivate func pruneURLPreviewSettleState() {
     urlPreviewSettleCohorts.removeAll { $0.throughRowID <= cursor }
-    deliveredURLPreviewRowIDs = deliveredURLPreviewRowIDs.filter { $0 > cursor }
+    deliveredURLPreviews = deliveredURLPreviews.filter { $0.rowID > cursor }
     terminallySkippedRowIDs = terminallySkippedRowIDs.filter { $0 > cursor }
+  }
+
+  fileprivate func urlPreviewDeliveryKey(for message: Message) -> URLPreviewDeliveryKey? {
+    let rowID =
+      message.urlPreview?.rowID
+      ?? (store.isURLPreviewBalloon(message) ? message.rowID : nil)
+    return rowID.map { URLPreviewDeliveryKey(rowID: $0, chatID: message.chatID) }
   }
 
   fileprivate func yieldDecision(for message: Message) -> MessageYieldDecision {

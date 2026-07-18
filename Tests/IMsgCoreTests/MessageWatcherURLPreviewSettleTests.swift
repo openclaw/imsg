@@ -185,3 +185,89 @@ func watcherTailQueryExcludesReactionsWhenConfigured() throws {
   #expect(try store.maxRowID(chatID: nil, includeReactions: false) == 1)
   #expect(try store.maxRowID(chatID: nil, includeReactions: true) == 2)
 }
+
+@Test
+func messageWatcherDoesNotSettleReactionEvents() async throws {
+  let db = try makeURLPreviewTestDB()
+  let now = Date()
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let stream = MessageWatcher(store: store).stream(
+    chatID: 1,
+    sinceRowID: 0,
+    configuration: MessageWatcherConfiguration(
+      debounceInterval: 0.005,
+      fallbackPollInterval: 0.005,
+      urlPreviewSettleInterval: 0.2,
+      batchLimit: 10,
+      includeReactions: true
+    )
+  )
+
+  try await Task.sleep(nanoseconds: 10_000_000)
+  _ = try store.withConnection { connection in
+    try insertURLPreviewTestMessage(
+      connection,
+      rowID: 1,
+      text: "Loved message",
+      guid: "reaction-guid",
+      associatedMessageGUID: "target-guid",
+      associatedMessageType: 2001,
+      date: now
+    )
+  }
+
+  let reaction = try await nextMessage(from: stream, timeoutNanoseconds: 100_000_000)
+  #expect(reaction?.rowID == 1)
+  #expect(reaction?.isReaction == true)
+}
+
+@Test
+func messageWatcherKeepsReactionBehindEarlierSettleGap() async throws {
+  let db = try makeURLPreviewTestDB()
+  let now = Date()
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let stream = MessageWatcher(store: store).stream(
+    chatID: 1,
+    sinceRowID: 0,
+    configuration: MessageWatcherConfiguration(
+      debounceInterval: 0.005,
+      fallbackPollInterval: 0.005,
+      urlPreviewSettleInterval: 0.05,
+      batchLimit: 10,
+      includeReactions: true
+    )
+  )
+
+  try await Task.sleep(nanoseconds: 10_000_000)
+  _ = try store.withConnection { connection in
+    try insertURLPreviewTestMessage(
+      connection,
+      rowID: 1,
+      text: "plain text",
+      guid: "text-guid",
+      date: now
+    )
+    try insertURLPreviewTestMessage(
+      connection,
+      rowID: 2,
+      text: "Loved message",
+      guid: "reaction-guid",
+      associatedMessageGUID: "text-guid",
+      associatedMessageType: 2001,
+      date: now.addingTimeInterval(0.01)
+    )
+  }
+
+  let first = try await nextMessage(from: stream)
+  let second = try await nextMessage(from: stream)
+  let third = try await nextMessage(from: stream, timeoutNanoseconds: 100_000_000)
+
+  #expect(first?.rowID == 1)
+  #expect(second?.rowID == 2)
+  #expect(second?.isReaction == true)
+  #expect(third == nil)
+}
