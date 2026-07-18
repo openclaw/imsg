@@ -51,7 +51,7 @@ Returned by `imsg history`, `imsg search`, `imsg watch`, and the JSON-RPC `messa
 | `reply_to_guid` | string | When set, this message is an inline reply to that GUID. |
 | `destination_caller_id` | string | Outgoing only — which of your numbers Messages routed through. |
 | `balloon_bundle_id` | string | Raw Messages `message.balloon_bundle_id`, when present. URL preview rows use `com.apple.messages.URLBalloonProvider`, which lets consumers recognize link-preview payload rows without inferring from message text. |
-| `url_preview` | object | Present when imsg folds an Apple URL-preview balloon row into its originating text row. The outer message keeps the text row's `id`, `guid`, `text`, and `created_at`. |
+| `url_preview` | object | Present when imsg folds an Apple URL-preview balloon row into its originating text row. The outer message keeps the text row's `id`, `guid`, and `created_at`; its `text` also includes the preview URL when Apple omitted it from that row. |
 | `sender` | string | Raw handle. Empty for some self-sent messages. |
 | `sender_name` | string | Resolved Contacts name when permission granted. |
 | `is_from_me` | bool | True for outbound. |
@@ -108,7 +108,7 @@ Returned by `imsg chat-background status --chat-id <id> --json`. This surface is
 
 ### URL preview coalescing
 
-Messages may store a link send as two rows: the user's text row and a later `com.apple.messages.URLBalloonProvider` preview row. `history`, `search`, `watch`, `messages.history`, and `watch.subscribe` coalesce those rows into one logical message when the preview immediately follows a same-chat/same-sender text row containing the preview URL. In batch reads the coalesced message includes:
+Messages may store a link send as two rows: the user's text row and a later `com.apple.messages.URLBalloonProvider` preview row. `history`, `search`, `watch`, `messages.history`, and `watch.subscribe` coalesce those rows into one logical message when the preview follows a compatible same-chat/same-sender text row and either contains a URL already present in that text or structurally targets the text row's GUID. The sender, direction, handle, row order, and five-second time-window safeguards still apply. When Apple omitted the URL from the text row, the coalesced message appends it to `text`. In batch reads the coalesced message includes:
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -117,7 +117,7 @@ Messages may store a link send as two rows: the user's text row and a later `com
 | `balloon_bundle_id` | string | `com.apple.messages.URLBalloonProvider`. |
 | `created_at` | ISO8601 | Preview row timestamp. |
 
-Live watch calls do not delay the text message waiting for a preview. If the preview row arrives in a later poll after the text row was already emitted, imsg suppresses the preview row so consumers still receive one notification.
+Live watch holds newly observed text rows for up to two seconds so a delayed linked preview can arrive before emission. Backlog rows are not held. If a linked preview arrives after the settling window, it is emitted separately rather than dropping the URL.
 
 ### Reaction extensions
 

@@ -236,6 +236,11 @@ Before handing the file to Messages, `imsg` stages it under
 written after it starts. Use `--since-rowid <id>` to resume from a stored
 cursor.
 
+New live text rows are held for up to two seconds so a delayed, GUID-linked
+Apple URL preview can be folded into the same logical event. Backlog and resume
+reads are not delayed; when both physical rows already exist, they are
+coalesced immediately.
+
 The watcher listens for filesystem events on `chat.db`, `chat.db-wal`,
 `chat.db-shm`, and the containing Messages directory, then backs that up with
 a lightweight poll. The poll also refreshes the file watches, keeping streams

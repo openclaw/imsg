@@ -3,7 +3,7 @@ title: Watch
 description: "Stream new iMessage and SMS rows live, with filesystem-event triggers and a poll-based fallback."
 ---
 
-`imsg watch` follows `chat.db` and emits each new message as soon as Messages writes it. It's the right primitive for agents, dashboards, notifiers, and anything that wants near-real-time inbound.
+`imsg watch` follows `chat.db` and emits new logical messages in near real time. Fresh text rows are briefly settled so a delayed Apple URL-preview row can be folded into the same event. It's the right primitive for agents, dashboards, notifiers, and anything that wants near-real-time inbound.
 
 ## Stream all chats
 
@@ -89,6 +89,10 @@ could look like a direct message.
 
 Lower the debounce if you need lower latency and can tolerate occasional duplicate emissions during database churn. Raise it if downstream consumers can't keep up.
 
+The debounce is separate from URL-preview settling. A newly observed text row
+may wait up to two seconds for a structurally linked preview companion; backlog
+rows are not held.
+
 `--debounce` accepts Go-style durations: `100ms`, `1s`, `2s500ms`.
 
 ## How it knows when to read
@@ -114,9 +118,19 @@ Each fallback poll also refreshes the file watches, so a rotated `chat.db-wal` o
 
 This is the fix for the long-standing "watch goes silent after a while" class of bug. See `CHANGELOG.md` 0.6.0 entry.
 
-## URL preview deduplication
+## URL preview coalescing
 
-When you send a link, Messages writes a "balloon" placeholder row first, then later replaces it once the preview metadata is fetched. Without dedup, watch would emit both. `imsg watch` deduplicates these without dropping unrelated messages from other chats — the dedup is keyed precisely on the balloon update path, not on text similarity.
+Messages may store one composition as a text row followed by a
+`com.apple.messages.URLBalloonProvider` row. On newer macOS versions the text
+row can omit the URL while the preview row targets it by GUID. `imsg watch`
+holds a new text row for up to two seconds and coalesces a matching preview when
+the chat, sender, direction, handle, row order, time window, and GUID or URL
+relationship all agree. If the text omitted the URL, the logical message text
+includes it.
+
+Unlinked preview rows remain separate. A structurally linked preview that
+arrives after the settling window is also emitted separately rather than
+silently losing its URL.
 
 ## Output schema
 
