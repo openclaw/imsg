@@ -5775,19 +5775,29 @@ static NSDictionary *handleAddParticipant(NSInteger requestId, NSDictionary *par
 
     Class hrClass = NSClassFromString(@"IMHandleRegistrar");
     id hr = hrClass ? [hrClass performSelector:@selector(sharedInstance)] : nil;
-    id handle = (hr && [hr respondsToSelector:@selector(IMHandleWithID:)])
-        ? [hr performSelector:@selector(IMHandleWithID:) withObject:address]
-        : nil;
+    // Use the same fallback-capable vend path create-chat uses. The old code
+    // called IMHandleWithID: directly and bailed on nil — but for many reachable
+    // handles that selector returns nil while getIMHandlesForID: still resolves
+    // the handle. That one-sided shortcut is why add-member failed with
+    // "Could not vend handle" even for confirmed-iMessage numbers, while
+    // create-chat (which routes through vendIMHandle) worked. Prefer the iMessage
+    // service, fall back to any resolvable handle.
+    id handle = vendIMHandle(hr, address, @"iMessage", YES);
     if (!handle) return errorResponse(requestId, @"Could not vend handle");
 
     @try {
-        // BB-verified macOS 11+ selector: `inviteParticipantsToiMessageChat:reason:`.
-        // `addParticipantsToiMessageChat:reason:` (what we used before) is not
-        // declared on IMChat; respondsToSelector returned NO and the call
-        // failed with "selector not available".
-        SEL sel = @selector(inviteParticipantsToiMessageChat:reason:);
-        if (![chat respondsToSelector:sel]) {
-            return errorResponse(requestId, @"inviteParticipantsToiMessageChat:reason: not available");
+        // IMChat's participant-invite selector has drifted across macOS versions.
+        // macOS 26 (Tahoe) exposes `inviteParticipants:reason:`; older builds used
+        // `inviteParticipantsToiMessageChat:reason:`. Both take (NSArray*, NSInteger).
+        // Probe the live IMChat and use whichever it actually responds to.
+        SEL sel = 0;
+        for (NSString *name in @[@"inviteParticipants:reason:",
+                                 @"inviteParticipantsToiMessageChat:reason:"]) {
+            SEL cand = NSSelectorFromString(name);
+            if ([chat respondsToSelector:cand]) { sel = cand; break; }
+        }
+        if (!sel) {
+            return errorResponse(requestId, @"no participant-invite selector available on this IMChat");
         }
         NSMethodSignature *sig = [chat methodSignatureForSelector:sel];
         NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
@@ -5823,9 +5833,17 @@ static NSDictionary *handleRemoveParticipant(NSInteger requestId, NSDictionary *
     if (!targetHandle) return errorResponse(requestId, @"Participant not found on chat");
 
     @try {
-        SEL sel = @selector(removeParticipantsFromiMessageChat:reason:);
-        if (![chat respondsToSelector:sel]) {
-            return errorResponse(requestId, @"removeParticipantsFromiMessageChat:reason: not available");
+        // Same macOS selector drift as the invite path: macOS 26 exposes
+        // `removeParticipants:reason:`, older builds `removeParticipantsFromiMessageChat:reason:`.
+        // Both take (NSArray*, NSInteger). Probe for whichever the IMChat responds to.
+        SEL sel = 0;
+        for (NSString *name in @[@"removeParticipants:reason:",
+                                 @"removeParticipantsFromiMessageChat:reason:"]) {
+            SEL cand = NSSelectorFromString(name);
+            if ([chat respondsToSelector:cand]) { sel = cand; break; }
+        }
+        if (!sel) {
+            return errorResponse(requestId, @"no participant-remove selector available on this IMChat");
         }
         NSMethodSignature *sig = [chat methodSignatureForSelector:sel];
         NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
