@@ -5775,21 +5775,12 @@ static NSDictionary *handleAddParticipant(NSInteger requestId, NSDictionary *par
 
     Class hrClass = NSClassFromString(@"IMHandleRegistrar");
     id hr = hrClass ? [hrClass performSelector:@selector(sharedInstance)] : nil;
-    // Use the same fallback-capable vend path create-chat uses. The old code
-    // called IMHandleWithID: directly and bailed on nil — but for many reachable
-    // handles that selector returns nil while getIMHandlesForID: still resolves
-    // the handle. That one-sided shortcut is why add-member failed with
-    // "Could not vend handle" even for confirmed-iMessage numbers, while
-    // create-chat (which routes through vendIMHandle) worked. Prefer the iMessage
-    // service, fall back to any resolvable handle.
+    // Match chat-create's fallback-capable iMessage handle lookup.
     id handle = vendIMHandle(hr, address, @"iMessage", YES);
     if (!handle) return errorResponse(requestId, @"Could not vend handle");
 
     @try {
-        // IMChat's participant-invite selector has drifted across macOS versions.
-        // macOS 26 (Tahoe) exposes `inviteParticipants:reason:`; older builds used
-        // `inviteParticipantsToiMessageChat:reason:`. Both take (NSArray*, NSInteger).
-        // Probe the live IMChat and use whichever it actually responds to.
+        // macOS 26 renamed this selector; retain the older spelling as fallback.
         SEL sel = 0;
         for (NSString *name in @[@"inviteParticipants:reason:",
                                  @"inviteParticipantsToiMessageChat:reason:"]) {
@@ -5833,9 +5824,7 @@ static NSDictionary *handleRemoveParticipant(NSInteger requestId, NSDictionary *
     if (!targetHandle) return errorResponse(requestId, @"Participant not found on chat");
 
     @try {
-        // Same macOS selector drift as the invite path: macOS 26 exposes
-        // `removeParticipants:reason:`, older builds `removeParticipantsFromiMessageChat:reason:`.
-        // Both take (NSArray*, NSInteger). Probe for whichever the IMChat responds to.
+        // macOS 26 renamed this selector; retain the older spelling as fallback.
         SEL sel = 0;
         for (NSString *name in @[@"removeParticipants:reason:",
                                  @"removeParticipantsFromiMessageChat:reason:"]) {

@@ -2,6 +2,9 @@
 
 ## 0.13.2 - Unreleased
 
+### Advanced IMCore
+- fix: restore group participant add/remove on macOS 26 by using fallback-capable handle lookup and probing both current and legacy IMChat selectors (#185, thanks @oficiallyAkshay).
+
 ## 0.13.1 - 2026-07-17
 
 ### Highlights
