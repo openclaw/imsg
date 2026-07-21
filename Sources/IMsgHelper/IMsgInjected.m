@@ -277,6 +277,7 @@ static BOOL ensureSecureDirectory(NSString *path, NSError **error) {
 // Populated at startup by probeSelectors(). Surfaced via the `status` action so
 // the CLI can report which IMCore selectors are present on the running macOS
 // (edit/unsend names changed across 13/14/15).
+static BOOL gHasEditMessageItemTranslation = NO; // editMessageItem:atPartIndex:withNewPartText:newPartTranslation:backwardCompatabilityText: (macOS 26)
 static BOOL gHasEditMessageItem = NO;        // editMessageItem:atPartIndex:withNewPartText:backwardCompatabilityText:
 static BOOL gHasEditMessage = NO;            // editMessage:atPartIndex:withNewPartText:backwardCompatabilityText:
 static BOOL gHasRetractMessagePart = NO;     // retractMessagePart:
@@ -290,6 +291,8 @@ static BOOL urlPreviewMessageInitializerAvailable(void);
 static void probeSelectors(void) {
     Class chatClass = NSClassFromString(@"IMChat");
     if (!chatClass) return;
+    gHasEditMessageItemTranslation = [chatClass instancesRespondToSelector:
+        @selector(editMessageItem:atPartIndex:withNewPartText:newPartTranslation:backwardCompatabilityText:)];
     gHasEditMessageItem = [chatClass instancesRespondToSelector:
         @selector(editMessageItem:atPartIndex:withNewPartText:backwardCompatabilityText:)];
     gHasEditMessage = [chatClass instancesRespondToSelector:
@@ -298,8 +301,39 @@ static void probeSelectors(void) {
         @selector(retractMessagePart:)];
     gHasSendMessageReason = [chatClass instancesRespondToSelector:
         @selector(sendMessage:reason:)];
-    NSLog(@"[imsg-bridge] Selector probes: editItem=%d editLegacy=%d retract=%d sendReason=%d",
-          gHasEditMessageItem, gHasEditMessage, gHasRetractMessagePart, gHasSendMessageReason);
+    NSLog(@"[imsg-bridge] Selector probes: editItemXlate=%d editItem=%d editLegacy=%d retract=%d sendReason=%d",
+          gHasEditMessageItemTranslation, gHasEditMessageItem, gHasEditMessage,
+          gHasRetractMessagePart, gHasSendMessageReason);
+}
+
+// Read the local user's typing state. macOS 26 removed -[IMChat isCurrentlyTyping];
+// the live getter is -[IMChat localUserIsTyping]. Probe current, fall back to the
+// legacy selector, fail closed to NO. (Before this, callers read the removed
+// isCurrentlyTyping via respondsToSelector and silently got NO on every call —
+// so setLocalUserIsTyping: readbacks and check-typing-status always reported 0.)
+static BOOL readLocalUserIsTyping(id chat) {
+    if ([chat respondsToSelector:@selector(localUserIsTyping)]) {
+        return ((BOOL (*)(id, SEL))objc_msgSend)(chat, @selector(localUserIsTyping));
+    }
+    if ([chat respondsToSelector:@selector(isCurrentlyTyping)]) {
+        return ((BOOL (*)(id, SEL))objc_msgSend)(chat, @selector(isCurrentlyTyping));
+    }
+    return NO;
+}
+
+// Read the account's connected state. macOS 26 IMAccount exposes -isConnected /
+// -isRegistered; the legacy -loggedIn was removed. Probe current, fall back to
+// legacy, fail closed to NO. (Before this, -loggedIn was read via
+// respondsToSelector and always returned NO, so diagnostics logged acctLoggedIn=0
+// even on a fully-registered account.)
+static BOOL readAccountConnected(id account) {
+    if ([account respondsToSelector:@selector(isConnected)]) {
+        return ((BOOL (*)(id, SEL))objc_msgSend)(account, @selector(isConnected));
+    }
+    if ([account respondsToSelector:@selector(loggedIn)]) {
+        return ((BOOL (*)(id, SEL))objc_msgSend)(account, @selector(loggedIn));
+    }
+    return NO;
 }
 
 #pragma mark - Forward Declarations for IMCore Classes
@@ -780,10 +814,7 @@ static NSDictionary* handleTyping(NSInteger requestId, NSDictionary *params) {
             supportsTyping = ((BOOL (*)(id, SEL))objc_msgSend)(chat, supportsSel);
         }
 
-        BOOL isCurrentlyTyping = NO;
-        if ([chat respondsToSelector:@selector(isCurrentlyTyping)]) {
-            isCurrentlyTyping = ((BOOL (*)(id, SEL))objc_msgSend)(chat, @selector(isCurrentlyTyping));
-        }
+        BOOL isCurrentlyTyping = readLocalUserIsTyping(chat);
 
         id account = nil;
         NSString *acctService = @"nil";
@@ -797,13 +828,11 @@ static NSDictionary* handleTyping(NSInteger requestId, NSDictionary *params) {
             if ([account respondsToSelector:@selector(isActive)]) {
                 acctActive = ((BOOL (*)(id, SEL))objc_msgSend)(account, @selector(isActive));
             }
-            if ([account respondsToSelector:@selector(loggedIn)]) {
-                acctLoggedIn = ((BOOL (*)(id, SEL))objc_msgSend)(account, @selector(loggedIn));
-            }
+            acctLoggedIn = readAccountConnected(account);
         }
 
         debugLog(@"handleTyping: chat class=%@ guid=%@ ident=%@ supportsTyping=%d alreadyTyping=%d "
-                 @"acctService=%@ acctActive=%d acctLoggedIn=%d target=%d",
+                 @"acctService=%@ acctActive=%d acctConnected=%d target=%d",
                  chatClass, chatGUID, chatIdent, supportsTyping, isCurrentlyTyping,
                  acctService, acctActive, acctLoggedIn, typing);
 
@@ -823,12 +852,19 @@ static NSDictionary* handleTyping(NSInteger requestId, NSDictionary *params) {
             [inv setArgument:&typing atIndex:2];
             [inv invoke];
 
-            BOOL afterTyping = NO;
-            if ([chat respondsToSelector:@selector(isCurrentlyTyping)]) {
-                afterTyping = ((BOOL (*)(id, SEL))objc_msgSend)(chat, @selector(isCurrentlyTyping));
+            BOOL afterTyping = readLocalUserIsTyping(chat);
+            // Real send oracle: -[IMChat latestTypingIndicatorSendTimeInterval] is
+            // the timestamp of the last typing indicator actually dispatched to the
+            // remote. If it advances across the set, the indicator really went out —
+            // unlike the local typing flag, which can be transient.
+            double sendTs = -1;
+            if ([chat respondsToSelector:@selector(latestTypingIndicatorSendTimeInterval)]) {
+                sendTs = ((double (*)(id, SEL))objc_msgSend)(
+                    chat, @selector(latestTypingIndicatorSendTimeInterval));
             }
-            debugLog(@"handleTyping: setLocalUserIsTyping:%d returned, isCurrentlyTyping after=%d",
-                     typing, afterTyping);
+            debugLog(@"handleTyping: setLocalUserIsTyping:%d returned, localUserIsTyping after=%d "
+                     @"latestTypingIndicatorSendTimeInterval=%.3f",
+                     typing, afterTyping, sendTs);
 
             NSLog(@"[imsg-bridge] Called setLocalUserIsTyping:%@ for %@",
                   typing ? @"YES" : @"NO", handle);
@@ -983,6 +1019,7 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
     BOOL stickerSend = stickerSetIsSticker && stickerSetUserInfo
         && stickerSetAttribution && stickerTransferCenter && stickerAttachmentMessage;
     NSDictionary *selectors = @{
+        @"editMessageItemTranslation": @(gHasEditMessageItemTranslation),
         @"editMessageItem": @(gHasEditMessageItem),
         @"editMessage": @(gHasEditMessage),
         @"retractMessagePart": @(gHasRetractMessagePart),
@@ -5536,7 +5573,7 @@ static NSDictionary *handleEditMessage(NSInteger requestId, NSDictionary *params
         return errorResponse(requestId,
             [NSString stringWithFormat:@"Chat not found: %@", chatGuid]);
     }
-    if (!gHasEditMessageItem && !gHasEditMessage) {
+    if (!gHasEditMessageItemTranslation && !gHasEditMessageItem && !gHasEditMessage) {
         return errorResponse(requestId, @"No edit-message selector available on this macOS");
     }
 
@@ -5553,7 +5590,29 @@ static NSDictionary *handleEditMessage(NSInteger requestId, NSDictionary *params
 
     @try {
         NSInteger localPartIndex = partIndex;
-        if (gHasEditMessageItem) {
+        if (gHasEditMessageItemTranslation) {
+            // macOS 26 path: editMessageItem: gained a newPartTranslation: parameter
+            // inserted before backwardCompatabilityText:. The pre-26 selectors below
+            // no longer exist on Tahoe, so without this branch edit silently reports
+            // "no selector available". Pass nil translation (no localized override).
+            id messageItem = [item respondsToSelector:@selector(messageItem)]
+                ? [item performSelector:@selector(messageItem)] : item;
+            SEL sel = @selector(editMessageItem:atPartIndex:withNewPartText:newPartTranslation:backwardCompatabilityText:);
+            NSMethodSignature *sig = [chat methodSignatureForSelector:sel];
+            NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+            [inv setSelector:sel];
+            [inv setTarget:chat];
+            __unsafe_unretained id ci = messageItem;
+            [inv setArgument:&ci atIndex:2];
+            [inv setArgument:&localPartIndex atIndex:3];
+            __unsafe_unretained NSAttributedString *newBodyArg = newBody;
+            [inv setArgument:&newBodyArg atIndex:4];
+            id translationArg = nil;
+            [inv setArgument:&translationArg atIndex:5];
+            __unsafe_unretained NSAttributedString *bcArg = bcBody;
+            [inv setArgument:&bcArg atIndex:6];
+            [inv invoke];
+        } else if (gHasEditMessageItem) {
             // editMessageItem: takes the IMMessageItem, not the chat item.
             // findMessageItem returns an IMMessagePartChatItem; reach the
             // backing item via -messageItem.
@@ -5691,18 +5750,13 @@ static NSDictionary *handleStartTyping(NSInteger requestId, NSDictionary *params
         debugLog(@"handleStartTyping: chat not found");
         return errorResponse(requestId, @"Chat not found");
     }
-    BOOL beforeT = NO, afterT = NO;
-    if ([chat respondsToSelector:@selector(isCurrentlyTyping)]) {
-        beforeT = ((BOOL (*)(id, SEL))objc_msgSend)(chat, @selector(isCurrentlyTyping));
-    }
+    BOOL beforeT = readLocalUserIsTyping(chat);
     @try { [chat setLocalUserIsTyping:YES]; }
     @catch (NSException *ex) {
         debugLog(@"handleStartTyping: exception=%@", ex.reason);
         return errorResponse(requestId, ex.reason ?: @"failed");
     }
-    if ([chat respondsToSelector:@selector(isCurrentlyTyping)]) {
-        afterT = ((BOOL (*)(id, SEL))objc_msgSend)(chat, @selector(isCurrentlyTyping));
-    }
+    BOOL afterT = readLocalUserIsTyping(chat);
     debugLog(@"handleStartTyping: setLocalUserIsTyping:YES beforeIsTyping=%d afterIsTyping=%d "
              @"chatClass=%@", beforeT, afterT, NSStringFromClass([chat class]));
     return successResponse(requestId, @{@"chatGuid": chatGuid, @"typing": @YES});
@@ -5727,10 +5781,7 @@ static NSDictionary *handleCheckTypingStatus(NSInteger requestId, NSDictionary *
     if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
     IMChat *chat = resolveChatByGuid(chatGuid);
     if (!chat) return errorResponse(requestId, @"Chat not found");
-    BOOL typing = NO;
-    if ([chat respondsToSelector:@selector(isCurrentlyTyping)]) {
-        typing = ((BOOL (*)(id, SEL))objc_msgSend)(chat, @selector(isCurrentlyTyping));
-    }
+    BOOL typing = readLocalUserIsTyping(chat);
     return successResponse(requestId, @{@"chatGuid": chatGuid, @"typing": @(typing)});
 }
 
