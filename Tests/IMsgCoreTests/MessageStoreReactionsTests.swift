@@ -184,6 +184,30 @@ func bulkReactionsForMessagesGroupsByMessageID() throws {
 }
 
 @Test
+func bulkReactionsDoesNotAssumeReactionSharesTargetChat() throws {
+  let db = try ReactionTestDatabase.makeConnection()
+  let now = Date()
+  try ReactionTestDatabase.seedBaseMessage(db, now: now)
+  try db.run(
+    "INSERT INTO chat(ROWID, chat_identifier, display_name, service_name) VALUES (2, '+456', 'Other Chat', 'iMessage')"
+  )
+  try db.run(
+    """
+    INSERT INTO message(ROWID, handle_id, text, guid, associated_message_guid, associated_message_type, date, is_from_me, service)
+    VALUES (2, 2, '', 'reaction-guid-1', 'p:0/msg-guid-1', 2000, ?, 0, 'iMessage')
+    """,
+    ReactionTestDatabase.appleEpoch(now.addingTimeInterval(-500))
+  )
+  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (2, 2)")
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let messages = try store.messages(chatID: 1, limit: 10)
+  let reactionsByMessageID = try store.reactions(for: messages)
+
+  #expect(reactionsByMessageID[1]?.map(\.reactionType) == [.love])
+}
+
+@Test
 func bulkReactionsReturnsEmptyWhenColumnsMissing() throws {
   let db = try Connection(.inMemory)
   try db.execute(

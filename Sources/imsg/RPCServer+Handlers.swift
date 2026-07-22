@@ -71,6 +71,7 @@ extension RPCServer {
       endISO: endISO
     )
     let filtered = try store.messages(chatID: chatID, limit: max(limit, 1), filter: filter)
+    let reactionsByMessageID = try store.reactions(for: filtered)
 
     var payloads: [[String: Any]] = []
     payloads.reserveCapacity(filtered.count)
@@ -81,6 +82,7 @@ extension RPCServer {
         message: message,
         includeAttachments: includeAttachments,
         includeReactions: true,
+        prefetchedReactions: reactionsByMessageID[message.rowID] ?? [],
         attachmentOptions: attachmentOptions,
         contactResolver: contactResolver
       )

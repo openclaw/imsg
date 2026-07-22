@@ -3,7 +3,6 @@ import SQLite
 
 extension MessageStore {
   private static let bulkAttachmentBatchSize = 500
-  private static let bulkReactionBatchSize = 200
 
   public func attachments(
     for messageIDs: [Int64],
@@ -60,36 +59,14 @@ extension MessageStore {
     for message in messages where !message.guid.isEmpty {
       messageIDByGUID[message.guid] = message.rowID
     }
-    let guids = Array(messageIDByGUID.keys).sorted()
-    guard !guids.isEmpty else { return [:] }
+    guard !messageIDByGUID.isEmpty else { return [:] }
 
     var reactionsByMessageID: [Int64: [Reaction]] = [:]
     var reactionIndexByMessageID: [Int64: [BulkReactionKey: Int]] = [:]
-    for start in stride(from: 0, to: guids.count, by: Self.bulkReactionBatchSize) {
-      let end = min(start + Self.bulkReactionBatchSize, guids.count)
-      let batch = Array(guids[start..<end])
-      try appendReactions(
-        matching: batch,
-        messageIDByGUID: messageIDByGUID,
-        reactionsByMessageID: &reactionsByMessageID,
-        reactionIndexByMessageID: &reactionIndexByMessageID
-      )
-    }
-    return reactionsByMessageID
-  }
-
-  private func appendReactions(
-    matching guids: [String],
-    messageIDByGUID: [String: Int64],
-    reactionsByMessageID: inout [Int64: [Reaction]],
-    reactionIndexByMessageID: inout [Int64: [BulkReactionKey: Int]]
-  ) throws {
-    let exactPlaceholders = Array(repeating: "?", count: guids.count).joined(separator: ",")
-    let suffixConditions = Array(
-      repeating: "r.associated_message_guid LIKE ?",
-      count: guids.count
-    ).joined(separator: " OR ")
+    var matchedRows: [BulkReactionRow] = []
     let bodyColumn = schema.hasAttributedBody ? "r.attributedBody" : "NULL"
+    // A reaction can be joined to a different chat than its target. Scan the indexed
+    // associated-message rows once, then match only the requested GUIDs in memory.
     let sql = """
       SELECT r.ROWID AS reaction_rowid, r.associated_message_guid AS associated_message_guid,
              r.associated_message_type AS associated_message_type, h.id AS sender,
@@ -101,16 +78,10 @@ extension MessageStore {
         AND r.associated_message_guid != ''
         AND r.associated_message_type >= 2000
         AND r.associated_message_type <= 3006
-        AND (
-          r.associated_message_guid IN (\(exactPlaceholders))
-          OR \(suffixConditions)
-        )
-      ORDER BY r.date ASC
       """
-    let bindings: [Binding?] = guids.map { $0 } + guids.map { "%/\($0)" }
 
     try withConnection { db in
-      let rows = try db.prepareRowIterator(sql, bindings: bindings)
+      let rows = try db.prepareRowIterator(sql)
       while let row = try rows.failableNext() {
         let associatedGUID = try stringValue(row, "associated_message_guid")
         let baseGUID = baseAssociatedMessageGUID(from: associatedGUID)
@@ -124,24 +95,40 @@ extension MessageStore {
         let text = try stringValue(row, "text")
         let body = try dataValue(row, "body")
         let resolvedText = text.isEmpty ? TypedStreamParser.parseAttributedBody(body) : text
-
-        var reactions = reactionsByMessageID[messageID, default: []]
-        var reactionIndex = reactionIndexByMessageID[messageID] ?? [:]
-        applyBulkReactionRow(
-          rowID: rowID,
-          typeValue: typeValue,
-          sender: sender,
-          isFromMe: isFromMe,
-          date: date,
-          resolvedText: resolvedText,
-          messageID: messageID,
-          reactions: &reactions,
-          reactionIndex: &reactionIndex
+        matchedRows.append(
+          BulkReactionRow(
+            rowID: rowID,
+            typeValue: typeValue,
+            sender: sender,
+            isFromMe: isFromMe,
+            date: date,
+            resolvedText: resolvedText,
+            messageID: messageID
+          )
         )
-        reactionsByMessageID[messageID] = reactions
-        reactionIndexByMessageID[messageID] = reactionIndex
       }
     }
+    matchedRows.sort {
+      $0.date == $1.date ? $0.rowID < $1.rowID : $0.date < $1.date
+    }
+    for row in matchedRows {
+      var reactions = reactionsByMessageID[row.messageID, default: []]
+      var reactionIndex = reactionIndexByMessageID[row.messageID] ?? [:]
+      applyBulkReactionRow(
+        rowID: row.rowID,
+        typeValue: row.typeValue,
+        sender: row.sender,
+        isFromMe: row.isFromMe,
+        date: row.date,
+        resolvedText: row.resolvedText,
+        messageID: row.messageID,
+        reactions: &reactions,
+        reactionIndex: &reactionIndex
+      )
+      reactionsByMessageID[row.messageID] = reactions
+      reactionIndexByMessageID[row.messageID] = reactionIndex
+    }
+    return reactionsByMessageID
   }
 
   private func baseAssociatedMessageGUID(from associatedGUID: String) -> String {
@@ -229,5 +216,15 @@ extension MessageStore {
       }
       return index
     }
+  }
+
+  private struct BulkReactionRow {
+    let rowID: Int64
+    let typeValue: Int
+    let sender: String
+    let isFromMe: Bool
+    let date: Date
+    let resolvedText: String
+    let messageID: Int64
   }
 }
