@@ -83,7 +83,9 @@ extension MessageStore {
       WHERE m.ROWID < ?
         AND cmj.chat_id = ?
         \(reactionFilter)
-      ORDER BY m.ROWID DESC
+      -- Use the join key so SQLite can satisfy this order from the
+      -- chat_message_join(chat_id, message_id) index without a temp sort.
+      ORDER BY cmj.message_id DESC
       """
     let rows = try db.prepareRowIterator(sql, bindings: [preview.rowID, preview.chatID])
     var previews = [preview]
