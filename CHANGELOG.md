@@ -7,6 +7,7 @@
 
 ### Performance
 - perf: avoid a temporary SQLite sort for every URL-preview lookup in history (#191, thanks @zachwinter).
+- perf: fetch history reactions in one pass while preserving cross-chat reaction associations (#189, thanks @zachwinter).
 
 ## 0.13.1 - 2026-07-17
 
