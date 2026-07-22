@@ -320,9 +320,24 @@ struct AttachmentPayload: Codable {
 }
 
 enum CLIISO8601 {
+  private static let formatter = LockedISO8601Formatter()
+
   static func format(_ date: Date) -> String {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter.string(from: date)
+    formatter.string(from: date)
+  }
+
+  private final class LockedISO8601Formatter: @unchecked Sendable {
+    private let lock = NSLock()
+    private let formatter: ISO8601DateFormatter = {
+      let formatter = ISO8601DateFormatter()
+      formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+      return formatter
+    }()
+
+    func string(from date: Date) -> String {
+      self.lock.lock()
+      defer { self.lock.unlock() }
+      return self.formatter.string(from: date)
+    }
   }
 }

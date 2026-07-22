@@ -176,6 +176,35 @@ func outputModelsEncodeExpectedKeys() throws {
 }
 
 @Test
+func cliISO8601MatchesFoundationFormatterConcurrently() async {
+  let dates = [
+    Date(timeIntervalSince1970: 0),
+    Date(timeIntervalSince1970: 1_752_000_000.123),
+    Date(timeIntervalSince1970: -0.001),
+    Date(timeIntervalSince1970: 1_752_000_000.999_999),
+  ]
+  let oracle = ISO8601DateFormatter()
+  oracle.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+  let expected = dates.map { oracle.string(from: $0) }
+
+  let results = await withTaskGroup(of: [String].self, returning: [[String]].self) { group in
+    for _ in 0..<16 {
+      group.addTask {
+        (0..<100).flatMap { _ in dates.map(CLIISO8601.format) }
+      }
+    }
+    var results: [[String]] = []
+    for await result in group {
+      results.append(result)
+    }
+    return results
+  }
+
+  let repeatedExpected = Array(repeating: expected, count: 100).flatMap { $0 }
+  #expect(results.allSatisfy { $0 == repeatedExpected })
+}
+
+@Test
 func parsedValuesHelpers() throws {
   let values = ParsedValues(
     positional: ["first"],
