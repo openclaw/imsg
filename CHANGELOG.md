@@ -5,6 +5,9 @@
 ### Advanced IMCore
 - fix: restore group participant add/remove on macOS 26 by using fallback-capable handle lookup and probing both current and legacy IMChat selectors (#185, thanks @oficiallyAkshay).
 
+### Performance
+- perf: avoid a temporary SQLite sort for every URL-preview lookup in history (#191, thanks @zachwinter).
+
 ## 0.13.1 - 2026-07-17
 
 ### Highlights
