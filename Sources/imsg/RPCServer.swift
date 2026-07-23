@@ -66,12 +66,17 @@ let kSupportedRPCMethods: [String] = [
   "handles.check",
 ]
 
-/// RPC methods that only read state. Permitted when the server runs in
-/// read-only mode (`imsg rpc --read-only`).
+/// RPC methods that only read state. This is the allow-list consulted by the
+/// read-only gate in `handleLine`: when the server runs in read-only mode
+/// (`imsg rpc --read-only`), only methods in this set are permitted — every
+/// other method name, known or not, is refused. Being an allow-list (rather
+/// than a block-list of mutating methods) keeps the gate fail-closed even if a
+/// future mutating method is added to the dispatch switch below but not
+/// registered in `kSupportedRPCMethods`.
 ///
 /// Every method in `kSupportedRPCMethods` must appear in exactly one of
 /// `kReadOnlyRPCMethods` or `kMutatingRPCMethods`; a test enforces this so any
-/// newly added method is deliberately classified (fail-closed).
+/// newly added method is deliberately classified.
 let kReadOnlyRPCMethods: Set<String> = [
   "chats.list",
   "messages.stats",
@@ -84,8 +89,10 @@ let kReadOnlyRPCMethods: Set<String> = [
   "handles.check",
 ]
 
-/// RPC methods that mutate state. Refused with `RPCError.readOnly` when the
-/// server runs in read-only mode.
+/// RPC methods that mutate state. Not consulted by the runtime gate directly
+/// (see `kReadOnlyRPCMethods`); kept for documentation and to let a test
+/// assert that every advertised method is classified as exactly one of read
+/// or mutating.
 let kMutatingRPCMethods: Set<String> = Set(kSupportedRPCMethods)
   .subtracting(kReadOnlyRPCMethods)
 
@@ -184,7 +191,12 @@ final class RPCServer {
     let params = request.params
     let id = request.id
 
-    if readOnly && kMutatingRPCMethods.contains(method) {
+    // Allow-list, not block-list: only methods explicitly known to be
+    // read-only pass through. This stays fail-closed even if a future
+    // mutating method is added to the switch below but someone forgets to
+    // register it in `kSupportedRPCMethods` — it is denied by omission
+    // rather than silently permitted.
+    if readOnly && !kReadOnlyRPCMethods.contains(method) {
       output.sendError(id: id, error: RPCError.readOnly(method))
       return
     }
