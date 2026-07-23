@@ -66,6 +66,29 @@ let kSupportedRPCMethods: [String] = [
   "handles.check",
 ]
 
+/// RPC methods that only read state. Permitted when the server runs in
+/// read-only mode (`imsg rpc --read-only`).
+///
+/// Every method in `kSupportedRPCMethods` must appear in exactly one of
+/// `kReadOnlyRPCMethods` or `kMutatingRPCMethods`; a test enforces this so any
+/// newly added method is deliberately classified (fail-closed).
+let kReadOnlyRPCMethods: Set<String> = [
+  "chats.list",
+  "messages.stats",
+  "messages.history",
+  "watch.subscribe",
+  "watch.unsubscribe",
+  "messages.scheduled",
+  "message.send_status",
+  "contacts.shouldShareContact",
+  "handles.check",
+]
+
+/// RPC methods that mutate state. Refused with `RPCError.readOnly` when the
+/// server runs in read-only mode.
+let kMutatingRPCMethods: Set<String> = Set(kSupportedRPCMethods)
+  .subtracting(kReadOnlyRPCMethods)
+
 final class RPCServer {
   let store: MessageStore
   let watcher: MessageWatcher
@@ -73,6 +96,8 @@ final class RPCServer {
   let cache: ChatCache
   let subscriptions = SubscriptionStore()
   let verbose: Bool
+  /// When true, mutating methods are refused with `RPCError.readOnly`.
+  let readOnly: Bool
   let sendMessage: (MessageSendOptions) throws -> Void
   let resolveSentMessage: SentMessageResolver
   let bridgeInvoker: BridgeInvoker
@@ -87,6 +112,7 @@ final class RPCServer {
   init(
     store: MessageStore,
     verbose: Bool,
+    readOnly: Bool = false,
     output: RPCOutput = RPCWriter(),
     sendMessage: @escaping (MessageSendOptions) throws -> Void = { try MessageSender().send($0) },
     resolveSentMessage: @escaping SentMessageResolver = RPCServer.resolveSentMessage,
@@ -113,6 +139,7 @@ final class RPCServer {
     self.watcher = MessageWatcher(store: store)
     self.cache = ChatCache(store: store)
     self.verbose = verbose
+    self.readOnly = readOnly
     self.output = output
     self.sendMessage = sendMessage
     self.resolveSentMessage = resolveSentMessage
@@ -156,6 +183,11 @@ final class RPCServer {
     let method = request.method
     let params = request.params
     let id = request.id
+
+    if readOnly && kMutatingRPCMethods.contains(method) {
+      output.sendError(id: id, error: RPCError.readOnly(method))
+      return
+    }
 
     do {
       switch method {

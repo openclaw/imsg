@@ -19,7 +19,8 @@ enum ScheduledCommand {
     ),
     usageExamples: [
       "imsg scheduled list --json"
-    ]
+    ],
+    mutation: .read
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
   }

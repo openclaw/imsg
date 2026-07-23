@@ -21,7 +21,8 @@ enum SearchCommand {
         ]
       )
     ),
-    usageExamples: ["imsg search --query 'pizza tonight' --match contains"]
+    usageExamples: ["imsg search --query 'pizza tonight' --match contains"],
+    mutation: .read
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
   }
@@ -95,7 +96,8 @@ enum AccountCommand {
             help: "list accounts from local chat.db history (no SIP / bridge required)")
         ]
       )),
-    usageExamples: ["imsg account", "imsg account --local"]
+    usageExamples: ["imsg account", "imsg account --local"],
+    mutation: .read
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
   }
@@ -188,7 +190,8 @@ enum WhoisCommand {
       "imsg whois --address +15551234567 --type phone",
       "imsg whois --address foo@bar.com --type email",
       "imsg whois --address foo@bar.com --local",
-    ]
+    ],
+    mutation: .read
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
   }
@@ -299,7 +302,8 @@ enum NicknameCommand {
     usageExamples: [
       "imsg nickname --address +15551234567",
       "imsg nickname --address +15551234567 --local",
-    ]
+    ],
+    mutation: .read
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
   }

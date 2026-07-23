@@ -2,6 +2,9 @@
 
 ## 0.13.3 - Unreleased
 
+### Safety
+- feat: add a global `--read-only` flag (and `IMSG_READ_ONLY=1` environment variable) that deterministically refuses every write or mutation across the CLI and JSON-RPC. Read commands are unaffected; write commands exit with a dedicated code (3) and a clear message, and mutating RPC methods return a well-formed JSON-RPC error (`code: -32001`) without breaking the protocol. `imsg status` reports the active mode (`read_only` in `--json`).
+
 ## 0.13.2 - 2026-07-21
 
 ### Highlights

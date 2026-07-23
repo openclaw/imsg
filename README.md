@@ -209,6 +209,41 @@ Read methods: `chats.list`, `messages.history`, `messages.stats`, `messages.sche
 Bridge introspection: `handles.check`. See [docs/rpc.md](docs/rpc.md) for
 request and response shapes.
 
+## Read-only mode
+
+Pass the global `--read-only` flag (or set `IMSG_READ_ONLY=1`) to
+deterministically forbid every write or mutation. It applies to all commands
+and to `imsg rpc`, so a caller can hand the CLI to an untrusted agent and know
+it cannot send, react, edit, delete, mark read, change chats, or share Name &
+Photo.
+
+```bash
+# Reads work exactly as usual.
+imsg --read-only chats
+imsg --read-only history --chat-id 1 --json
+
+# Writes are refused before anything happens (exit code 3).
+imsg --read-only send --to +15551234567 --text hi
+# -> read-only mode: 'send' performs a write or mutation and is disabled
+
+# Enforce it for every child invocation via the environment.
+IMSG_READ_ONLY=1 imsg rpc
+```
+
+The flag is accepted before or after the subcommand (`imsg --read-only send`
+and `imsg send --read-only` are equivalent), and either the flag or the
+environment variable is enough to enable it — nothing turns it back off.
+
+Under `imsg rpc --read-only`, read methods behave normally while mutating
+methods return a well-formed JSON-RPC error instead of executing, so the
+stream and protocol are never broken:
+
+```json
+{"jsonrpc":"2.0","id":"1","error":{"code":-32001,"message":"Read-only mode: mutating method disabled","data":"send"}}
+```
+
+`imsg status` reports the active mode (a `read_only` boolean in `--json`).
+
 ## Attachments
 
 `--attachments` reports metadata only. It does not copy or upload files.

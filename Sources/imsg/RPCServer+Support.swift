@@ -58,6 +58,18 @@ struct RPCError: Error {
     RPCError(code: -32603, message: "Internal error", data: message)
   }
 
+  /// Returned when a mutating method is invoked while the server runs in
+  /// read-only mode. Uses a code in the JSON-RPC implementation-defined
+  /// server-error range (-32000…-32099) so the response stays a well-formed
+  /// JSON-RPC error rather than breaking the protocol.
+  static func readOnly(_ method: String) -> RPCError {
+    RPCError(
+      code: -32001,
+      message: "Read-only mode: mutating method disabled",
+      data: method
+    )
+  }
+
   func asDictionary() -> [String: Any] {
     var dict: [String: Any] = [
       "code": code,

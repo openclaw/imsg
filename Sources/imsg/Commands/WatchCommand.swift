@@ -45,7 +45,8 @@ enum WatchCommand {
     usageExamples: [
       "imsg watch --chat-id 1 --attachments --debounce 250ms",
       "imsg watch --chat-id 1 --participants +15551234567",
-    ]
+    ],
+    mutation: .read
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
   }

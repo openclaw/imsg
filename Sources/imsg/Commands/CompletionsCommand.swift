@@ -10,14 +10,16 @@ enum CompletionsCommand {
     signature: CommandSignature(
       arguments: [
         .make(label: "shell", help: "bash, zsh, fish, or llm", isOptional: true)
-      ]
+      ],
+      flags: [CommandSignatures.readOnlyFlag()]
     ),
     usageExamples: [
       "imsg completions bash > ~/.bash_completion.d/imsg",
       "imsg completions zsh > ~/.zsh/completions/_imsg",
       "imsg completions fish > ~/.config/fish/completions/imsg.fish",
       "imsg completions llm",
-    ]
+    ],
+    mutation: .read
   ) { values, _ in
     try await run(shell: values.argument(0), specs: CommandRouter().specs)
   }

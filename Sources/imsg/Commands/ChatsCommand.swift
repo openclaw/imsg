@@ -23,7 +23,8 @@ enum ChatsCommand {
       "imsg chats --limit 5",
       "imsg chats --limit 5 --json",
       "imsg chats --unread-only --json",
-    ]
+    ],
+    mutation: .read
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
   }

@@ -24,7 +24,9 @@ enum NamePhotoCommand {
     usageExamples: [
       "imsg name-photo status --chat 'iMessage;-;+15551234567'",
       "imsg name-photo share --chat 'iMessage;-;+15551234567'",
-    ]
+    ],
+    // `status` only reads; `share` broadcasts your Name & Photo (a write).
+    mutation: .conditional { $0.argument(0) == "share" }
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
   }
