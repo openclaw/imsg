@@ -4,6 +4,7 @@
 
 ### Safety
 - feat: add a global `--read-only` flag (and `IMSG_READ_ONLY=1` environment variable) that deterministically refuses every write or mutation across the CLI and JSON-RPC. Read commands are unaffected; write commands exit with a dedicated code (3) and a clear message, and mutating RPC methods return a well-formed JSON-RPC error (`code: -32001`) without breaking the protocol. `imsg status` reports the active mode (`read_only` in `--json`).
+- feat: add a global `--redact-codes` flag that strips texted security/verification codes (2FA, OTP) from message text wherever it's shown (`history`, `search`, `watch`, `scheduled`, and the equivalent RPC methods), for callers that shouldn't see live codes. Heuristic derived from real SMS OTP formatting mined from a live chat.db: matches `code`/`pin`/`otp`/`passcode`/`authentication` next to a digit-and-dash token in either order, replacing only the matched token with `[redacted]`.
 
 ## 0.13.2 - 2026-07-21
 

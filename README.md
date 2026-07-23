@@ -244,6 +244,37 @@ stream and protocol are never broken:
 
 `imsg status` reports the active mode (a `read_only` boolean in `--json`).
 
+## Redacting security codes
+
+Pass the global `--redact-codes` flag to strip texted security/verification
+codes (2FA, OTP, bank and vendor verification codes) out of message text
+before it's rendered or serialized — useful when handing message access to an
+AI agent or another consumer that has no business seeing a live code. It
+applies everywhere message text is shown: `history`, `search`, `watch`,
+`scheduled`, and the equivalent JSON-RPC methods.
+
+```bash
+imsg --redact-codes history --chat-id 1
+# "873934 is your Ticketmaster code." -> "[redacted] is your Ticketmaster code."
+
+imsg --redact-codes search --query verification --json
+IMSG_READ_ONLY=1 imsg --redact-codes rpc   # combine freely with --read-only
+```
+
+Like `--read-only`, the flag is accepted before or after the subcommand.
+
+This is a heuristic derived from real SMS OTP formatting, not a guarantee:
+- Matches a `code`, `pin`, `otp`, `passcode`, or `authentication` keyword next
+  to a 4–10 character digit-and-dash token, in either order — "code: 123456"
+  and "123456 is your code" (the more common, autofill-friendly format used
+  by Google, PayPal, Coinbase, and others) are both handled.
+- Only the matched token is replaced with `[redacted]`; the rest of the
+  message is left intact.
+- Alphanumeric codes (rare — e.g. "7fpa1i") are not redacted.
+- Coupon/discount codes phrased identically to OTP language (e.g. "code
+  GREATMOVE15") may also be redacted; this is treated as an acceptable,
+  low-stakes false positive.
+
 ## Attachments
 
 `--attachments` reports metadata only. It does not copy or upload files.

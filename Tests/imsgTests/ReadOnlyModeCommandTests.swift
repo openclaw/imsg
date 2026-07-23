@@ -49,7 +49,7 @@ func readOnlyEnvValueFalsy() {
 
 @Test
 func extractReadOnlyDropsLeadingFlagBeforeSubcommand() {
-  let (readOnly, argv) = CommandRouter.extractReadOnly(
+  let (readOnly, _, argv) = CommandRouter.extractLeadingGlobalFlags(
     ["imsg", "--read-only", "send", "--to", "x"])
   #expect(readOnly == true)
   // Leading global flag is removed so Commander can resolve the subcommand.
@@ -58,16 +58,16 @@ func extractReadOnlyDropsLeadingFlagBeforeSubcommand() {
 
 @Test
 func extractReadOnlyKeepsFlagAfterSubcommand() {
-  let (readOnly, argv) = CommandRouter.extractReadOnly(["imsg", "send", "--read-only"])
+  let (readOnly, _, argv) = CommandRouter.extractLeadingGlobalFlags(["imsg", "send", "--read-only"])
   // Post-subcommand flag is left for Commander to parse; RuntimeOptions folds it in.
   #expect(argv == ["imsg", "send", "--read-only"])
-  // extractReadOnly itself only reports env / leading-flag state here.
+  // extractLeadingGlobalFlags itself only reports env / leading-flag state here.
   #expect(readOnly == false)
 }
 
 @Test
 func extractReadOnlyLeavesPlainArgvUnchanged() {
-  let (readOnly, argv) = CommandRouter.extractReadOnly(["imsg", "chats", "--json"])
+  let (readOnly, _, argv) = CommandRouter.extractLeadingGlobalFlags(["imsg", "chats", "--json"])
   #expect(readOnly == false)
   #expect(argv == ["imsg", "chats", "--json"])
 }

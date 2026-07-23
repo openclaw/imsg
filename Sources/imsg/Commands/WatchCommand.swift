@@ -121,10 +121,11 @@ enum WatchCommand {
     }
 
     let stream = streamProvider(watcher, chatID, sinceRowID, config)
-    for try await message in stream {
-      if !filter.allows(message) {
+    for try await rawMessage in stream {
+      if !filter.allows(rawMessage) {
         continue
       }
+      let message = runtime.redactCodes ? rawMessage.redactingSecurityCodes() : rawMessage
       if runtime.jsonOutput {
         let payload = try await buildMessagePayload(
           store: store,

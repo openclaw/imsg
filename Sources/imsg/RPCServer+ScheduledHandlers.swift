@@ -20,7 +20,10 @@ extension RPCServer {
     }
 
     do {
-      let messages = try store.scheduledMessages(limit: limit)
+      var messages = try store.scheduledMessages(limit: limit)
+      if redactCodes {
+        messages = messages.map { $0.redactingSecurityCodes() }
+      }
       let payloads = try messages.map { message -> [String: Any] in
         let encoded = try JSONEncoder().encode(ScheduledMessagePayload(message))
         guard let payload = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]

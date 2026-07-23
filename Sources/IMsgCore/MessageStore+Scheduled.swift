@@ -39,6 +39,23 @@ public struct ScheduledMessage: Sendable, Equatable, Codable {
     self.scheduleType = scheduleType
     self.scheduleState = scheduleState
   }
+
+  /// Returns a copy with `text` passed through `SecurityCodeRedactor`.
+  public func redactingSecurityCodes() -> ScheduledMessage {
+    ScheduledMessage(
+      rowID: rowID,
+      guid: guid,
+      chatID: chatID,
+      chatIdentifier: chatIdentifier,
+      chatGUID: chatGUID,
+      chatName: chatName,
+      text: SecurityCodeRedactor.redact(text),
+      service: service,
+      scheduledAt: scheduledAt,
+      scheduleType: scheduleType,
+      scheduleState: scheduleState
+    )
+  }
 }
 
 public enum ScheduledMessagesError: Error, CustomStringConvertible, Equatable, Sendable {

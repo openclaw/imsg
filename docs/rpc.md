@@ -43,6 +43,16 @@ protocol is never broken:
 The error `code` (`-32001`) is in the JSON-RPC implementation-defined
 server-error range; `data` carries the rejected method name.
 
+## Redacting security codes
+
+Start the server with `imsg rpc --redact-codes` to strip texted security/
+verification codes (2FA, OTP) out of message `text` wherever it appears in
+results and notifications — `messages.history`, `watch.subscribe`, and
+`messages.scheduled`. Only the matched code token is replaced with
+`[redacted]`; the rest of the message is untouched. See the "Redacting
+security codes" section in the top-level README for how the heuristic works
+and its known limitations. Combine freely with `--read-only`.
+
 ## Methods
 
 ### `chats.list`

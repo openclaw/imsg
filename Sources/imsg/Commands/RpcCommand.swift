@@ -29,6 +29,7 @@ enum RpcCommand {
       store: store,
       verbose: runtime.verbose,
       readOnly: runtime.readOnly,
+      redactCodes: runtime.redactCodes,
       contactResolver: contacts
     )
     try await server.run()

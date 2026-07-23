@@ -27,12 +27,30 @@ enum CommandSignatures {
     )
   }
 
+  /// Global `--redact-codes` flag. Registered on every command so it parses in
+  /// the usual position (`imsg <cmd> --redact-codes`). Also pre-scanned by
+  /// `CommandRouter` alongside `--read-only` so it works before the
+  /// subcommand too (`imsg --redact-codes <cmd>`) — Commander's root program
+  /// expects the subcommand name as the first token, so any global flag ahead
+  /// of it must be stripped before `program.resolve` runs, not just left for
+  /// the per-command signature to parse.
+  static let redactCodesFlagLabel = "redactCodes"
+  static let redactCodesFlagName = "--redact-codes"
+
+  static func redactCodesFlag() -> FlagDefinition {
+    .make(
+      label: redactCodesFlagLabel,
+      names: [.long("redact-codes")],
+      help: "Redact texted security/verification codes (2FA, OTP) from message text"
+    )
+  }
+
   static func withRuntimeFlags(_ signature: CommandSignature) -> CommandSignature {
     let base = signature.withStandardRuntimeFlags()
     return CommandSignature(
       arguments: base.arguments,
       options: base.options,
-      flags: base.flags + [readOnlyFlag()],
+      flags: base.flags + [readOnlyFlag(), redactCodesFlag()],
       optionGroups: base.optionGroups
     )
   }

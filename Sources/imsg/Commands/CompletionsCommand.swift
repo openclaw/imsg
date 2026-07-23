@@ -11,7 +11,7 @@ enum CompletionsCommand {
       arguments: [
         .make(label: "shell", help: "bash, zsh, fish, or llm", isOptional: true)
       ],
-      flags: [CommandSignatures.readOnlyFlag()]
+      flags: [CommandSignatures.readOnlyFlag(), CommandSignatures.redactCodesFlag()]
     ),
     usageExamples: [
       "imsg completions bash > ~/.bash_completion.d/imsg",

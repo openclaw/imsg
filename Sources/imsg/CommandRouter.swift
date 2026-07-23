@@ -80,7 +80,7 @@ struct CommandRouter {
       return 0
     }
 
-    let (readOnly, resolveArgv) = CommandRouter.extractReadOnly(argv)
+    let (readOnly, redactCodes, resolveArgv) = CommandRouter.extractLeadingGlobalFlags(argv)
 
     do {
       let invocation = try program.resolve(argv: resolveArgv)
@@ -91,7 +91,8 @@ struct CommandRouter {
         HelpPrinter.printRoot(version: version, rootName: rootName, commands: specs)
         return 1
       }
-      let runtime = RuntimeOptions(parsedValues: invocation.parsedValues, readOnly: readOnly)
+      let runtime = RuntimeOptions(
+        parsedValues: invocation.parsedValues, readOnly: readOnly, redactCodes: redactCodes)
       if runtime.readOnly && spec.isMutating(for: invocation.parsedValues) {
         emitReadOnlyDenial(command: commandName, json: runtime.jsonOutput)
         return CommandRouter.readOnlyExitCode
@@ -119,16 +120,21 @@ struct CommandRouter {
     }
   }
 
-  /// Determines whether read-only mode is requested and returns an argv with any
-  /// leading (pre-subcommand) `--read-only` token removed so Commander can
-  /// resolve the subcommand normally. Read-only is enabled by the
-  /// `IMSG_READ_ONLY` environment variable or by a `--read-only` token anywhere
-  /// on the command line. A `--read-only` after the subcommand is left in place
-  /// for Commander to parse as a flag (so it is not mistaken for an option
-  /// value); `RuntimeOptions` folds that parsed flag back in.
-  static func extractReadOnly(_ argv: [String]) -> (readOnly: Bool, argv: [String]) {
+  /// Determines whether read-only mode and/or code redaction are requested,
+  /// and returns an argv with any leading (pre-subcommand) `--read-only` /
+  /// `--redact-codes` tokens removed so Commander can resolve the subcommand
+  /// normally — its root program expects the subcommand name as the first
+  /// token, so a global flag ahead of it must be stripped here rather than
+  /// left for the per-command signature to parse. Read-only is additionally
+  /// enabled by the `IMSG_READ_ONLY` environment variable. A flag appearing
+  /// after the subcommand is left in place for Commander to parse normally;
+  /// `RuntimeOptions` folds that parsed flag back in.
+  static func extractLeadingGlobalFlags(_ argv: [String]) -> (
+    readOnly: Bool, redactCodes: Bool, argv: [String]
+  ) {
     var readOnly = envReadOnly()
-    guard argv.count > 1 else { return (readOnly, argv) }
+    var redactCodes = false
+    guard argv.count > 1 else { return (readOnly, redactCodes, argv) }
     var result: [String] = [argv[0]]
     var sawCommand = false
     for token in argv.dropFirst() {
@@ -136,10 +142,14 @@ struct CommandRouter {
         readOnly = true
         continue
       }
+      if !sawCommand && token == CommandSignatures.redactCodesFlagName {
+        redactCodes = true
+        continue
+      }
       if !token.hasPrefix("-") { sawCommand = true }
       result.append(token)
     }
-    return (readOnly, result)
+    return (readOnly, redactCodes, result)
   }
 
   static func envReadOnly() -> Bool {

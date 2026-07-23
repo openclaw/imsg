@@ -70,7 +70,10 @@ extension RPCServer {
       startISO: startISO,
       endISO: endISO
     )
-    let filtered = try store.messages(chatID: chatID, limit: max(limit, 1), filter: filter)
+    var filtered = try store.messages(chatID: chatID, limit: max(limit, 1), filter: filter)
+    if redactCodes {
+      filtered = filtered.map { $0.redactingSecurityCodes() }
+    }
     let reactionsByMessageID = try store.reactions(for: filtered)
 
     var payloads: [[String: Any]] = []
@@ -125,15 +128,17 @@ extension RPCServer {
     let localAttachmentOptions = attachmentOptions
     let localIncludeReactions = includeReactions
     let localContactResolver = contactResolver
+    let localRedactCodes = redactCodes
     let task = Task {
       do {
-        for try await message in localWatcher.stream(
+        for try await rawMessage in localWatcher.stream(
           chatID: localChatID,
           sinceRowID: localSinceRowID,
           configuration: localConfig
         ) {
           if Task.isCancelled { return }
-          if !localFilter.allows(message) { continue }
+          if !localFilter.allows(rawMessage) { continue }
+          let message = localRedactCodes ? rawMessage.redactingSecurityCodes() : rawMessage
           let payload = try await buildMessagePayload(
             store: localStore,
             cache: localCache,

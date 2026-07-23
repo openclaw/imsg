@@ -105,6 +105,9 @@ final class RPCServer {
   let verbose: Bool
   /// When true, mutating methods are refused with `RPCError.readOnly`.
   let readOnly: Bool
+  /// When true, texted security/verification codes (2FA, OTP) are redacted
+  /// from message text in results and notifications.
+  let redactCodes: Bool
   let sendMessage: (MessageSendOptions) throws -> Void
   let resolveSentMessage: SentMessageResolver
   let bridgeInvoker: BridgeInvoker
@@ -120,6 +123,7 @@ final class RPCServer {
     store: MessageStore,
     verbose: Bool,
     readOnly: Bool = false,
+    redactCodes: Bool = false,
     output: RPCOutput = RPCWriter(),
     sendMessage: @escaping (MessageSendOptions) throws -> Void = { try MessageSender().send($0) },
     resolveSentMessage: @escaping SentMessageResolver = RPCServer.resolveSentMessage,
@@ -147,6 +151,7 @@ final class RPCServer {
     self.cache = ChatCache(store: store)
     self.verbose = verbose
     self.readOnly = readOnly
+    self.redactCodes = redactCodes
     self.output = output
     self.sendMessage = sendMessage
     self.resolveSentMessage = resolveSentMessage
