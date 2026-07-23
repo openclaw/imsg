@@ -17,7 +17,8 @@ func rpcReadOnlyRejectsMutatingMethod() async throws {
   let output = TestRPCOutput()
   let server = RPCServer(store: store, verbose: false, readOnly: true, output: output)
 
-  let line = #"{"jsonrpc":"2.0","id":"7","method":"send","params":{"to":"+15551234567","text":"hi"}}"#
+  let line =
+    #"{"jsonrpc":"2.0","id":"7","method":"send","params":{"to":"+15551234567","text":"hi"}}"#
   await server.handleLineForTesting(line)
 
   #expect(output.responses.isEmpty)
