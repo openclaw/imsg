@@ -2,6 +2,9 @@
 
 ## 0.13.3 - Unreleased
 
+### Advanced IMCore
+- fix: restore typing/account diagnostics and message editing on macOS 26 with current IMCore selectors (#194, thanks @sethdford).
+
 ## 0.13.2 - 2026-07-21
 
 ### Highlights
