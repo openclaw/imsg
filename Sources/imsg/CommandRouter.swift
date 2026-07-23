@@ -165,13 +165,14 @@ struct CommandRouter {
       StdoutWriter.writeLine(message)
       return
     }
+    // Matches the existing `{"success": false, "error": "<message>"}` shape
+    // used elsewhere for --json command failures (see BridgeOutput.emitError);
+    // `error_code`/`command` are additive fields for programmatic detection.
     let payload: [String: Any] = [
-      "ok": false,
-      "error": [
-        "code": "read_only",
-        "message": message,
-        "command": command,
-      ],
+      "success": false,
+      "error": message,
+      "error_code": "read_only",
+      "command": command,
     ]
     if let data = try? JSONSerialization.data(withJSONObject: payload, options: []),
       let line = String(data: data, encoding: .utf8)

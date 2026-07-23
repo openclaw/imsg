@@ -25,8 +25,11 @@ enum NamePhotoCommand {
       "imsg name-photo status --chat 'iMessage;-;+15551234567'",
       "imsg name-photo share --chat 'iMessage;-;+15551234567'",
     ],
-    // `status` only reads; `share` broadcasts your Name & Photo (a write).
-    mutation: .conditional { $0.argument(0) == "share" }
+    // `status` only reads; everything else (`share`, or an unrecognized
+    // action) is treated as mutating and blocked, fail-closed — `run()`'s own
+    // validation only ever executes a write for the literal "share" action,
+    // but the classification here does not lean on that.
+    mutation: .conditional { $0.argument(0) != "status" }
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
   }

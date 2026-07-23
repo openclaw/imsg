@@ -17,7 +17,8 @@ func rpcReadOnlyRejectsMutatingMethod() async throws {
   let output = TestRPCOutput()
   let server = RPCServer(store: store, verbose: false, readOnly: true, output: output)
 
-  let line = #"{"jsonrpc":"2.0","id":"7","method":"send","params":{"to":"+15551234567","text":"hi"}}"#
+  let line =
+    #"{"jsonrpc":"2.0","id":"7","method":"send","params":{"to":"+15551234567","text":"hi"}}"#
   await server.handleLineForTesting(line)
 
   #expect(output.responses.isEmpty)
@@ -69,6 +70,23 @@ func rpcReadWriteServerStillSendsWhenNotReadOnly() async throws {
 
   let error = output.errors.first?["error"] as? [String: Any]
   #expect(int64(error?["code"]) != -32001)
+}
+
+@Test
+func rpcReadOnlyRejectsUnknownMethodRatherThanFailingOpen() async throws {
+  // The gate is an allow-list keyed on kReadOnlyRPCMethods, not a block-list
+  // keyed on known mutating methods, so it stays fail-closed even for a
+  // method that was never registered at all (e.g. a future handler added to
+  // the dispatch switch but forgotten in kSupportedRPCMethods).
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  let server = RPCServer(store: store, verbose: false, readOnly: true, output: output)
+
+  let line = #"{"jsonrpc":"2.0","id":"1","method":"totally.unregistered","params":{}}"#
+  await server.handleLineForTesting(line)
+
+  let error = output.errors.first?["error"] as? [String: Any]
+  #expect(int64(error?["code"]) == -32001)
 }
 
 @Test

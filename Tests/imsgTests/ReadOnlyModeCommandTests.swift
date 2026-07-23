@@ -101,8 +101,14 @@ func readCommandsReportNonMutating() {
 func namePhotoIsConditionallyMutating() {
   let statusValues = ParsedValues(positional: ["status"], options: [:], flags: [])
   let shareValues = ParsedValues(positional: ["share"], options: [:], flags: [])
+  let emptyValues = ParsedValues(positional: [], options: [:], flags: [])
+  let garbageValues = ParsedValues(positional: ["bogus"], options: [:], flags: [])
   #expect(NamePhotoCommand.spec.isMutating(for: statusValues) == false)
   #expect(NamePhotoCommand.spec.isMutating(for: shareValues) == true)
+  // Fail-closed: an unrecognized or missing action is treated as mutating,
+  // not silently allowed through.
+  #expect(NamePhotoCommand.spec.isMutating(for: emptyValues) == true)
+  #expect(NamePhotoCommand.spec.isMutating(for: garbageValues) == true)
 }
 
 // MARK: - Router gating (end to end)
@@ -134,6 +140,10 @@ func routerBlockedWriteEmitsJSONWhenRequested() async {
     await router.run(argv: ["imsg", "--read-only", "send", "--to", "+1", "--text", "hi", "--json"])
   }
   #expect(status == CommandRouter.readOnlyExitCode)
-  #expect(output.contains("\"code\":\"read_only\""))
-  #expect(output.contains("\"ok\":false"))
+  // Matches the existing `{"success": false, "error": "..."}` shape used by
+  // other --json command failures (BridgeOutput.emitError), with additive
+  // fields for programmatic detection.
+  #expect(output.contains("\"success\":false"))
+  #expect(output.contains("\"error_code\":\"read_only\""))
+  #expect(output.contains("\"command\":\"send\""))
 }
