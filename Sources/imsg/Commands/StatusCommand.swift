@@ -22,7 +22,8 @@ enum StatusCommand {
     usageExamples: [
       "imsg status",
       "imsg status --json",
-    ]
+    ],
+    mutation: .read
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
   }
@@ -69,7 +70,8 @@ enum StatusCommand {
         bridgeVersion: bridgeVersion,
         v2Ready: v2Ready,
         selectors: selectors,
-        rpcMethods: kSupportedRPCMethods
+        rpcMethods: kSupportedRPCMethods,
+        readOnly: runtime.readOnly
       )
       try JSONLines.print(payload)
     } else {
@@ -79,6 +81,11 @@ enum StatusCommand {
       StdoutWriter.writeLine("Version:")
       StdoutWriter.writeLine("  \(IMsgVersion.current)")
       StdoutWriter.writeLine("")
+      if runtime.readOnly {
+        StdoutWriter.writeLine("Mode:")
+        StdoutWriter.writeLine("  read-only (writes and mutations are disabled)")
+        StdoutWriter.writeLine("")
+      }
       StdoutWriter.writeLine("Basic features (send, receive, history):")
       StdoutWriter.writeLine("  Available")
       StdoutWriter.writeLine("")
@@ -153,6 +160,7 @@ private struct StatusPayload: Encodable {
   let v2Ready: Bool
   let selectors: [String: Bool]
   let rpcMethods: [String]
+  let readOnly: Bool
 
   enum CodingKeys: String, CodingKey {
     case version
@@ -166,5 +174,6 @@ private struct StatusPayload: Encodable {
     case v2Ready = "v2_ready"
     case selectors
     case rpcMethods = "rpc_methods"
+    case readOnly = "read_only"
   }
 }

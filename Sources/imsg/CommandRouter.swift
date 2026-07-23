@@ -2,6 +2,11 @@ import Commander
 import Foundation
 
 struct CommandRouter {
+  /// Exit code returned when a write command is refused because read-only mode
+  /// is active. Distinct from the generic failure code (1) so callers can
+  /// detect a policy denial deterministically.
+  static let readOnlyExitCode: Int32 = 3
+
   let rootName = "imsg"
   let version: String
   let specs: [CommandSpec]
@@ -75,8 +80,10 @@ struct CommandRouter {
       return 0
     }
 
+    let (readOnly, resolveArgv) = CommandRouter.extractReadOnly(argv)
+
     do {
-      let invocation = try program.resolve(argv: argv)
+      let invocation = try program.resolve(argv: resolveArgv)
       guard let commandName = invocation.path.last,
         let spec = specs.first(where: { $0.name == commandName })
       else {
@@ -84,7 +91,11 @@ struct CommandRouter {
         HelpPrinter.printRoot(version: version, rootName: rootName, commands: specs)
         return 1
       }
-      let runtime = RuntimeOptions(parsedValues: invocation.parsedValues)
+      let runtime = RuntimeOptions(parsedValues: invocation.parsedValues, readOnly: readOnly)
+      if runtime.readOnly && spec.isMutating(for: invocation.parsedValues) {
+        emitReadOnlyDenial(command: commandName, json: runtime.jsonOutput)
+        return CommandRouter.readOnlyExitCode
+      }
       do {
         try await spec.run(invocation.parsedValues, runtime)
         return 0
@@ -105,6 +116,69 @@ struct CommandRouter {
     } catch {
       StdoutWriter.writeLine(String(describing: error))
       return 1
+    }
+  }
+
+  /// Determines whether read-only mode is requested and returns an argv with any
+  /// leading (pre-subcommand) `--read-only` token removed so Commander can
+  /// resolve the subcommand normally. Read-only is enabled by the
+  /// `IMSG_READ_ONLY` environment variable or by a `--read-only` token anywhere
+  /// on the command line. A `--read-only` after the subcommand is left in place
+  /// for Commander to parse as a flag (so it is not mistaken for an option
+  /// value); `RuntimeOptions` folds that parsed flag back in.
+  static func extractReadOnly(_ argv: [String]) -> (readOnly: Bool, argv: [String]) {
+    var readOnly = envReadOnly()
+    guard argv.count > 1 else { return (readOnly, argv) }
+    var result: [String] = [argv[0]]
+    var sawCommand = false
+    for token in argv.dropFirst() {
+      if !sawCommand && token == CommandSignatures.readOnlyFlagName {
+        readOnly = true
+        continue
+      }
+      if !token.hasPrefix("-") { sawCommand = true }
+      result.append(token)
+    }
+    return (readOnly, result)
+  }
+
+  static func envReadOnly() -> Bool {
+    readOnlyEnvValue(ProcessInfo.processInfo.environment["IMSG_READ_ONLY"])
+  }
+
+  /// Pure parser for the `IMSG_READ_ONLY` value, kept separate so it can be
+  /// tested without mutating the process environment.
+  static func readOnlyEnvValue(_ raw: String?) -> Bool {
+    guard let raw else { return false }
+    switch raw.trimmingCharacters(in: .whitespaces).lowercased() {
+    case "1", "true", "yes", "on":
+      return true
+    default:
+      return false
+    }
+  }
+
+  private func emitReadOnlyDenial(command: String, json: Bool) {
+    let message =
+      "read-only mode: '\(command)' performs a write or mutation and is disabled"
+    guard json else {
+      StdoutWriter.writeLine(message)
+      return
+    }
+    let payload: [String: Any] = [
+      "ok": false,
+      "error": [
+        "code": "read_only",
+        "message": message,
+        "command": command,
+      ],
+    ]
+    if let data = try? JSONSerialization.data(withJSONObject: payload, options: []),
+      let line = String(data: data, encoding: .utf8)
+    {
+      StdoutWriter.writeLine(line)
+    } else {
+      StdoutWriter.writeLine(message)
     }
   }
 

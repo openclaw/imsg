@@ -13,7 +13,8 @@ enum RpcCommand {
     usageExamples: [
       "imsg rpc",
       "imsg rpc --db ~/Library/Messages/chat.db",
-    ]
+    ],
+    mutation: .read
   ) { values, runtime in
     let dbPath = values.option("db") ?? MessageStore.defaultPath
     let store: MessageStore
@@ -24,7 +25,12 @@ enum RpcCommand {
       throw CommandOutputEmittedError()
     }
     let contacts = await ContactResolver.create()
-    let server = RPCServer(store: store, verbose: runtime.verbose, contactResolver: contacts)
+    let server = RPCServer(
+      store: store,
+      verbose: runtime.verbose,
+      readOnly: runtime.readOnly,
+      contactResolver: contacts
+    )
     try await server.run()
   }
 }

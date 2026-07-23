@@ -18,7 +18,8 @@ enum GroupCommand {
     usageExamples: [
       "imsg group --chat-id 1",
       "imsg group --chat-id 1 --json",
-    ]
+    ],
+    mutation: .read
   ) { values, runtime in
     guard let chatID = values.optionInt64("chatID") else {
       throw ParsedValuesError.missingOption("chat-id")

@@ -24,7 +24,8 @@ enum StatsCommand {
     usageExamples: [
       "imsg stats",
       "imsg stats --chat-id 42 --time-zone Europe/Vienna --media --json",
-    ]
+    ],
+    mutation: .read
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
   }

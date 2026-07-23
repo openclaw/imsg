@@ -32,7 +32,8 @@ enum HistoryCommand {
     usageExamples: [
       "imsg history --chat-id 1 --limit 10 --attachments",
       "imsg history --chat-id 1 --start 2025-01-01T00:00:00Z --json",
-    ]
+    ],
+    mutation: .read
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
   }

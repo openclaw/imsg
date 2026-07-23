@@ -22,6 +22,27 @@ description: "Long-running JSON-RPC 2.0 over stdio for chats, history, watch, an
 
 The pattern intentionally mirrors language servers and the way `imsg`'s parent gateway (Clawdis) supervises subprocesses — a single signal-style child that exits cleanly when stdin closes.
 
+## Read-only mode
+
+Start the server with `imsg rpc --read-only` (or `IMSG_READ_ONLY=1 imsg rpc`)
+to forbid every mutating method for the lifetime of the process. Read methods
+(`chats.list`, `messages.history`, `messages.stats`, `messages.scheduled`,
+`watch.subscribe`, `watch.unsubscribe`, `message.send_status`,
+`contacts.shouldShareContact`, `handles.check`) behave normally.
+
+Any mutating method (`send`, `send.rich`, `send.attachment`, `send.sticker`,
+`poll.*`, `tapback`, `typing`, `read`, `message.edit`/`unsend`/`delete`/`notifyAnyways`,
+`chats.create`/`delete`/`markUnread`, `group.*`, `contacts.shareContactCard`)
+is refused with a standard JSON-RPC error — the request `id` is echoed and the
+protocol is never broken:
+
+```json
+{"jsonrpc":"2.0","id":"1","error":{"code":-32001,"message":"Read-only mode: mutating method disabled","data":"send"}}
+```
+
+The error `code` (`-32001`) is in the JSON-RPC implementation-defined
+server-error range; `data` carries the rejected method name.
+
 ## Methods
 
 ### `chats.list`
