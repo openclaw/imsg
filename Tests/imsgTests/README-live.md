@@ -61,8 +61,9 @@ imsg unsend --chat "$CHAT" --message "$MSG"
 ```
 
 Expect: the message text changes, then a "You unsent a message" placeholder
-appears. If `imsg status` shows `editMessageItem: ✗` AND `editMessage: ✗`,
-your macOS is too old (pre-13) — these will return an error.
+appears. If `imsg status` shows `editMessageItemTranslation: ✗`,
+`editMessageItem: ✗`, AND `editMessage: ✗`, the running macOS does not
+expose a supported edit selector and these commands will return an error.
 
 ## 4. chat creation + member management
 

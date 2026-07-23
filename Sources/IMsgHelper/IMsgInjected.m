@@ -819,7 +819,7 @@ static NSDictionary* handleTyping(NSInteger requestId, NSDictionary *params) {
         id account = nil;
         NSString *acctService = @"nil";
         BOOL acctActive = NO;
-        BOOL acctLoggedIn = NO;
+        BOOL acctConnected = NO;
         if ([chat respondsToSelector:@selector(account)]) {
             account = [chat performSelector:@selector(account)];
             if ([account respondsToSelector:@selector(serviceName)]) {
@@ -828,13 +828,13 @@ static NSDictionary* handleTyping(NSInteger requestId, NSDictionary *params) {
             if ([account respondsToSelector:@selector(isActive)]) {
                 acctActive = ((BOOL (*)(id, SEL))objc_msgSend)(account, @selector(isActive));
             }
-            acctLoggedIn = readAccountConnected(account);
+            acctConnected = readAccountConnected(account);
         }
 
         debugLog(@"handleTyping: chat class=%@ guid=%@ ident=%@ supportsTyping=%d alreadyTyping=%d "
                  @"acctService=%@ acctActive=%d acctConnected=%d target=%d",
                  chatClass, chatGUID, chatIdent, supportsTyping, isCurrentlyTyping,
-                 acctService, acctActive, acctLoggedIn, typing);
+                 acctService, acctActive, acctConnected, typing);
 
         NSLog(@"[imsg-bridge] Chat found: class=%@, guid=%@, identifier=%@, supportsTyping=%@",
               chatClass, chatGUID, chatIdent, supportsTyping ? @"YES" : @"NO");
