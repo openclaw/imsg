@@ -2,6 +2,9 @@
 
 ## 0.13.4 - Unreleased
 
+### Native Polls
+- feat: let CLI and JSON-RPC callers suppress automatic native poll captions with `--no-comment` or `suppress_comment` when they already render context (#196, thanks @omarshahine).
+
 ## 0.13.3 - 2026-07-23
 
 ### Highlights
