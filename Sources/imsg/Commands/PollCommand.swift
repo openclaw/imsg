@@ -17,7 +17,8 @@ enum PollCommand {
       "comment or Send" field renders — a message with no thread metadata, not a
       threaded reply). Callers pass only `--question` and the visible caption
       appears for free; `--comment` overrides the caption text when it should
-      differ from the title.
+      differ from the title. Use `--no-comment` when the caller renders its own
+      visible context before the poll.
       """,
     signature: CommandSignatures.withRuntimeFlags(
       CommandSignature(
@@ -53,6 +54,12 @@ enum PollCommand {
           .make(
             label: "optionIndex", names: [.long("option-index")],
             help: "vote/unvote: 1-based option number to select"),
+        ],
+        flags: [
+          .make(
+            label: "noComment", names: [.long("no-comment")],
+            help: "do not echo the question as a caption after the poll"
+          )
         ]
       )
     ),
@@ -141,7 +148,7 @@ enum PollCommand {
     // knowledge of this. --comment overrides the echoed text.
     let comment = values.option("comment").flatMap { $0.isEmpty ? nil : $0 } ?? question
     let pollGuid = (data["messageGuid"] as? String) ?? ""
-    if !comment.isEmpty {
+    if !values.flag("noComment"), !comment.isEmpty {
       // Best-effort, mirroring the RPC path: the poll already delivered, so a
       // caption failure must not exit nonzero — a retry would send a duplicate
       // poll. Report the failure on stderr and leave the poll success intact.

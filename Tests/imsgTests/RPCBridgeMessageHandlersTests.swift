@@ -218,6 +218,31 @@ func rpcPollSendUsesCommentOverrideWithoutPollGuid() async throws {
 }
 
 @Test
+func rpcPollSendCanSuppressCaption() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  var calls: [(action: BridgeAction, params: [String: Any])] = []
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, params in
+      calls.append((action, params))
+      return ["messageGuid": "poll-guid"]
+    }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"poll","method":"poll.send","params":{"#
+      + #""chat_id":1,"question":"Dinner?","options":["Pizza","Sushi"],"#
+      + #""suppress_comment":true}}"#
+  )
+
+  #expect(calls.count == 1)
+  #expect(calls.first?.action == .sendPoll)
+}
+
+@Test
 func rpcNormalizesTapbackReactionAliases() throws {
   #expect(try normalizeBridgeReactionType("heart") == "love")
   #expect(try normalizeBridgeReactionType("thumbs-up") == "like")

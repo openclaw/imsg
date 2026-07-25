@@ -252,7 +252,9 @@ extension RPCServer {
     // needs no knowledge of this. Best-effort: the poll already succeeded, so a
     // comment failure must not fail the RPC.
     let comment = stringParam(params["comment"]).flatMap { $0.isEmpty ? nil : $0 } ?? question
-    if !comment.isEmpty {
+    let suppressComment =
+      boolParam(params["suppress_comment"] ?? params["suppressComment"]) ?? false
+    if !suppressComment, !comment.isEmpty {
       do {
         _ = try await invokeBridge(
           action: .sendMessage,

@@ -394,6 +394,35 @@ func pollCommandSendUsesCommentOverrideWithoutPollGuid() async throws {
 }
 
 @Test
+func pollCommandSendCanSuppressCaption() async throws {
+  let values = ParsedValues(
+    positional: ["send"],
+    options: [
+      "chat": ["iMessage;-;+15551234567"],
+      "question": ["Dinner?"],
+      "option": ["Pizza", "Sushi"],
+    ],
+    flags: ["noComment"]
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+  var calls: [(action: BridgeAction, params: [String: Any])] = []
+
+  _ = try await StdoutCapture.capture {
+    try await PollCommand.run(
+      values: values,
+      runtime: runtime,
+      invokeBridge: { action, params in
+        calls.append((action, params))
+        return ["messageGuid": "poll-guid"]
+      }
+    )
+  }
+
+  #expect(calls.count == 1)
+  #expect(calls.first?.action == .sendPoll)
+}
+
+@Test
 func pollCommandSendResolvesChatID() async throws {
   let values = ParsedValues(
     positional: ["send"],
