@@ -141,7 +141,7 @@ Advanced IMCore (require `imsg launch` with SIP off — see
 - `imsg send-rich [--reply-to <guid>] [--file <path>] [--url <url>]`,
   `imsg send-multipart`, `imsg send-attachment [--reply-to <guid>]`,
   `imsg send-sticker [--attach-to <guid>] [--target-part <index>]`, `imsg tapback`
-- `imsg poll send (--chat <guid> | --chat-id <id>) --question <text> [--comment <text>] --option <text> --option <text> [--reply-to <guid>]`
+- `imsg poll send (--chat <guid> | --chat-id <id>) --question <text> [--comment <text> | --no-comment] --option <text> --option <text> [--reply-to <guid>]`
 - `imsg poll vote (--chat <guid> | --chat-id <id>) --poll <guid> (--option-id <id> | --option-index <n> | --option <text>)`
 - `imsg edit`, `imsg unsend`, `imsg delete-message`, `imsg notify-anyways`
 - `imsg chat-create`, `imsg chat-name`, `imsg chat-photo`,
@@ -158,7 +158,8 @@ attaching one to a bubble also requires `selectors.stickerAttach`.
 Messages does not render the poll payload title on the balloon, so `poll send`
 also sends a best-effort plain caption message right after the poll. The
 caption defaults to `--question`; use `--comment` when the visible text should
-be different from the stored question.
+be different from the stored question, or `--no-comment` when the caller
+already sent its own visible context and needs only the poll balloon.
 
 `react` intentionally sends only the standard tapbacks Messages.app exposes
 reliably through automation. Custom emoji tapbacks can be read from

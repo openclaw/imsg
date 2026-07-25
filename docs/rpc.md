@@ -254,7 +254,7 @@ Result:
 
 ### Native polls
 
-`poll.send` creates a native Apple Messages Polls extension balloon through the IMCore bridge. The bridge must be injected with `imsg launch`; the AppleScript transport cannot send native extension payloads. Messages does not render the poll payload title on the balloon, so `poll.send` also sends a best-effort plain caption message right after the poll. The caption defaults to `question`; pass `comment` when the visible caption should differ from the stored poll question.
+`poll.send` creates a native Apple Messages Polls extension balloon through the IMCore bridge. The bridge must be injected with `imsg launch`; the AppleScript transport cannot send native extension payloads. Messages does not render the poll payload title on the balloon, so `poll.send` also sends a best-effort plain caption message right after the poll. The caption defaults to `question`; pass `comment` when the visible caption should differ from the stored poll question, or set `suppress_comment` to `true` when the caller already sent its own visible context and needs only the poll balloon. The camelCase alias `suppressComment` is also accepted.
 
 Request:
 
@@ -266,6 +266,12 @@ With a caption override:
 
 ```json
 {"jsonrpc":"2.0","id":"poll","method":"poll.send","params":{"chat_id":42,"question":"Dinner?","comment":"Vote by 5pm","options":["Pizza","Sushi"]}}
+```
+
+Without a caption:
+
+```json
+{"jsonrpc":"2.0","id":"poll","method":"poll.send","params":{"chat_id":42,"question":"Dinner?","suppress_comment":true,"options":["Pizza","Sushi"]}}
 ```
 
 Response:
