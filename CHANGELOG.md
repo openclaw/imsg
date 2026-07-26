@@ -24,7 +24,7 @@
 - perf: reuse ISO-8601 date formatting safely across high-volume output (#193, thanks @zachwinter).
 
 ### JSON-RPC
-- fix: start `imsg rpc` without blocking on undetermined Contacts authorization so headless LaunchAgents accept JSON-RPC methods before any permission prompt resolves (#186, thanks @SebTardif).
+- fix: start headless `imsg rpc` without blocking on undetermined Contacts authorization (interactive TTY still prompts); LaunchAgents accept JSON-RPC before any permission prompt resolves (#186, thanks @SebTardif).
 
 ### Advanced IMCore
 - fix: restore group participant add/remove on macOS 26 by using fallback-capable handle lookup and probing both current and legacy IMChat selectors (#185, thanks @oficiallyAkshay).

@@ -1,12 +1,23 @@
 import Commander
+import Darwin
 import Foundation
 import IMsgCore
 
 enum RpcCommand {
-  /// RPC often runs headless (LaunchAgent / automation). Do not block server
-  /// startup on a Contacts prompt that may never resolve when authorization is
-  /// still `.notDetermined`. Display-name enrichment stays optional.
-  static let startupContactsAccessPolicy: ContactsAccessPolicy = .skipIfNotDetermined
+  /// Contacts policy for RPC startup.
+  ///
+  /// Headless RPC (stdin not a TTY: LaunchAgent, pipes, automation) must not
+  /// block on a Contacts prompt that will never resolve while authorization
+  /// remains `.notDetermined`. Interactive terminals keep the prompt-capable
+  /// path so Contacts-backed name resolution still works.
+  static var startupContactsAccessPolicy: ContactsAccessPolicy {
+    contactsAccessPolicy(stdinIsTTY: isatty(STDIN_FILENO) != 0)
+  }
+
+  /// Pure policy helper for tests and callers that already know interactivity.
+  static func contactsAccessPolicy(stdinIsTTY: Bool) -> ContactsAccessPolicy {
+    stdinIsTTY ? .requestIfNeeded : .skipIfNotDetermined
+  }
 
   static let spec = CommandSpec(
     name: "rpc",
