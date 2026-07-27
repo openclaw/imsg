@@ -2,9 +2,6 @@
 
 ## 0.13.5 - Unreleased
 
-### Reliability
-- fix: bound `osascript` waits in message send (NSAppleScript fallback) and react automation with the same monotonic process timeout used for ffmpeg conversion, so a hung Messages automation cannot block the CLI/RPC indefinitely.
-
 ## 0.13.4 - 2026-07-27
 
 ### Highlights

@@ -50,3 +50,32 @@ func processTimeoutAllowsQuickExit() throws {
   #expect(!timedOut)
   #expect(process.terminationStatus == 0)
 }
+
+@Test
+func processTimeoutReapsHungOsascript() throws {
+  // Same launch shape as MessageSender.runOsascript / ReactCommand.runAppleScript:
+  // /usr/bin/osascript -l AppleScript - with source on stdin.
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+  process.arguments = ["-l", "AppleScript", "-"]
+  let stdinPipe = Pipe()
+  process.standardInput = stdinPipe
+  process.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
+  process.standardError = FileHandle(forWritingAtPath: "/dev/null")
+
+  try process.run()
+  if let data = "delay 30\n".data(using: .utf8) {
+    stdinPipe.fileHandleForWriting.write(data)
+  }
+  stdinPipe.fileHandleForWriting.closeFile()
+
+  let clock = ContinuousClock()
+  let start = clock.now
+  let timedOut = ProcessTimeout.waitUntilExit(process, timeout: 0.6)
+  let elapsed = start.duration(to: clock.now)
+
+  #expect(timedOut)
+  #expect(!process.isRunning)
+  #expect(elapsed < .seconds(5))
+  #expect(elapsed >= .milliseconds(400))
+}
