@@ -170,6 +170,9 @@ enum ReactCommand {
     return scalar.properties.isEmoji || scalar.properties.isEmojiPresentation
   }
 
+  /// Bound for react UI automation. Hung osascript must not block the CLI.
+  static let osascriptTimeout: TimeInterval = ProcessTimeout.defaultTimeout
+
   private static func runAppleScript(_ source: String, arguments: [String]) throws {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
@@ -185,7 +188,10 @@ enum ReactCommand {
       stdinPipe.fileHandleForWriting.write(data)
     }
     stdinPipe.fileHandleForWriting.closeFile()
-    process.waitUntilExit()
+    if ProcessTimeout.waitUntilExit(process, timeout: osascriptTimeout) {
+      throw IMsgError.appleScriptFailure(
+        "osascript timed out after \(Int(osascriptTimeout))s")
+    }
 
     if process.terminationStatus != 0 {
       let data = stderrPipe.fileHandleForReading.readDataToEndOfFile()
