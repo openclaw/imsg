@@ -1,7 +1,12 @@
 import Commander
-import Darwin
 import Foundation
 import IMsgCore
+
+#if canImport(Darwin)
+  import Darwin
+#elseif canImport(Glibc)
+  import Glibc
+#endif
 
 enum RpcCommand {
   /// Contacts policy for RPC startup.
