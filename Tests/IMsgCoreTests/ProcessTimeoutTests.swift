@@ -79,3 +79,17 @@ func processTimeoutReapsHungOsascript() throws {
   #expect(elapsed < .seconds(5))
   #expect(elapsed >= .milliseconds(400))
 }
+
+@Test
+func processTimeoutAllowsCsrutilStatus() throws {
+  let task = Process()
+  let output = Pipe()
+  task.executableURL = URL(fileURLWithPath: "/usr/bin/csrutil")
+  task.arguments = ["status"]
+  task.standardOutput = output
+  task.standardError = output
+  try task.run()
+  let timedOut = ProcessTimeout.waitUntilExit(task, timeout: MessagesLauncher.helperProcessTimeout)
+  #expect(!timedOut)
+  #expect(!task.isRunning)
+}
