@@ -28,9 +28,37 @@ func pollDisplayText(for poll: MessagePollEvent) -> String {
     let options = poll.options?.map(\.text).joined(separator: " / ") ?? ""
     return options.isEmpty ? "[poll created] \(question)" : "[poll created] \(question): \(options)"
   case .vote:
-    let participant = poll.vote?.participant ?? "someone"
-    let option = poll.vote?.optionText ?? poll.vote?.optionID ?? "unknown option"
-    let action = poll.vote?.eventType ?? "selected"
+    if let votes = poll.votes {
+      var participantOrder: [String] = []
+      var selectionsByParticipant: [String: [String]] = [:]
+      for vote in votes where vote.eventType != "removed" {
+        let participant = vote.participant ?? "someone"
+        let option = vote.optionText ?? vote.optionID
+        if selectionsByParticipant[participant] == nil {
+          participantOrder.append(participant)
+          selectionsByParticipant[participant] = []
+        }
+        if selectionsByParticipant[participant]?.contains(option) == false {
+          selectionsByParticipant[participant]?.append(option)
+        }
+      }
+      let snapshots = participantOrder.compactMap { participant -> String? in
+        guard let selections = selectionsByParticipant[participant], !selections.isEmpty else {
+          return nil
+        }
+        return "\(participant) selected \(selections.joined(separator: " / "))"
+      }
+      if !snapshots.isEmpty {
+        return "[poll selections] \(snapshots.joined(separator: "; "))"
+      }
+      return "[poll selections] no options selected"
+    }
+    guard let vote = poll.vote else {
+      return "[poll selections] no options selected"
+    }
+    let participant = vote.participant ?? "someone"
+    let option = vote.optionText ?? vote.optionID
+    let action = vote.eventType ?? "selected"
     return "[poll vote] \(participant) \(action) \(option)"
   case .unknown:
     return "[poll unknown]"
