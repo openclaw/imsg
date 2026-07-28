@@ -136,6 +136,14 @@ public enum BridgeReactionKind: String, Sendable, CaseIterable {
 public enum IMsgBridgeError: Error, CustomStringConvertible, Equatable {
   case bridgeNotReady(String)
   case timeout(action: String)
+  /// The request was claimed by the dylib and then vanished without a reply.
+  ///
+  /// Distinct from `bridgeNotReady`, which means the request was removed
+  /// before anything claimed it and therefore definitely did not run. Here the
+  /// action may have completed — the dylib publishes its reply before dropping
+  /// the claim, but a crash in between leaves an orphaned claim that a later
+  /// scan or relaunch clears. Callers must not treat this as safe to retry.
+  case deliveryUnknown(action: String)
   case malformedResponse(String)
   case dylibReturnedError(String)
   case ioError(String)
@@ -144,6 +152,10 @@ public enum IMsgBridgeError: Error, CustomStringConvertible, Equatable {
     switch self {
     case .bridgeNotReady(let detail): return "imsg bridge not ready: \(detail)"
     case .timeout(let action): return "Timed out waiting for response to '\(action)'"
+    case .deliveryUnknown(let action):
+      return
+        "Request for '\(action)' was claimed but disappeared without a reply; "
+        + "delivery is unknown and it must not be retried automatically"
     case .malformedResponse(let detail): return "Malformed bridge response: \(detail)"
     case .dylibReturnedError(let msg): return "Dylib error: \(msg)"
     case .ioError(let detail): return "Bridge IO error: \(detail)"

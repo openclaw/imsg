@@ -5,8 +5,9 @@ import Testing
 
 /// A v2 request that vanishes from the inbox without a reply can never be
 /// answered: `MessagesLauncher` wipes both queue directories when it relaunches
-/// Messages.app with the dylib. These cover the three on-disk shapes the poll
-/// loop distinguishes so a live request is never mistaken for a discarded one.
+/// Messages.app with the dylib. These cover the on-disk shapes the poll loop
+/// distinguishes, so a live request is never mistaken for a discarded one and a
+/// possibly-delivered request is never reported as safe to retry.
 @Suite("IMsgBridgeClient queue detection")
 struct IMsgBridgeClientQueueTests {
   private func makeInbox() throws -> String {
@@ -18,58 +19,101 @@ struct IMsgBridgeClientQueueTests {
     return dir
   }
 
+  private func write(_ dir: String, _ name: String) {
+    FileManager.default.createFile(
+      atPath: (dir as NSString).appendingPathComponent(name),
+      contents: Data("{}".utf8)
+    )
+  }
+
   private var client: IMsgBridgeClient {
     IMsgBridgeClient(launcher: MessagesLauncher.shared)
   }
 
   @Test
-  func unclaimedRequestCountsAsQueued() throws {
+  func unclaimedRequestIsPending() throws {
     let inbox = try makeInbox()
     defer { try? FileManager.default.removeItem(atPath: inbox) }
     let id = UUID().uuidString
-    FileManager.default.createFile(
-      atPath: (inbox as NSString).appendingPathComponent("\(id).json"),
-      contents: Data("{}".utf8)
-    )
+    write(inbox, "\(id).json")
 
-    #expect(client.requestStillQueued(inboxDir: inbox, id: id) == true)
+    #expect(client.requestQueueState(inboxDir: inbox, id: id) == .unclaimed)
   }
 
   @Test
-  func claimedRequestCountsAsQueued() throws {
+  func claimedRequestIsClaimed() throws {
     let inbox = try makeInbox()
     defer { try? FileManager.default.removeItem(atPath: inbox) }
     let id = UUID().uuidString
     // The dylib claims a request by renaming it to `<id>.processing.<pid>`
     // (see processV2InboxFile); that is still in flight, not discarded.
-    FileManager.default.createFile(
-      atPath: (inbox as NSString).appendingPathComponent("\(id).processing.4242"),
-      contents: Data("{}".utf8)
-    )
+    write(inbox, "\(id).processing.4242")
 
-    #expect(client.requestStillQueued(inboxDir: inbox, id: id) == true)
+    #expect(client.requestQueueState(inboxDir: inbox, id: id) == .claimed)
   }
 
   @Test
-  func missingRequestIsNotQueued() throws {
+  func missingRequestIsAbsent() throws {
     let inbox = try makeInbox()
     defer { try? FileManager.default.removeItem(atPath: inbox) }
     // An unrelated request must not keep ours alive.
-    FileManager.default.createFile(
-      atPath: (inbox as NSString).appendingPathComponent("\(UUID().uuidString).json"),
-      contents: Data("{}".utf8)
-    )
+    write(inbox, "\(UUID().uuidString).json")
 
-    #expect(client.requestStillQueued(inboxDir: inbox, id: UUID().uuidString) == false)
+    #expect(client.requestQueueState(inboxDir: inbox, id: UUID().uuidString) == .absent)
   }
 
   @Test
-  func unreadableInboxFailsSafeAsQueued() {
-    // Cannot enumerate: keep waiting rather than aborting a live request.
+  func unreadableInboxFailsSafeAsPending() {
+    // Cannot enumerate: keep waiting rather than ending a live request.
     #expect(
-      client.requestStillQueued(
+      client.requestQueueState(
         inboxDir: "/nonexistent/imsg-queue-tests", id: UUID().uuidString
-      ) == true
+      ) == .unclaimed
+    )
+  }
+
+  /// The interleaving that decides which error a vanished request produces.
+  ///
+  /// Unclaimed then absent means nothing ever read the request, so the action
+  /// cannot have run. Claimed then absent means the dylib had it and died
+  /// before publishing a reply, so the action may already have taken effect —
+  /// the caller must not retry that one.
+  @Test
+  func claimedThenAbsentIsDistinguishableFromNeverClaimed() throws {
+    let inbox = try makeInbox()
+    defer { try? FileManager.default.removeItem(atPath: inbox) }
+
+    let neverClaimed = UUID().uuidString
+    write(inbox, "\(neverClaimed).json")
+    #expect(client.requestQueueState(inboxDir: inbox, id: neverClaimed) == .unclaimed)
+    try FileManager.default.removeItem(
+      atPath: (inbox as NSString).appendingPathComponent("\(neverClaimed).json")
+    )
+    #expect(client.requestQueueState(inboxDir: inbox, id: neverClaimed) == .absent)
+
+    let claimed = UUID().uuidString
+    write(inbox, "\(claimed).json")
+    #expect(client.requestQueueState(inboxDir: inbox, id: claimed) == .unclaimed)
+    // Dylib claims it.
+    try FileManager.default.moveItem(
+      atPath: (inbox as NSString).appendingPathComponent("\(claimed).json"),
+      toPath: (inbox as NSString).appendingPathComponent("\(claimed).processing.99")
+    )
+    #expect(client.requestQueueState(inboxDir: inbox, id: claimed) == .claimed)
+    // Dylib dies; a later scan or relaunch clears the orphaned claim.
+    try FileManager.default.removeItem(
+      atPath: (inbox as NSString).appendingPathComponent("\(claimed).processing.99")
+    )
+    #expect(client.requestQueueState(inboxDir: inbox, id: claimed) == .absent)
+  }
+
+  @Test
+  func deliveryUnknownIsNotBridgeNotReady() {
+    // Callers key retry-safety off the case, so these must not be conflated.
+    #expect(IMsgBridgeError.deliveryUnknown(action: "send-message") != .bridgeNotReady("x"))
+    #expect(
+      IMsgBridgeError.deliveryUnknown(action: "send-message").description
+        .contains("must not be retried")
     )
   }
 }

@@ -95,6 +95,10 @@ public final class IMsgBridgeClient: @unchecked Sendable {
     try FileManager.default.moveItem(atPath: tmp, toPath: final)
 
     let deadline = Date().addingTimeInterval(timeout)
+    // Whether the dylib ever claimed this request. It decides which error a
+    // vanished request produces, because the two cases differ in whether the
+    // action can already have run.
+    var wasClaimed = false
     while Date() < deadline {
       try await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
       if let response = try readV2Response(outPath: outPath) {
@@ -109,16 +113,31 @@ public final class IMsgBridgeClient: @unchecked Sendable {
       //
       // A request in normal flight is still on disk: unclaimed as
       // `<id>.json`, or claimed by the dylib as `<id>.processing.<pid>`.
-      if !requestStillQueued(inboxDir: inboxDir, id: id) {
-        // Re-check the outbox once: the dylib removes its claim and writes the
-        // reply as two separate steps, so a reply may have landed in between.
+      switch requestQueueState(inboxDir: inboxDir, id: id) {
+      case .unclaimed:
+        continue
+      case .claimed:
+        wasClaimed = true
+        continue
+      case .absent:
+        // Re-check the outbox once: the reply is renamed into place before the
+        // claim is dropped, so a reply may have landed between our two checks.
         if let response = try readV2Response(outPath: outPath) {
           return try unwrapV2Response(response)
         }
-        throw IMsgBridgeError.bridgeNotReady(
-          "request for '\(action.rawValue)' was discarded before it was processed "
-            + "(Messages.app restarted or the bridge queue was cleared)"
-        )
+        // Never claimed: nothing read the request, so the action did not run
+        // and the caller can safely retry.
+        guard wasClaimed else {
+          throw IMsgBridgeError.bridgeNotReady(
+            "request for '\(action.rawValue)' was discarded before it was processed "
+              + "(Messages.app restarted or the bridge queue was cleared)"
+          )
+        }
+        // Claimed and then vanished with no reply. processV2InboxFile renames
+        // the reply into the outbox before removing the claim, so this means
+        // the dylib died mid-request: the action may already have taken
+        // effect. Report the outcome as unknown so nothing retries it blind.
+        throw IMsgBridgeError.deliveryUnknown(action: action.rawValue)
       }
     }
 
@@ -151,22 +170,34 @@ public final class IMsgBridgeClient: @unchecked Sendable {
     throw IMsgBridgeError.dylibReturnedError(response.error ?? "unknown")
   }
 
-  /// Whether the request is still on disk awaiting (or under) processing.
+  /// On-disk state of a request still awaiting a reply.
+  enum RequestQueueState: Equatable {
+    /// `<id>.json` is present; nothing has read it yet.
+    case unclaimed
+    /// `<id>.processing.<pid>` is present; the dylib is handling it.
+    case claimed
+    /// Neither is present, so it was removed by something other than a
+    /// completed reply.
+    case absent
+  }
+
+  /// Classify the request's on-disk state.
   ///
   /// The dylib claims a request by renaming `<id>.json` to
-  /// `<id>.processing.<pid>` (see `processV2InboxFile`), so both shapes mean
-  /// the request is still live. Neither present means it was removed by
-  /// something other than a completed reply.
-  func requestStillQueued(inboxDir: String, id: String) -> Bool {
+  /// `<id>.processing.<pid>` (see `processV2InboxFile`). The distinction
+  /// matters because only a never-claimed request is guaranteed not to have
+  /// run.
+  func requestQueueState(inboxDir: String, id: String) -> RequestQueueState {
     let fm = FileManager.default
     if fm.fileExists(atPath: (inboxDir as NSString).appendingPathComponent("\(id).json")) {
-      return true
+      return .unclaimed
     }
     guard let entries = try? fm.contentsOfDirectory(atPath: inboxDir) else {
-      // Cannot enumerate: assume still queued rather than failing a live request.
-      return true
+      // Cannot enumerate: treat as still queued rather than ending a live
+      // request on a transient read error.
+      return .unclaimed
     }
-    return entries.contains { $0.hasPrefix("\(id).processing.") }
+    return entries.contains { $0.hasPrefix("\(id).processing.") } ? .claimed : .absent
   }
 
   // MARK: - Legacy path
