@@ -799,18 +799,28 @@ static NSDictionary* handleTyping(NSInteger requestId, NSDictionary *params) {
     }
 
     @try {
-        // Thread-aware typing: set the typingGUID property directly (just an
-        // NSString setter — no message loading, no main-thread blocking) before
-        // calling setLocalUserIsTyping:. This routes the typing indicator to
-        // the correct thread in Messages.app.
+        // Thread-aware typing: set typingGUID and localTypingMessageGUID
+        // directly (NSString setters — no message loading, no main-thread
+        // blocking) before calling setLocalUserIsTyping:. Also try
+        // _updateTypingGUIDForMessageIfNeeded: with nil in case it refreshes
+        // the typing UI based on the already-set typingGUID.
         if (messageGuid.length) {
             SEL setTypingGuidSel = @selector(setTypingGUID:);
             if ([chat respondsToSelector:setTypingGuidSel]) {
                 NSString *guidToSet = typing ? messageGuid : @"";
                 ((void (*)(id, SEL, NSString *))objc_msgSend)(chat, setTypingGuidSel, guidToSet);
                 debugLog(@"handleTyping: setTypingGUID:%@ (typing=%d)", guidToSet, typing);
-            } else {
-                debugLog(@"handleTyping: setTypingGUID: not available, typing will be unthreaded");
+            }
+            SEL setLocalTypingMsgGuidSel = @selector(setLocalTypingMessageGUID:);
+            if ([chat respondsToSelector:setLocalTypingMsgGuidSel]) {
+                NSString *guidToSet = typing ? messageGuid : @"";
+                ((void (*)(id, SEL, NSString *))objc_msgSend)(chat, setLocalTypingMsgGuidSel, guidToSet);
+                debugLog(@"handleTyping: setLocalTypingMessageGUID:%@ (typing=%d)", guidToSet, typing);
+            }
+            SEL updateTypingGuidSel = @selector(_updateTypingGUIDForMessageIfNeeded:);
+            if ([chat respondsToSelector:updateTypingGuidSel]) {
+                ((void (*)(id, SEL, id))objc_msgSend)(chat, updateTypingGuidSel, nil);
+                debugLog(@"handleTyping: _updateTypingGUIDForMessageIfNeeded:nil called");
             }
         }
 
@@ -1339,6 +1349,17 @@ static void applyItemExtendedFields(id item,
             [item performSelector:@selector(setAssociatedMessageGUID:)
                        withObject:associatedMessageGuid];
         }
+        // reply_to_guid in chat.db is populated from the item's replyToGUID,
+        // not associatedMessageGUID. For replies (type 100), set both so
+        // the message appears in the correct thread position.
+        if (associatedMessageType == 100
+            && [item respondsToSelector:@selector(setReplyToGUID:)]) {
+            [item performSelector:@selector(setReplyToGUID:)
+                       withObject:associatedMessageGuid];
+            debugLog(@"applyItemExtendedFields: set replyToGUID=%@", associatedMessageGuid);
+        } else if (associatedMessageType == 100) {
+            debugLog(@"applyItemExtendedFields: item does NOT respond to setReplyToGUID:");
+        }
         if ([item respondsToSelector:@selector(setAssociatedMessageType:)]) {
             NSMethodSignature *sig = [item methodSignatureForSelector:
                 @selector(setAssociatedMessageType:)];
@@ -1473,13 +1494,28 @@ static id constructIMMessageViaItem(NSAttributedString *attributedText,
                                     BOOL isAudioMessage) {
     Class IMMessageClass = NSClassFromString(@"IMMessage");
     Class IMMessageItemClass = NSClassFromString(@"IMMessageItem");
-    if (!IMMessageClass || !IMMessageItemClass) return nil;
+    if (!IMMessageClass || !IMMessageItemClass) {
+        debugLog(@"constructIMMessageViaItem: missing class IMMessage=%@ IMMessageItem=%@",
+                 IMMessageClass ? @"yes" : @"NO", IMMessageItemClass ? @"yes" : @"NO");
+        return nil;
+    }
 
     SEL itemInitSel = @selector(initWithSender:time:body:attributes:fileTransferGUIDs:flags:error:guid:threadIdentifier:);
-    if (![IMMessageItemClass instancesRespondToSelector:itemInitSel]) return nil;
+    if (![IMMessageItemClass instancesRespondToSelector:itemInitSel]) {
+        debugLog(@"constructIMMessageViaItem: IMMessageItem does not respond to initWithSender:...");
+        return nil;
+    }
 
     SEL wrapSel = @selector(messageFromIMMessageItem:sender:subject:);
-    if (![IMMessageClass respondsToSelector:wrapSel]) return nil;
+    if (![IMMessageClass respondsToSelector:wrapSel]) {
+        debugLog(@"constructIMMessageViaItem: IMMessage does not respond to messageFromIMMessageItem:...");
+        return nil;
+    }
+
+    debugLog(@"constructIMMessageViaItem: enter threadId=%@ originator=%@ originatorGuid=%@ associatedGuid=%@ type=%lld",
+             threadIdentifier ?: @"(nil)", threadOriginator ? @"yes" : @"nil",
+             threadOriginatorGuid ?: @"(nil)", associatedMessageGuid ?: @"(nil)",
+             associatedMessageType);
 
     id item = [IMMessageItemClass alloc];
     if (!item) return nil;
@@ -1551,15 +1587,19 @@ static id constructIMMessageViaItem(NSAttributedString *attributedText,
         [item performSelector:@selector(setThreadOriginator:)
                    withObject:threadOriginator];
     }
-    // When deriveThreadIdentifier failed to load the parent IMMessage (so
-    // threadOriginator is nil), set the GUID string directly on the item.
-    // This ensures chat.db records thread_originator_guid even when the
-    // full IMMessage object isn't available from IMChatHistoryController.
-    if (!threadOriginator && threadOriginatorGuid.length) {
-        SEL originatorGuidSel = NSSelectorFromString(@"setThreadOriginatorGUID:");
-        if ([item respondsToSelector:originatorGuidSel]) {
-            [item performSelector:originatorGuidSel
-                       withObject:threadOriginatorGuid];
+    // Always set threadOriginatorGUID: on the item as well, even when the
+    // parent item was found. On some macOS builds setThreadOriginator: (with
+    // the item object) does not persist thread_originator_guid in chat.db,
+    // while setThreadOriginatorGUID: (with the GUID string) does.
+    if (threadOriginatorGuid.length) {
+        SEL guidSel = NSSelectorFromString(@"setThreadOriginatorGUID:");
+        if ([item respondsToSelector:guidSel]) {
+            [item performSelector:guidSel withObject:threadOriginatorGuid];
+            debugLog(@"constructIMMessageViaItem: set threadOriginatorGUID=%@ (always, on item)",
+                    threadOriginatorGuid);
+        } else {
+            debugLog(@"constructIMMessageViaItem: item does NOT respond to setThreadOriginatorGUID: (class=%@), will try on wrapped IMMessage",
+                    NSStringFromClass([item class]));
         }
     }
 
@@ -1578,7 +1618,139 @@ static id constructIMMessageViaItem(NSAttributedString *attributedText,
     if (standalone) {
         clearReplyMetadataOnMessage(result);
     }
+    // setReplyToGUID: on the item before wrapping doesn't survive the
+    // messageFromIMMessageItem: wrap (the wrap rebuilds the item). Set
+    // it on the wrapped message's underlying item after wrapping.
+    if (associatedMessageType == 100 && associatedMessageGuid.length) {
+        SEL replyToSel = @selector(setReplyToGUID:);
+        id targetForReply = nil;
+        if ([result respondsToSelector:@selector(_imMessageItem)]) {
+            targetForReply = [result performSelector:@selector(_imMessageItem)];
+        }
+        if (!targetForReply) targetForReply = result;
+        if ([targetForReply respondsToSelector:replyToSel]) {
+            [targetForReply performSelector:replyToSel withObject:associatedMessageGuid];
+            debugLog(@"constructIMMessageViaItem: post-wrap setReplyToGUID=%@", associatedMessageGuid);
+        }
+    }
+    // Also set threadOriginatorGUID: post-wrap. The pre-wrap IMMessageItem
+    // doesn't respond to it on macOS 26. Try multiple targets.
+    if (threadOriginatorGuid.length) {
+        SEL guidSel = NSSelectorFromString(@"setThreadOriginatorGUID:");
+        BOOL guidSet = NO;
+        // Try the wrapped IMMessage itself
+        if ([result respondsToSelector:guidSel]) {
+            [result performSelector:guidSel withObject:threadOriginatorGuid];
+            debugLog(@"constructIMMessageViaItem: post-wrap setThreadOriginatorGUID=%@ (on IMMessage)", threadOriginatorGuid);
+            guidSet = YES;
+        }
+        // Try the wrapped message's _imMessageItem
+        if (!guidSet) {
+            id targetForGuid = nil;
+            if ([result respondsToSelector:@selector(_imMessageItem)]) {
+                targetForGuid = [result performSelector:@selector(_imMessageItem)];
+            }
+            if (targetForGuid && [targetForGuid respondsToSelector:guidSel]) {
+                [targetForGuid performSelector:guidSel withObject:threadOriginatorGuid];
+                debugLog(@"constructIMMessageViaItem: post-wrap setThreadOriginatorGUID=%@ (on item)", threadOriginatorGuid);
+                guidSet = YES;
+            }
+        }
+        if (!guidSet) {
+            debugLog(@"constructIMMessageViaItem: HARD FAIL — no target responds to setThreadOriginatorGUID: (result class=%@)",
+                     NSStringFromClass([result class]));
+        }
+    }
     return result;
+}
+
+/// Fallback: find the parent IMMessage by enumerating the chat's loaded items
+/// directly, bypassing IMChatHistoryController's async load (which can time
+/// out on macOS 26.5). The chat already has recent messages in memory; we
+/// just need to search through chatItems for one whose backing item guid
+/// matches the parent guid.
+static id loadParentFromChatItems(IMChat *chat, NSString *parentGuid,
+                                   id *outParentItem) {
+    if (outParentItem) *outParentItem = nil;
+    if (!chat || parentGuid.length == 0) return nil;
+
+    SEL chatItemsSel = @selector(chatItems);
+    if (![chat respondsToSelector:chatItemsSel]) return nil;
+    NSArray *chatItems = [chat performSelector:chatItemsSel];
+    if (![chatItems isKindOfClass:[NSArray class]] || chatItems.count == 0) return nil;
+
+    SEL backingItemSel = NSSelectorFromString(@"_item");
+    SEL guidSel = @selector(guid);
+    SEL messageSel = @selector(message);
+
+    for (id candidate in chatItems) {
+        // Try to get the backing IMMessageItem via _item
+        id backingItem = [candidate respondsToSelector:backingItemSel]
+            ? [candidate performSelector:backingItemSel] : nil;
+
+        // Check guid on backing item or candidate
+        NSString *candidateGuid = nil;
+        if ([backingItem respondsToSelector:guidSel]) {
+            candidateGuid = [backingItem performSelector:guidSel];
+        } else if ([candidate respondsToSelector:guidSel]) {
+            candidateGuid = [candidate performSelector:guidSel];
+        }
+
+        if (![candidateGuid isEqualToString:parentGuid]) continue;
+
+        // Found the matching item. Try to get the IMMessage from it.
+        id message = nil;
+        if ([backingItem respondsToSelector:messageSel]) {
+            message = [backingItem performSelector:messageSel];
+        }
+        if (!message && [candidate respondsToSelector:messageSel]) {
+            message = [candidate performSelector:messageSel];
+        }
+
+        // If we have the backing item but no IMMessage, try constructing one
+        // via IMMessage +messageFromIMMessageItem:sender:subject:
+        if (!message && backingItem) {
+            Class imMsgClass = NSClassFromString(@"IMMessage");
+            SEL fromItemSel = @selector(messageFromIMMessageItem:sender:subject:);
+            if (imMsgClass && [imMsgClass respondsToSelector:fromItemSel]) {
+                id sender = nil;
+                if ([backingItem respondsToSelector:@selector(sender)]) {
+                    sender = [backingItem performSelector:@selector(sender)];
+                }
+                NSMethodSignature *sig = [imMsgClass methodSignatureForSelector:fromItemSel];
+                NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+                [inv setSelector:fromItemSel];
+                [inv setTarget:imMsgClass];
+                __unsafe_unretained id arg1 = backingItem;
+                __unsafe_unretained id arg2 = sender;
+                __unsafe_unretained id arg3 = nil; // subject
+                [inv setArgument:&arg1 atIndex:2];
+                [inv setArgument:&arg2 atIndex:3];
+                [inv setArgument:&arg3 atIndex:4];
+                [inv invoke];
+                __unsafe_unretained id result = nil;
+                [inv getReturnValue:&result];
+                message = result;
+            }
+        }
+
+        if (message) {
+            if (outParentItem) *outParentItem = backingItem ?: candidate;
+            debugLog(@"loadParentFromChatItems: found parent %@ via chatItems (class=%@)",
+                     parentGuid, NSStringFromClass([message class]));
+            return message;
+        }
+
+        // Even without an IMMessage, return the backing item — it can be
+        // used for thread identifier derivation.
+        if (outParentItem) *outParentItem = backingItem ?: candidate;
+        debugLog(@"loadParentFromChatItems: found backing item for %@ but no IMMessage", parentGuid);
+        return nil;
+    }
+
+    debugLog(@"loadParentFromChatItems: parent %@ not found in %lu chat items",
+             parentGuid, (unsigned long)chatItems.count);
+    return nil;
 }
 
 /// Load the parent message for a reply via IMChatHistoryController and derive
@@ -2730,15 +2902,22 @@ static id buildIMMessage(NSAttributedString *body,
                          NSArray *fileTransferGuids,
                          BOOL isAudioMessage,
                          BOOL ddScan) {
-    // Reactions take a different code path entirely (macOS 26 init below) —
-    // the IMMessageItem-first construction can't carry associated-message
-    // fields atomically, and post-init setters don't survive the wrap.
+    // Reactions (tapbacks, type >= 2000) take a different code path entirely
+    // (macOS 26 init below) — the IMMessageItem-first construction can't carry
+    // associated-message fields atomically, and post-init setters don't
+    // survive the wrap.
+    //
+    // However, replies (type 100) CAN go through IMMessageItem-first
+    // construction — applyItemExtendedFields sets associatedMessageGUID/Type
+    // on the item before wrapping, and setThreadOriginatorGUID: must be
+    // called on the item (not the wrapped IMMessage, whose _imMessageItem
+    // accessor returns a transient rebuilt object).
     //
     // Attachments also bypass IMMessageItem-first: BB's `initWithSender:…:
     // expressiveSendStyleID:` (further down) handles fileTransferGUIDs
     // natively, and going through IMMessageItem-first appears to leave the
     // attachment payload unfinalized even with the right flags.
-    BOOL isReaction = associatedMessageGuid.length && associatedMessageType > 0;
+    BOOL isReaction = associatedMessageGuid.length && associatedMessageType >= 2000;
     BOOL hasAttachment = fileTransferGuids.count > 0;
     if (!isReaction && !hasAttachment) {
         id viaItem = constructIMMessageViaItem(body, subject, effectId,
@@ -2800,6 +2979,24 @@ static id buildIMMessage(NSAttributedString *body,
                     [result performSelector:@selector(setThreadIdentifier:)
                                  withObject:threadIdentifier];
                 }
+                // Set thread_originator_guid on the IMMessage's underlying
+                // item. When deriveThreadIdentifier fails (parent not in
+                // history cache), threadOriginator (parentItem) is nil, so
+                // we must set the GUID explicitly.
+                if (threadOriginatorGuid.length) {
+                    SEL guidSel = NSSelectorFromString(@"setThreadOriginatorGUID:");
+                    id targetForGuid = nil;
+                    if ([result respondsToSelector:@selector(_imMessageItem)]) {
+                        targetForGuid = [result performSelector:@selector(_imMessageItem)];
+                    }
+                    if (!targetForGuid) targetForGuid = result;
+                    if ([targetForGuid respondsToSelector:guidSel]) {
+                        [targetForGuid performSelector:guidSel withObject:threadOriginatorGuid];
+                        debugLog(@"buildIMMessage: set threadOriginatorGUID=%@ on %@",
+                                 threadOriginatorGuid,
+                                 NSStringFromClass([targetForGuid class]));
+                    }
+                }
                 return result;
             }
         }
@@ -2843,6 +3040,17 @@ static id buildIMMessage(NSAttributedString *body,
                 && [result respondsToSelector:@selector(setThreadIdentifier:)]) {
                 [result performSelector:@selector(setThreadIdentifier:)
                              withObject:threadIdentifier];
+            }
+            if (threadOriginatorGuid.length) {
+                SEL guidSel = NSSelectorFromString(@"setThreadOriginatorGUID:");
+                id targetForGuid = nil;
+                if ([result respondsToSelector:@selector(_imMessageItem)]) {
+                    targetForGuid = [result performSelector:@selector(_imMessageItem)];
+                }
+                if (!targetForGuid) targetForGuid = result;
+                if ([targetForGuid respondsToSelector:guidSel]) {
+                    [targetForGuid performSelector:guidSel withObject:threadOriginatorGuid];
+                }
             }
             return result;
         }
@@ -3575,33 +3783,51 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
     NSRange zeroRange = NSMakeRange(0, body.length);
     long long associatedType = selectedMessageGuid.length ? 100 : 0;
 
-    // Reply targets need a derived thread identifier on macOS 26 to render
-    // as a threaded in-line reply rather than a standalone message.
-    // Best-effort: if we can't derive the parent, retain the older associated-message
-    // fallback so receivers can still render a quoted reply.
-    //
-    // When the caller provides threadOriginatorGuid explicitly, use it to
-    // derive the thread identifier and resolve the parent message/item. This
-    // avoids relying on IMChatHistoryController to load the reply target
-    // (selectedMessageGuid), which may fail for older messages not in the
-    // history cache. If deriveThreadIdentifier succeeds for the originator,
-    // the resulting parentMessage/parentItem are used for thread_originator
-    // and threadIdentifier on the outgoing message.
-    NSString *threadLookupGuid = threadOriginatorGuid.length
-        ? threadOriginatorGuid
-        : selectedMessageGuid;
+    // HARD FAIL: threadOriginatorGuid is required for every send.
+    // No fallback to selectedMessageGuid, no silent unthreaded send.
+    if (!threadOriginatorGuid.length) {
+        return errorResponse(requestId,
+            @"HARD FAIL: threadOriginatorGuid is required but was not provided. "
+            @"Every iMessage send must be threaded. Ensure OpenClaw passes thread_originator_guid.");
+    }
+
+    NSString *threadLookupGuid = threadOriginatorGuid;
     id parentMessage = nil;
     id parentItem = nil;
     NSString *threadIdentifier = nil;
-    if (threadLookupGuid.length) {
-        threadIdentifier = deriveThreadIdentifier(threadLookupGuid,
-                                                  &parentMessage,
-                                                  &parentItem);
-        debugLog(@"handleSendMessage: parent=%@ threadId=%@ originator=%@",
-                 threadLookupGuid, threadIdentifier ?: @"(none)",
-                 threadOriginatorGuid.length ? @"explicit" : @"from-reply-to");
-    } else {
-        clearThreadContextForChat(chat, nil);
+
+    // First try to derive the thread identifier from IMChatHistoryController.
+    // This gives us the parent IMMessage object needed for setThreadOriginator:.
+    threadIdentifier = deriveThreadIdentifier(threadLookupGuid,
+                                               &parentMessage,
+                                               &parentItem);
+    debugLog(@"handleSendMessage: parent=%@ threadId=%@ originator=explicit",
+             threadLookupGuid, threadIdentifier ?: @"(FAILED)",
+             nil);
+
+    // If deriveThreadIdentifier failed (IMChatHistoryController async load
+    // timed out), try to find the parent message directly from the chat's
+    // loaded chatItems. This is a synchronous fallback that avoids the
+    // async completion that can fail on macOS 26.5.
+    if (!parentMessage) {
+        parentMessage = loadParentFromChatItems(chat, threadLookupGuid, &parentItem);
+        if (parentMessage) {
+            // Try to derive threadIdentifier from the loaded parent
+            if ([parentMessage respondsToSelector:@selector(threadIdentifier)]) {
+                NSString *existing = [parentMessage performSelector:@selector(threadIdentifier)];
+                if (existing.length > 0) {
+                    threadIdentifier = existing;
+                }
+            }
+            if (!threadIdentifier) {
+                threadIdentifier = threadOriginatorGuid;
+            }
+            debugLog(@"handleSendMessage: loaded parent from chatItems fallback, threadId=%@", threadIdentifier);
+        } else {
+            threadIdentifier = threadOriginatorGuid;
+            debugLog(@"handleSendMessage: WARNING — deriveThreadIdentifier failed for %@, using guid directly as threadIdentifier. Parent item will be nil — setThreadOriginator: won't be called, relying on setThreadOriginatorGUID: fallback.",
+                     threadLookupGuid);
+        }
     }
 
     NSString *richLinkSnapshotPath = nil;
@@ -3727,13 +3953,20 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
             richLinkImageUsed = YES;
         }
 
-        // IMCore exposes separate originator types: IMMessageItem wants the
-        // parent item during item-first construction, while IMMessage wants
-        // the parent message on the wrapped object.
+        // setThreadOriginator: on the wrapped IMMessage is the call that
+        // actually persists thread_originator_guid in chat.db. If parentMessage
+        // is nil (deriveThreadIdentifier failed), this won't be called and
+        // threading will fail — that's a loud error, not a silent fallback.
         if (parentMessage
             && [imMessage respondsToSelector:@selector(setThreadOriginator:)]) {
             [imMessage performSelector:@selector(setThreadOriginator:)
                             withObject:parentMessage];
+            debugLog(@"handleSendMessage: setThreadOriginator: on IMMessage (parent class=%@)",
+                     NSStringFromClass([parentMessage class]));
+        } else {
+            debugLog(@"handleSendMessage: LOUD FAIL — cannot setThreadOriginator: on IMMessage (parentMessage=%@ imMessage responds=%d)",
+                     parentMessage ? @"non-nil" : @"nil",
+                     [imMessage respondsToSelector:@selector(setThreadOriginator:)]);
         }
         if (threadIdentifier
             && [imMessage respondsToSelector:@selector(setThreadIdentifier:)]) {
@@ -3763,6 +3996,7 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
 
         // Best-effort messageGuid; not always available immediately.
         NSString *guid = lastSentMessageGuid(chat);
+
         NSMutableDictionary *response = [@{
             @"chatGuid": chatGuid,
             @"messageGuid": guid ?: @"",
@@ -5117,21 +5351,24 @@ static NSDictionary *handleSendAttachment(NSInteger requestId, NSDictionary *par
             : nil;
         long long associatedType = selectedMessageGuid.length ? 100 : 0;
 
-        NSString *threadLookupGuid = threadOriginatorGuid.length
-            ? threadOriginatorGuid
-            : selectedMessageGuid;
+        // HARD FAIL: threadOriginatorGuid is required for every attachment send.
+        if (!threadOriginatorGuid.length) {
+            return errorResponse(requestId,
+                @"HARD FAIL: threadOriginatorGuid is required but was not provided for attachment send. "
+                @"Every iMessage send must be threaded.");
+        }
+
+        NSString *threadLookupGuid = threadOriginatorGuid;
         id parentMessage = nil;
         id parentItem = nil;
-        NSString *threadIdentifier = nil;
-        if (threadLookupGuid.length) {
-            threadIdentifier = deriveThreadIdentifier(threadLookupGuid,
-                                                      &parentMessage,
-                                                      &parentItem);
-            debugLog(@"handleSendAttachment: parent=%@ threadId=%@ originator=%@",
-                     threadLookupGuid, threadIdentifier ?: @"(none)",
-                     threadOriginatorGuid.length ? @"explicit" : @"from-reply-to");
-        } else {
-            clearThreadContextForChat(chat, nil);
+        NSString *threadIdentifier = deriveThreadIdentifier(threadLookupGuid,
+                                                            &parentMessage,
+                                                            &parentItem);
+        debugLog(@"handleSendAttachment: parent=%@ threadId=%@ originator=explicit",
+                 threadLookupGuid, threadIdentifier ?: @"(FAILED)");
+        if (!threadIdentifier) {
+            threadIdentifier = threadOriginatorGuid;
+            debugLog(@"handleSendAttachment: using threadOriginatorGuid directly as threadIdentifier (deriveThreadIdentifier failed)");
         }
 
         id imMessage = buildIMMessage(body, subjectAttr, effectId, threadIdentifier,

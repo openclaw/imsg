@@ -1,6 +1,20 @@
 import Foundation
 import IMsgCore
 
+private func dbgAppendLog(_ msg: String) {
+  let path = NSTemporaryDirectory() + "imsg-handleSend-debug.log"
+  let line = msg + "\n"
+  if let data = line.data(using: .utf8) {
+    if let fh = try? FileHandle(forWritingTo: URL(fileURLWithPath: path)) {
+      fh.seekToEndOfFile()
+      fh.write(data)
+      fh.closeFile()
+    } else {
+      try? data.write(to: URL(fileURLWithPath: path))
+    }
+  }
+}
+
 private enum RPCSendTransport: String {
   case auto
   case bridge
@@ -175,6 +189,15 @@ extension RPCServer {
   func handleSend(params: [String: Any], id: Any?) async throws {
     let text = stringParam(params["text"]) ?? ""
     let file = stringParam(params["file"]) ?? ""
+    // Diagnostic: log all send params to trace threading issues
+    let dbgTransport = stringParam(params["transport"]) ?? "auto"
+    let dbgReplyTo = stringParam(params["reply_to"] ?? params["replyTo"] ?? params["reply_to_guid"])
+    let dbgThreadOrig = stringParam(params["thread_originator_guid"] ?? params["threadOriginatorGuid"])
+    let dbgTo = stringParam(params["to"])
+    let dbgChatGuid = stringParam(params["chat_guid"])
+    let dbgBridgeReady = isBridgeReady()
+    let dbgLine = "[handleSend] transport=\(dbgTransport) reply_to=\(dbgReplyTo ?? "nil") thread_originator_guid=\(dbgThreadOrig ?? "nil") to=\(dbgTo ?? "nil") chat_guid=\(dbgChatGuid ?? "nil") bridgeReady=\(dbgBridgeReady)"
+    dbgAppendLog(dbgLine)
     // Optional attributed-text formatting (bold/italic/…, macOS 15+). Only the
     // IMCore bridge transport can render it; AppleScript sends stay plain.
     // Accept `text_formatting`/`textFormatting` (matching `send-rich`) plus the
@@ -273,8 +296,15 @@ extension RPCServer {
     )
     let sentAt = Date()
 
-    if let bridgeChatGUID = bridgeChatGUID(
-      resolvedTarget: resolvedTarget, directChatInfo: directChatInfo),
+    let resolvedBridgeChatGUID = bridgeChatGUID(
+      resolvedTarget: resolvedTarget, directChatInfo: directChatInfo)
+    let bridgePathEligible = resolvedBridgeChatGUID != nil
+      && transport != .applescript
+      && (transport == .bridge || isBridgeReady())
+    let dbgDecision = "[handleSend] bridgeChatGUID=\(resolvedBridgeChatGUID ?? "nil") bridgePathEligible=\(bridgePathEligible)"
+      dbgAppendLog(dbgDecision)
+
+    if let bridgeChatGUID = resolvedBridgeChatGUID,
       transport != .applescript,
       transport == .bridge || isBridgeReady()
     {
@@ -301,21 +331,32 @@ extension RPCServer {
         respond(id: id, result: result)
         return
       } catch let err as RPCError {
+        let dbgErr = "[handleSend] BRIDGE FAILED (RPCError): \(err) — will \(selectedMessageGuid != nil || threadOriginatorGuid != nil ? "THROW" : "fallback to AppleScript")"
+          dbgAppendLog(dbgErr)
         if transport == .bridge || selectedMessageGuid != nil || threadOriginatorGuid != nil {
           throw err
         }
       } catch {
+        let dbgErr = "[handleSend] BRIDGE FAILED (generic): \(error) — will \(selectedMessageGuid != nil || threadOriginatorGuid != nil ? "THROW" : "fallback to AppleScript")"
+          dbgAppendLog(dbgErr)
         if transport == .bridge || selectedMessageGuid != nil || threadOriginatorGuid != nil {
           throw RPCError.internalError(String(describing: error))
         }
       }
     } else if transport == .bridge {
+      let dbgErr = "[handleSend] bridge transport but no bridgeChatGUID — THROWING"
+        dbgAppendLog(dbgErr)
       throw RPCError.invalidParams("bridge transport requires an existing chat target")
     } else if selectedMessageGuid != nil || threadOriginatorGuid != nil {
+      let dbgErr = "[handleSend] reply_to/thread_originator set but bridge not eligible — THROWING (would fallback to AppleScript)"
+        dbgAppendLog(dbgErr)
       throw RPCError.invalidParams(
         "reply_to requires bridge transport; AppleScript fallback cannot send threaded replies"
       )
     }
+
+    let dbgAS = "[handleSend] using AppleScript fallback (no reply_to/thread_originator_guid)"
+      dbgAppendLog(dbgAS)
 
     try sendMessage(options)
 

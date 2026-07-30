@@ -33,6 +33,11 @@ extension RPCServer {
     ), !reply.isEmpty {
       bridgeParams["selectedMessageGuid"] = reply
     }
+    if let threadOrig = stringParam(
+      params["thread_originator_guid"] ?? params["threadOriginatorGuid"]
+    ), !threadOrig.isEmpty {
+      bridgeParams["threadOriginatorGuid"] = threadOrig
+    }
     if let formatting = params["text_formatting"] ?? params["textFormatting"] {
       bridgeParams["textFormatting"] = formatting
     }
