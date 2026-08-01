@@ -205,7 +205,7 @@ specific outgoing Apple ID phone number or inline reply target.
 It is intended for agents and long-running integrations that want a single
 process for chats, history, send, and watch.
 
-Read methods: `chats.list`, `messages.history`, `messages.stats`, `messages.scheduled`, `watch.subscribe`,
+Read methods: `chats.list`, `messages.history`, `messages.after`, `messages.stats`, `messages.scheduled`, `watch.subscribe`,
 `watch.unsubscribe`, `message.send_status`. Mutating: `send`, `poll.send`.
 Bridge introspection: `handles.check`. See [docs/rpc.md](docs/rpc.md) for
 request and response shapes.

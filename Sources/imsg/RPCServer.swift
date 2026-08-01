@@ -34,6 +34,7 @@ let kSupportedRPCMethods: [String] = [
   "chats.markUnread",
   "messages.stats",
   "messages.history",
+  "messages.after",
   "watch.subscribe",
   "watch.unsubscribe",
   "send",
@@ -168,6 +169,11 @@ final class RPCServer {
         try await handleMessagesStats(id: id, params: params)
       case "messages.history":
         try await handleMessagesHistory(id: id, params: params)
+      case "messages.after":
+        guard request.paramsAreNamed else {
+          throw RPCError.invalidParams("messages.after params must be an object")
+        }
+        try await handleMessagesAfter(id: id, params: params)
       case "watch.subscribe":
         try await handleWatchSubscribe(id: id, params: params)
       case "watch.unsubscribe":

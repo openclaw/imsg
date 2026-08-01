@@ -80,6 +80,43 @@ Result:
 { "messages": [Message] }
 ```
 
+### `messages.after`
+
+Reads a bounded page in stable message ROWID order. This is the resumable
+history surface for message catchup; unlike `messages.history`, it does not
+order by timestamp or return the newest rows first.
+
+Params:
+
+- `since_rowid` (int, required) — exclusive, non-negative cursor.
+- `chat_id` (int, optional) — omit to page across all chats.
+- `limit` (int, default 100, maximum 500)
+- `attachments` (bool, default `false`)
+- `convert_attachments` (bool, default `false`)
+- `include_reactions` (bool, default `false`) — include standalone reaction
+  events in the ordered scan.
+
+Result:
+
+```json
+{
+  "messages": [Message],
+  "next_rowid": 500,
+  "has_more": true
+}
+```
+
+Messages are ordered by `message.ROWID ASC`, including when timestamps are
+equal. `limit` bounds the returned user-visible messages; the scan can consume
+additional URL-preview rows while coalescing or suppressing them. `next_rowid`
+is the authoritative physical scan cursor and may therefore advance past the
+final returned message. A page can be empty when only suppressed preview rows
+remain. Persist `next_rowid` after every response, then request another page
+while `has_more` is true. Do not infer pagination state from the message count
+or final message id. Set `include_reactions` to `true` when the cursor must also
+cover reaction events; with the default, the cursor tracks user-visible message
+catchup only.
+
 ### `messages.scheduled`
 
 Reads future outbound Send Later rows from `chat.db`. This method is read-only and does not require the IMCore bridge.

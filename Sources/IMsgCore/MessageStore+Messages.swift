@@ -121,12 +121,90 @@ extension MessageStore {
     }
   }
 
+  public func messagesAfterPage(
+    afterRowID: Int64,
+    chatID: Int64?,
+    limit: Int,
+    includeReactions: Bool = false
+  ) throws -> MessagesAfterPage {
+    guard limit > 0 else {
+      return MessagesAfterPage(messages: [], nextRowID: afterRowID, hasMore: false)
+    }
+
+    return try withConnection { db in
+      var physicalLimit = limit == Int.max ? limit : limit + 1
+
+      while true {
+        let query = MessagesAfterQuery(
+          store: self,
+          afterRowID: MessageID(rawValue: afterRowID),
+          chatID: chatID.map { ChatID(rawValue: $0) },
+          limit: physicalLimit,
+          includeReactions: includeReactions
+        )
+        var physicalMessages: [Message] = []
+        var parentCache: ReplyParentCache = [:]
+        var pollOptionCache = PollOptionTextCache()
+        let rows = try db.prepareRowIterator(query.sql, bindings: query.bindings)
+        while let row = try rows.failableNext() {
+          let decoded = try decodeMessageRow(
+            row,
+            columns: query.selection.columns,
+            fallbackChatID: query.fallbackChatID
+          )
+          physicalMessages.append(
+            try message(
+              from: decoded,
+              db,
+              parentCache: &parentCache,
+              pollOptionCache: &pollOptionCache
+            ))
+        }
+
+        let visibleMessages = try pageVisibleMessages(physicalMessages, db: db)
+        if visibleMessages.count > limit {
+          let overflowRowID = visibleMessages[limit].rowID
+          let consumed = physicalMessages.prefix { $0.rowID < overflowRowID }
+          let pageMessages = try pageVisibleMessages(Array(consumed), db: db)
+          let nextRowID = consumed.last?.rowID ?? afterRowID
+          return MessagesAfterPage(
+            messages: try enrichMessagesWithTrailingURLPreviews(
+              pageMessages,
+              afterRowID: nextRowID,
+              db: db
+            ),
+            nextRowID: nextRowID,
+            hasMore: true
+          )
+        }
+        if physicalMessages.count < physicalLimit || physicalLimit == Int.max {
+          return MessagesAfterPage(
+            messages: visibleMessages,
+            nextRowID: physicalMessages.last?.rowID ?? afterRowID,
+            hasMore: false
+          )
+        }
+        guard let nextLimit = nextHistoryPhysicalLimit(after: physicalLimit) else {
+          return MessagesAfterPage(
+            messages: visibleMessages,
+            nextRowID: physicalMessages.last?.rowID ?? afterRowID,
+            hasMore: false
+          )
+        }
+        physicalLimit = nextLimit
+      }
+    }
+  }
+
   func messagesAfterBatch(
     afterRowID: Int64,
     chatID: Int64?,
     limit: Int,
     includeReactions: Bool
   ) throws -> MessagesAfterBatch {
+    guard limit > 0 else {
+      return MessagesAfterBatch(messages: [], maxScannedRowID: afterRowID)
+    }
     let query = MessagesAfterQuery(
       store: self,
       afterRowID: MessageID(rawValue: afterRowID),

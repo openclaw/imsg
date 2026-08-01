@@ -2,6 +2,9 @@
 
 ## 0.13.5 - Unreleased
 
+### JSON-RPC
+- feat: add bounded `messages.after` pagination with a stable ROWID cursor and authoritative continuation signal (#200).
+
 ## 0.13.4 - 2026-07-27
 
 ### Highlights

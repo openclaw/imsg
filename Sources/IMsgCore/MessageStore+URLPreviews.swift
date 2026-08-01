@@ -1,4 +1,5 @@
 import Foundation
+import SQLite
 
 enum URLPreviewCoalescingFallback {
   case suppress
@@ -94,6 +95,127 @@ extension MessageStore {
 
   func isURLPreviewBalloon(_ message: Message) -> Bool {
     message.balloonBundleID == MessageStore.urlPreviewBalloonBundleID
+  }
+
+  func pageVisibleMessages(_ messages: [Message], db: Connection) throws -> [Message] {
+    try coalesceURLPreviewMessages(
+      messages,
+      validateExistingCoalescence: { text, preview in
+        try self.precedingTextMessageForURLPreview(preview, db: db)?.rowID == text.rowID
+      },
+      fallbackForUnmatchedPreview: { preview in
+        guard try self.precedingTextMessageForURLPreview(preview, db: db) != nil else {
+          return nil
+        }
+        return .suppress
+      }
+    )
+  }
+
+  func enrichMessagesWithTrailingURLPreviews(
+    _ messages: [Message],
+    afterRowID: Int64,
+    db: Connection
+  ) throws -> [Message] {
+    guard schema.hasBalloonBundleIDColumn, !messages.isEmpty else { return messages }
+
+    var enriched = messages
+    let indexByRowID = Dictionary(
+      uniqueKeysWithValues: messages.enumerated().map { ($0.element.rowID, $0.offset) }
+    )
+    var lastBaseByChatID: [Int64: Message] = [:]
+    for message in messages where !isURLPreviewBalloon(message) && !message.isReaction {
+      lastBaseByChatID[message.chatID] = message
+    }
+    let pageBases = lastBaseByChatID.values.sorted { $0.rowID < $1.rowID }
+    guard !pageBases.isEmpty else { return messages }
+
+    let reactionFilter =
+      schema.hasReactionColumns
+      ? """
+       AND (
+         next.associated_message_type IS NULL
+         OR next.associated_message_type < 2000
+         OR next.associated_message_type > 3006
+       )
+      """
+      : ""
+    let selection = MessageRowSelection(store: self, includeChatID: true)
+
+    // Keep each VALUES block below SQLite's historical 999-variable limit.
+    for start in stride(from: 0, to: pageBases.count, by: 400) {
+      let end = min(start + 400, pageBases.count)
+      let batch = pageBases[start..<end]
+      let values = Array(repeating: "(?, ?)", count: batch.count).joined(separator: ", ")
+      let sql = """
+        WITH page_base(parent_rowid, chat_id) AS (VALUES \(values)),
+        preview_window AS (
+          SELECT page_base.*,
+                 (
+                   SELECT next.ROWID
+                   FROM message next
+                   JOIN chat_message_join next_cmj ON next.ROWID = next_cmj.message_id
+                   WHERE next.ROWID > ?
+                     AND next_cmj.chat_id = page_base.chat_id
+                     AND COALESCE(next.balloon_bundle_id, '') <> ?
+                     \(reactionFilter)
+                   ORDER BY next_cmj.message_id ASC
+                   LIMIT 1
+                 ) AS boundary_rowid
+          FROM page_base
+        )
+        SELECT \(selection.selectList),
+               preview_window.parent_rowid AS preview_parent_rowid
+        FROM preview_window
+        JOIN chat_message_join cmj ON cmj.chat_id = preview_window.chat_id
+        JOIN message m ON m.ROWID = cmj.message_id
+        LEFT JOIN handle h ON m.handle_id = h.ROWID
+        WHERE m.ROWID > ?
+          AND (preview_window.boundary_rowid IS NULL OR m.ROWID < preview_window.boundary_rowid)
+          AND m.balloon_bundle_id = ?
+        ORDER BY m.ROWID ASC
+        """
+      var bindings: [Binding?] = []
+      for message in batch {
+        bindings.append(message.rowID)
+        bindings.append(message.chatID)
+      }
+      bindings.append(afterRowID)
+      bindings.append(MessageStore.urlPreviewBalloonBundleID)
+      bindings.append(afterRowID)
+      bindings.append(MessageStore.urlPreviewBalloonBundleID)
+
+      var parentCache: ReplyParentCache = [:]
+      var pollOptionCache = PollOptionTextCache()
+      let rows = try db.prepareRowIterator(sql, bindings: bindings)
+      while let row = try rows.failableNext() {
+        let parentRowID = try int64Value(row, "preview_parent_rowid")
+        guard
+          let parentRowID,
+          let index = indexByRowID[parentRowID]
+        else {
+          continue
+        }
+        let decoded = try decodeMessageRow(
+          row,
+          columns: selection.columns,
+          fallbackChatID: enriched[index].chatID
+        )
+        let preview = try message(
+          from: decoded,
+          db,
+          parentCache: &parentCache,
+          pollOptionCache: &pollOptionCache
+        )
+        guard
+          try precedingTextMessageForURLPreview(preview, db: db)?.rowID == parentRowID
+        else {
+          continue
+        }
+        enriched[index] = enriched[index].withURLPreview(urlPreviewMetadata(from: preview))
+      }
+    }
+    return enriched
   }
 
   private func previousMessageInSameChat(
