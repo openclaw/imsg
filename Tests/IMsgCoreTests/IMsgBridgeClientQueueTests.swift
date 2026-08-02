@@ -6,8 +6,7 @@ import Testing
 /// A v2 request that vanishes from the inbox without a reply can never be
 /// answered: `MessagesLauncher` wipes both queue directories when it relaunches
 /// Messages.app with the dylib. These cover the on-disk shapes the poll loop
-/// distinguishes, so a live request is never mistaken for a discarded one and a
-/// possibly-delivered request is never reported as safe to retry.
+/// distinguishes, so a live request is never mistaken for a discarded one.
 @Suite("IMsgBridgeClient queue detection")
 struct IMsgBridgeClientQueueTests {
   private func makeInbox() throws -> String {
@@ -72,14 +71,10 @@ struct IMsgBridgeClientQueueTests {
     )
   }
 
-  /// The interleaving that decides which error a vanished request produces.
-  ///
-  /// Unclaimed then absent means nothing ever read the request, so the action
-  /// cannot have run. Claimed then absent means the dylib had it and died
-  /// before publishing a reply, so the action may already have taken effect —
-  /// the caller must not retry that one.
+  /// Both observable paths can end absent. The client must not infer delivery
+  /// safety from whether it happened to observe the short-lived claim state.
   @Test
-  func claimedThenAbsentIsDistinguishableFromNeverClaimed() throws {
+  func absentStateDoesNotEncodeClaimHistory() throws {
     let inbox = try makeInbox()
     defer { try? FileManager.default.removeItem(atPath: inbox) }
 
@@ -107,13 +102,4 @@ struct IMsgBridgeClientQueueTests {
     #expect(client.requestQueueState(inboxDir: inbox, id: claimed) == .absent)
   }
 
-  @Test
-  func deliveryUnknownIsNotBridgeNotReady() {
-    // Callers key retry-safety off the case, so these must not be conflated.
-    #expect(IMsgBridgeError.deliveryUnknown(action: "send-message") != .bridgeNotReady("x"))
-    #expect(
-      IMsgBridgeError.deliveryUnknown(action: "send-message").description
-        .contains("must not be retried")
-    )
-  }
 }

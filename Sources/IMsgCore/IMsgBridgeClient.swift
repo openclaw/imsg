@@ -95,10 +95,6 @@ public final class IMsgBridgeClient: @unchecked Sendable {
     try FileManager.default.moveItem(atPath: tmp, toPath: final)
 
     let deadline = Date().addingTimeInterval(timeout)
-    // Whether the dylib ever claimed this request. It decides which error a
-    // vanished request produces, because the two cases differ in whether the
-    // action can already have run.
-    var wasClaimed = false
     while Date() < deadline {
       try await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
       if let response = try readV2Response(outPath: outPath) {
@@ -117,7 +113,6 @@ public final class IMsgBridgeClient: @unchecked Sendable {
       case .unclaimed:
         continue
       case .claimed:
-        wasClaimed = true
         continue
       case .absent:
         // Re-check the outbox once: the reply is renamed into place before the
@@ -125,19 +120,12 @@ public final class IMsgBridgeClient: @unchecked Sendable {
         if let response = try readV2Response(outPath: outPath) {
           return try unwrapV2Response(response)
         }
-        // Never claimed: nothing read the request, so the action did not run
-        // and the caller can safely retry.
-        guard wasClaimed else {
-          throw IMsgBridgeError.bridgeNotReady(
-            "request for '\(action.rawValue)' was discarded before it was processed "
-              + "(Messages.app restarted or the bridge queue was cleared)"
-          )
-        }
-        // Claimed and then vanished with no reply. processV2InboxFile renames
-        // the reply into the outbox before removing the claim, so this means
-        // the dylib died mid-request: the action may already have taken
-        // effect. Report the outcome as unknown so nothing retries it blind.
-        throw IMsgBridgeError.deliveryUnknown(action: action.rawValue)
+        // A claim can be created, acted on, and removed between two polls. An
+        // absent request therefore never proves that the action did not run,
+        // even when this client did not observe the claimed state. Use the
+        // existing timeout case so callers cannot mistake this for a
+        // retry-safe bridge-not-ready failure.
+        throw IMsgBridgeError.timeout(action: action.rawValue)
       }
     }
 
