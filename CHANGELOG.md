@@ -5,7 +5,7 @@
 ### JSON-RPC
 - feat: add bounded `messages.after` pagination with authoritative database-instance-scoped ROWID cursors, cross-chat catchup, and optional standalone reaction events (#200, #201, thanks @vincentkoc).
 
-## 0.13.5 - Unreleased
+## 0.13.5 - 2026-08-01
 
 ### JSON-RPC
 - fix: let non-interactive RPC startup proceed without a Contacts prompt while rejecting ambiguous name targets when Contacts is unavailable (#186, #187, thanks @SebTardif).
