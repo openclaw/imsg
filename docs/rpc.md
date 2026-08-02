@@ -117,6 +117,12 @@ or final message id. Set `include_reactions` to `true` when the cursor must also
 cover reaction events; with the default, the cursor tracks user-visible message
 catchup only.
 
+ROWID cursors are scoped to the exact Messages database instance that produced
+them. They are not portable between machines, accounts, or database files, and
+they are not durable across replacement, restoration, or recreation of
+`chat.db`. After any database replacement, discard the saved cursor and start a
+new scan from a cursor appropriate for that database instance.
+
 ### `messages.scheduled`
 
 Reads future outbound Send Later rows from `chat.db`. This method is read-only and does not require the IMCore bridge.

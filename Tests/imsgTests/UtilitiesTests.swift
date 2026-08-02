@@ -55,6 +55,57 @@ func attachmentDisplayPrefersTransferName() {
 }
 
 @Test
+func pollDisplayUsesTheFullSelectionSnapshot() {
+  let firstVote = MessagePollVote(
+    optionID: "choice-a",
+    optionText: "Lobster",
+    participant: "+15550002000",
+    eventType: "selected"
+  )
+  let poll = MessagePollEvent(
+    kind: .vote,
+    vote: firstVote,
+    votes: [
+      firstVote,
+      MessagePollVote(
+        optionID: "choice-b",
+        optionText: "Also lobster",
+        participant: "+15550002000",
+        eventType: "selected"
+      ),
+    ]
+  )
+
+  let display = pollDisplayText(for: poll)
+  #expect(display == "[poll vote] +15550002000 selected Lobster / Also lobster")
+  #expect(display.contains("Lobster / Also lobster"))
+  #expect(display != "[poll vote] +15550002000 selected Lobster")
+}
+
+@Test
+func pollDisplayDoesNotReportARemainingSelectionAsANewVote() {
+  let remainingVote = MessagePollVote(
+    optionID: "choice-b",
+    optionText: "Beta",
+    participant: "+15550002000",
+    eventType: "selected"
+  )
+  let poll = MessagePollEvent(
+    kind: .vote,
+    vote: remainingVote,
+    votes: [remainingVote]
+  )
+
+  #expect(pollDisplayText(for: poll) == "[poll vote] +15550002000 selected Beta")
+}
+
+@Test
+func pollDisplayHandlesAnEmptySelectionSnapshot() {
+  let poll = MessagePollEvent(kind: .vote, votes: [])
+  #expect(pollDisplayText(for: poll) == "[poll vote] no options selected")
+}
+
+@Test
 func jsonLinesPrintsSingleLineJSON() throws {
   let line = try JSONLines.encode(["status": "ok"])
   let data = line.data(using: .utf8)!

@@ -103,7 +103,7 @@ jobs:
 
   linux-release:
     runs-on: ubuntu-latest
-    container: swift:6.2.4-noble
+    container: swift:6.3.3-noble
     steps:
       - name: Checkout
         uses: actions/checkout@v7

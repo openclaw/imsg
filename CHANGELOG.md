@@ -1,9 +1,25 @@
 # Changelog
 
+## 0.14.0 - Unreleased
+
+### JSON-RPC
+- feat: add bounded `messages.after` pagination with authoritative database-instance-scoped ROWID cursors, cross-chat catchup, and optional standalone reaction events (#200, #201, thanks @vincentkoc).
+
 ## 0.13.5 - Unreleased
 
 ### JSON-RPC
-- feat: add bounded `messages.after` pagination with a stable ROWID cursor and authoritative continuation signal (#200).
+- fix: let non-interactive RPC startup proceed without a Contacts prompt while rejecting ambiguous name targets when Contacts is unavailable (#186, #187, thanks @SebTardif).
+- fix: fail vanished bridge queue requests immediately without treating an unobserved claim as safe to retry, avoiding long stalls and duplicate sends (#199, thanks @omarshahine).
+
+### Reliability
+- fix: bound osascript send, reaction, and helper-process waits with process-tree cleanup so stalled subprocesses cannot hang CLI or RPC work (#197, thanks @SebTardif).
+- test: synchronize process-tree timeout regression proof with deterministic child readiness so scheduler delays cannot race its deadline.
+
+### Native Polls
+- fix: render complete native poll selection snapshots in human-readable history and watch output while preserving the existing poll-vote prefix (#198, thanks @clawSean).
+
+### Dependencies
+- chore: update PhoneNumberKit, SwiftLint, the Linux Swift toolchain, and pinned GitHub Actions to current releases.
 
 ## 0.13.4 - 2026-07-27
 

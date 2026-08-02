@@ -223,6 +223,28 @@ func rpcSendRejectsAmbiguousContactName() async throws {
 }
 
 @Test
+func rpcSendRejectsContactNameWhenContactsAreUnavailable() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  let resolver = MockContactResolver(contactsUnavailable: true)
+  var didSend = false
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    sendMessage: { _ in didSend = true },
+    contactResolver: resolver
+  )
+
+  let line = #"{"jsonrpc":"2.0","id":"3u","method":"send","params":{"to":"Alice","text":"yo"}}"#
+  await server.handleLineForTesting(line)
+
+  let error = output.errors.first?["error"] as? [String: Any]
+  #expect(int64Value(error?["code"]) == -32602)
+  #expect(didSend == false)
+}
+
+@Test
 func rpcSendReturnsSentMessageIdentifiersWhenResolved() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()

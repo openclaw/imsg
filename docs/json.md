@@ -40,7 +40,7 @@ Returned by `imsg history`, `imsg search`, `imsg watch`, and the JSON-RPC `messa
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | int | rowid. Use as the `--since-rowid` cursor in watch. |
+| `id` | int | Database-instance-scoped rowid. Use as the `--since-rowid` cursor in watch, but discard saved cursors after replacing or restoring the Messages database. |
 | `chat_id` | int | Always present. Preferred routing handle. |
 | `chat_identifier` | string | Portable handle. |
 | `chat_guid` | string | Portable GUID. |
@@ -121,7 +121,9 @@ Live watch calls do not delay the text message waiting for a preview. If the pre
 
 ### Reaction extensions
 
-Present on `imsg watch --reactions` events:
+Present on standalone reaction rows emitted by `imsg watch --reactions`,
+`watch.subscribe` with `include_reactions: true`, and `messages.after` with
+`include_reactions: true`:
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -131,7 +133,10 @@ Present on `imsg watch --reactions` events:
 | `is_reaction_add` | bool | `true` for add, `false` for remove. |
 | `reacted_to_guid` | string | The message guid this tapback targets. |
 
-`history` deliberately hides reaction rows so they don't duplicate the reacted message. Reaction events only surface in the live watch stream.
+`history` deliberately hides standalone reaction rows so they don't duplicate
+the reacted message. Live watch surfaces emit them only when reactions are
+enabled; `messages.after` includes them in ROWID order only when
+`include_reactions` is `true`.
 
 ### Native poll extension
 
@@ -144,8 +149,8 @@ Native Apple Messages polls are emitted as normal messages with a `poll` object.
 | `poll_guid` | string | The poll's source message GUID when known. |
 | `question` | string | Poll title or question when decoded. For native created polls with an empty payload title, this may be backfilled from the poll's plain caption row. |
 | `options` | array | Poll options, each with `id` and `text`. |
-| `vote` | object | First decoded vote update, with `option_id`, `participant`, and `event_type` when present. |
-| `votes` | array | All decoded vote entries when the payload carries more than one. |
+| `vote` | object | First decoded vote entry for compatibility. This is not necessarily the option that changed. |
+| `votes` | array | Authoritative full selected-option snapshot carried by the update payload. |
 | `original_guid` | string | For vote rows, the original poll message GUID from `associated_message_guid`. |
 | `creator` | string | Creator handle when the payload includes it. Creation rows may fall back to the sender handle. |
 | `participants` | array | Handles seen in decoded poll metadata. |

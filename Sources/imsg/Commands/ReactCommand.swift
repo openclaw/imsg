@@ -170,6 +170,10 @@ enum ReactCommand {
     return scalar.properties.isEmoji || scalar.properties.isEmojiPresentation
   }
 
+  /// Bound for react UI automation. Align with the send-style deadline (150s)
+  /// used on main for reaction waits; hung osascript still cannot block forever.
+  static let osascriptTimeout: TimeInterval = IMsgBridgeProtocol.defaultSendResponseTimeout
+
   private static func runAppleScript(_ source: String, arguments: [String]) throws {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
@@ -185,7 +189,10 @@ enum ReactCommand {
       stdinPipe.fileHandleForWriting.write(data)
     }
     stdinPipe.fileHandleForWriting.closeFile()
-    process.waitUntilExit()
+    if ProcessTimeout.waitUntilExit(process, timeout: osascriptTimeout) {
+      throw IMsgError.appleScriptFailure(
+        "osascript timed out after \(Int(osascriptTimeout))s")
+    }
 
     if process.terminationStatus != 0 {
       let data = stderrPipe.fileHandleForReading.readDataToEndOfFile()

@@ -161,6 +161,10 @@ import Foundation
       }
     }
 
+    /// Bound for short helper processes (`killall`, `csrutil`). Must not hang
+    /// launcher/RPC setup if the helper stalls.
+    static let helperProcessTimeout: TimeInterval = 15
+
     /// Kill Messages.app if running.
     public func killMessages() {
       let task = Process()
@@ -169,7 +173,7 @@ import Foundation
       task.standardOutput = FileHandle.nullDevice
       task.standardError = FileHandle.nullDevice
       try? task.run()
-      task.waitUntilExit()
+      _ = ProcessTimeout.waitUntilExit(task, timeout: Self.helperProcessTimeout)
     }
 
     /// Send a command asynchronously.
@@ -224,7 +228,9 @@ import Foundation
       } catch {
         return nil
       }
-      task.waitUntilExit()
+      if ProcessTimeout.waitUntilExit(task, timeout: helperProcessTimeout) {
+        return nil
+      }
       let data = output.fileHandleForReading.readDataToEndOfFile()
       guard let text = String(data: data, encoding: .utf8) else { return nil }
       return text.trimmingCharacters(in: .whitespacesAndNewlines)
