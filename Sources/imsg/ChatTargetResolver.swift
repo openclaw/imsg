@@ -114,6 +114,11 @@ enum ChatTargetResolver {
     contacts: any ContactResolving
   ) throws -> String {
     guard looksLikeContactName(recipient) else { return recipient }
+    guard !contacts.contactsUnavailable else {
+      throw IMsgError.invalidChatTarget(
+        "Contacts access is unavailable; specify a phone number or email instead."
+      )
+    }
     let matches = contacts.searchByName(recipient)
     switch matches.count {
     case 0:
