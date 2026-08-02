@@ -1,211 +1,40 @@
-name: release
+name: Release
 
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Tag to (re)release (e.g. v0.1.0)"
+      version:
+        description: SemVer to release
         required: true
         type: string
-      include_macos:
-        description: "Also rebuild and upload the macOS archive"
-        required: false
-        default: false
-        type: boolean
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
-  macos-release:
-    if: ${{ inputs.include_macos }}
-    runs-on: macos-15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Determine tag
-        id: tag
-        shell: bash
-        run: |
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Checkout release tag
-        if: ${{ github.event_name == 'workflow_dispatch' }}
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git checkout ${{ steps.tag.outputs.tag }}
-
-      - name: Resolve packages
-        run: swift package resolve
-
-      - name: Patch dependencies
-        run: scripts/patch-deps.sh
-
-      - name: Sync version
-        run: scripts/generate-version.sh
-
-      - name: Build
-        run: |
-          rm -rf dist
-          OUTPUT_DIR=dist scripts/build-universal.sh
-
-      - name: Package artifact
-        run: |
-          (
-            cd dist
-            shopt -s nullglob
-            bundles=( *.bundle )
-            if [ ${#bundles[@]} -gt 0 ]; then
-              zip -r imsg-macos.zip imsg imsg-bridge-helper.dylib "${bundles[@]}"
-            else
-              zip -r imsg-macos.zip imsg imsg-bridge-helper.dylib
-            fi
-          )
-
-      - name: Publish release assets
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: ${{ steps.tag.outputs.tag }}
-          files: dist/imsg-macos.zip
-          fail_on_unmatched_files: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update GitHub release notes from CHANGELOG
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.tag.outputs.tag }}
-        run: |
-          version="${TAG#v}"
-          notes_file="/tmp/release-notes.md"
-
-          awk -v v="$version" '
-            $0 ~ ("^## " v "($|[[:space:]]-)") { in_section=1; next }
-            in_section && $0 ~ "^## " { exit }
-            in_section { print }
-          ' CHANGELOG.md > "$notes_file"
-
-          if ! grep -q '[^[:space:]]' "$notes_file"; then
-            echo "No CHANGELOG.md section found for version $version" >&2
-            exit 1
-          fi
-
-          gh release edit "$TAG" --notes-file "$notes_file"
-
-  linux-release:
-    runs-on: ubuntu-latest
-    container: swift:6.3.3-noble
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Determine tag
-        id: tag
-        shell: bash
-        run: |
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Checkout release tag
-        if: ${{ github.event_name == 'workflow_dispatch' }}
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git checkout ${{ steps.tag.outputs.tag }}
-
-      - name: Install Python
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends python3
-
-      - name: Resolve packages
-        run: swift package resolve
-
-      - name: Patch dependencies
-        run: scripts/patch-deps.sh
-
-      - name: Sync version
-        run: scripts/generate-version.sh
-
-      - name: Build Linux archive
-        run: |
-          rm -rf dist
-          OUTPUT_DIR=dist scripts/build-linux.sh
-
-      - name: Publish Linux release asset
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: ${{ steps.tag.outputs.tag }}
-          files: dist/imsg-linux-x86_64.tar.gz
-          fail_on_unmatched_files: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  update-homebrew-tap:
-    if: ${{ inputs.include_macos }}
-    runs-on: ubuntu-latest
-    needs: macos-release
-    steps:
-      - name: Resolve release tag
-        run: echo "RELEASE_TAG=${{ inputs.tag }}" >> "$GITHUB_ENV"
-
-      - name: Dispatch tap formula update
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::error::Set HOMEBREW_TAP_TOKEN with workflow access to steipete/homebrew-tap"
-            exit 1
-          fi
-
-          request_id="imsg-${RELEASE_TAG}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          expected_title="Update imsg for ${RELEASE_TAG} (${request_id})"
-
-          gh workflow run update-formula.yml \
-            --repo steipete/homebrew-tap \
-            --ref main \
-            -f formula=imsg \
-            -f tag="$RELEASE_TAG" \
-            -f repository=openclaw/imsg \
-            -f macos_artifact=imsg-macos.zip \
-            -f request_id="$request_id"
-
-          run_id=""
-          for _ in {1..30}; do
-            run_id=$(gh run list \
-              --repo steipete/homebrew-tap \
-              --workflow update-formula.yml \
-              --branch main \
-              --event workflow_dispatch \
-              --limit 20 \
-              --json databaseId,displayTitle \
-              --jq ".[] | select(.displayTitle == \"$expected_title\") | .databaseId" | head -n1)
-            if [ -n "$run_id" ]; then
-              break
-            fi
-            sleep 5
-          done
-
-          if [ -z "$run_id" ]; then
-            echo "::error::Could not find tap workflow run with title: $expected_title"
-            exit 1
-          fi
-
-          gh run watch "$run_id" \
-            --repo steipete/homebrew-tap \
-            --exit-status \
-            --interval 10
+  release:
+    permissions:
+      actions: read
+      checks: read
+      contents: write
+      pull-requests: write
+      statuses: read
+    uses: openclaw/release-workflows/.github/workflows/release-swift-cli.yml@v1
+    with:
+      version: ${{ inputs.version }}
+      repository-type: personal
+      homebrew-tap: steipete/homebrew-tap
+      homebrew-formula: imsg
+      binary-name: imsg
+      helper-name: imsg-bridge-helper.dylib
+      binary-identifier: com.steipete.imsg
+      helper-identifier: com.steipete.imsg.bridge-helper
+      macos-archive-name: imsg-macos.zip
+      linux-archive-name: imsg-linux-x86_64.tar.gz
+      ci-check-events: '["push","pull_request"]'
+    secrets:
+      MACOS_SIGNING_P12: ${{ secrets.MACOS_SIGNING_P12 }}
+      MACOS_SIGNING_P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_PRIVATE_KEY_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

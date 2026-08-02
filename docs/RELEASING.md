@@ -1,68 +1,38 @@
----
-title: Releasing
-description: "Cutting an imsg release: changelog, version bump, signed/notarized build, tag, GitHub release, Homebrew tap update."
----
+# Releasing imsg
 
-## Release notes source
-- GitHub Release notes come from `CHANGELOG.md` for the matching version section (`## X.Y.Z - YYYY-MM-DD`).
-- Keep the unreleased section at the top. During a release train it may be
-  versioned, for example `## 0.8.0 - Unreleased`; before tagging, change it to
-  `## X.Y.Z - YYYY-MM-DD`.
+imsg uses the fleet-standard Swift CLI workflow from `openclaw/release-workflows@v1`. The repository caller supplies imsg's stable artifact, signing-identifier, and Homebrew contracts; the shared workflow owns the protected-source freeze, annotated release tag, builds, signing and notarization, independent verification, exact publication, Homebrew handoff, and closeout.
 
-## Steps
-1. Update `CHANGELOG.md` and version
-   - Move entries from `Unreleased` into a new `## X.Y.Z - YYYY-MM-DD` section,
-     or date the existing `## X.Y.Z - Unreleased` section.
-   - Credit contributors (e.g. `thanks @user`).
-   - Update `version.env` to `X.Y.Z`.
-   - Run `scripts/generate-version.sh` (also refreshes `Sources/imsg/Resources/Info.plist`).
-2. Ensure CI is green on `main`
-   - `make lint`
-   - `make test`
-   - GitHub Actions `linux-read-core`
-   - `make format` (optional, if formatting changes are expected)
-3. Build, sign, and notarize
-   - Requires `APP_STORE_CONNECT_API_KEY_P8`, `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`;
-     for automation, provide these through `MAC_RELEASE_OP_ITEM` + `MAC_RELEASE_OP_FIELDS`.
-   - Run `scripts/sign-and-notarize.sh` through the shared release wrapper, for example
-     `MAC_RELEASE=/path/to/agent-scripts/skills/release-mac-app/scripts/mac-release; "$MAC_RELEASE" codesign-run --with-package-secrets -- scripts/sign-and-notarize.sh`.
-   - Set `MAC_RELEASE_CODESIGN_IDENTITY`, `MAC_RELEASE_CODESIGN_KEYCHAIN_MANAGED=1`, and either direct
-     `MAC_RELEASE_CODESIGN_KEYCHAIN` + `MAC_RELEASE_CODESIGN_KEYCHAIN_PASSWORD` or `MAC_RELEASE_CODESIGN_OP_ITEM`.
-     The wrapper aborts before packaging if its locked-keychain canary cannot sign noninteractively and restore
-     the original user keychain search list.
-   - The script outputs `/tmp/imsg-macos.zip` by default.
-   - Linux release archives are built by `.github/workflows/release.yml` with
-     `scripts/build-linux.sh` and uploaded as `imsg-linux-x86_64.tar.gz`.
-   - Verify the zip contains `imsg-bridge-helper.dylib` and required SwiftPM
-     bundles (e.g. `PhoneNumberKit_PhoneNumberKit.bundle`).
-   - Verify entitlements/signing:
-     - `unzip -q /tmp/imsg-macos.zip -d /tmp/imsg-check`
-     - `codesign -d --entitlements :- /tmp/imsg-check/imsg`
-     - `codesign --verify --strict --verbose=4 /tmp/imsg-check/imsg-bridge-helper.dylib`
-     - `spctl -a -t exec -vv /tmp/imsg-check/imsg`
-4. Tag, push, and publish
-   - `git tag -a vX.Y.Z -m "vX.Y.Z"`
-   - `git push origin vX.Y.Z`
-   - `gh release create vX.Y.Z /tmp/imsg-macos.zip -t "vX.Y.Z" -F /tmp/release-notes.txt`
-   - Run `.github/workflows/release.yml` for the tag to upload the Linux archive
-     (`imsg-linux-x86_64.tar.gz`). Leave `include_macos` off unless you
-     intentionally want a manual macOS rebuild.
-   - `gh release edit vX.Y.Z --notes-file /tmp/release-notes.txt` (if needed)
-5. Update Homebrew tap
-   - Run `scripts/update-homebrew.sh vX.Y.Z` to trigger the centralized formula updater.
-   - Requires a GitHub token with workflow dispatch access to `steipete/homebrew-tap`.
+## Prerequisites
 
-## What happens in CI
-- Release signing + notarization are done locally via `scripts/sign-and-notarize.sh`.
-- `.github/workflows/release.yml` is only for manual rebuilds, not the primary release path.
+The repository must contain these Actions secrets:
 
-## Linux support schedule
-- 0.8.0 is the Linux read-only preview release. It may include an experimental
-  Linux `x86_64` archive, but docs must keep describing Linux as read-only
-  support for existing copied Messages databases.
-- Linux support is staged as a read-only core pass: SwiftPM build, Linux-only
-  tests, release archive generation, and CI coverage for reading copied
-  Messages database fixtures.
-- Do not document Linux send/watch/Contacts/IMCore support unless those features
-  are implemented and proven on Linux. They currently depend on macOS frameworks
-  or Messages.app automation.
+- `MACOS_SIGNING_P12`
+- `MACOS_SIGNING_P12_PASSWORD`
+- `ASC_KEY_ID`
+- `ASC_ISSUER_ID`
+- `ASC_PRIVATE_KEY_P8`
+- `HOMEBREW_TAP_TOKEN`
+
+The first five are required before the workflow can create a release tag. The preflight intentionally fails before mutating release state when any are unavailable.
+
+## Release contract
+
+- `version.env`, generated `Sources/imsg/Version.swift`, and the requested version must agree.
+- `CHANGELOG.md` must contain exactly one dated level-two section for the requested version.
+- `scripts/build-universal.sh` must emit the universal `imsg` CLI, `imsg-bridge-helper.dylib` with `arm64e`, `arm64`, and `x86_64` slices, and at least one Swift resource bundle.
+- `scripts/build-linux.sh` must emit `imsg-linux-x86_64.tar.gz` with the static Swift runtime.
+- The Darwin payload retains `com.steipete.imsg` and `com.steipete.imsg.bridge-helper` under Peter Steinberger's Developer ID identity.
+- Both native macOS verifier jobs must accept the checksum inventory, signatures, architecture slices, resource bundles, notarization, native version output, and Linux executable format before publication.
+- The Homebrew formula in `steipete/homebrew-tap` must resolve to the exact verified `imsg-macos.zip` URL and SHA-256.
+
+## Dispatch and verification
+
+Dispatch only after the release-preparation PR is merged and current `main` CI is green:
+
+```bash
+gh workflow run release.yml --repo openclaw/imsg --ref main -f version=0.13.5
+```
+
+Watch the exact run. After success, verify that the public release is non-draft and non-prerelease, the annotated tag peels to the frozen main commit, all six control/platform assets are present, `SHA256SUMS` validates them, the Homebrew workflow succeeded, and the formula hash matches the published macOS ZIP.
+
+Retries reuse the immutable annotated version tag and frozen commit. Never move or replace a consumer release tag to recover a failed run.

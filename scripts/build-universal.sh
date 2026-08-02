@@ -47,7 +47,7 @@ clang -dynamiclib "${HELPER_CLANG_ARCH_ARGS[@]}" -fobjc-arc \
   -o "${DIST_DIR}/${HELPER_NAME}" \
   "${ROOT}/Sources/IMsgHelper/IMsgInjected.m"
 
-# This is the shipping path (release.yml runs only this script), so fail the
+# This is the shipping path (the shared release workflow runs this script), so fail the
 # build if any required helper slice is missing — a dropped arm64e slice
 # silently kills the bridge on macOS 26 Messages.
 for ARCH in "${HELPER_ARCH_LIST[@]}"; do

@@ -5,9 +5,15 @@ import Testing
 func releaseWorkflowPackagesUniversalBuildOutput() throws {
   let workflow = try readRepositoryFile(".github/workflows/release.yml")
 
-  #expect(workflow.contains("OUTPUT_DIR=dist scripts/build-universal.sh"))
-  #expect(workflow.contains("files: dist/imsg-macos.zip"))
-  #expect(workflow.contains("imsg-bridge-helper.dylib"))
+  #expect(
+    workflow.contains(
+      "uses: openclaw/release-workflows/.github/workflows/release-swift-cli.yml@v1"))
+  #expect(workflow.contains("macos-archive-name: imsg-macos.zip"))
+  #expect(workflow.contains("helper-name: imsg-bridge-helper.dylib"))
+  #expect(workflow.contains("binary-identifier: com.steipete.imsg"))
+  #expect(workflow.contains("helper-identifier: com.steipete.imsg.bridge-helper"))
+  #expect(workflow.contains("MACOS_SIGNING_P12: ${{ secrets.MACOS_SIGNING_P12 }}"))
+  #expect(workflow.contains("TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}"))
   #expect(!workflow.contains("swift build -c release --product imsg"))
   #expect(!workflow.contains("cp .build/release/imsg dist/imsg"))
 }
@@ -37,28 +43,6 @@ func universalBuildScriptShipsArm64eHelperSlice() throws {
 }
 
 @Test
-func signAndNotarizeScriptDefaultsHelperToArm64e() throws {
-  let script = try readRepositoryFile("scripts/sign-and-notarize.sh")
-
-  // The notarize path defaults the helper to arm64e as well, and its lipo guard
-  // must validate the HELPER arch list — not the CLI ARCH_LIST, which omits
-  // arm64e. Assert the loop and its lipo check as one contiguous block so this
-  // can't pass by matching the separate clang-args HELPER_ARCH_LIST loop.
-  #expect(script.contains(#"HELPER_ARCHES_VALUE=${HELPER_ARCHES:-"arm64e arm64 x86_64"}"#))
-  #expect(script.contains("--scratch-path"))
-  #expect(script.contains("--show-bin-path"))
-  #expect(script.contains(#"for bundle in "${PRODUCT_DIRS[0]}"/*.bundle"#))
-  #expect(!script.contains(#".build/${ARCH}-apple-macosx"#))
-  #expect(
-    script.contains(
-      """
-      for ARCH in "${HELPER_ARCH_LIST[@]}"; do
-        if ! lipo -archs "$DIST_DIR/$HELPER_NAME" | tr ' ' '\\n' | grep -Fxq "$ARCH"; then
-          echo "Helper missing required architecture slice: $ARCH" >&2
-      """))
-}
-
-@Test
 func linuxReleaseStaticallyLinksSwiftRuntime() throws {
   let script = try readRepositoryFile("scripts/build-linux.sh")
 
@@ -79,17 +63,14 @@ func dependencyPatchTargetsPhoneNumberKitV5BundleResource() throws {
 func bridgeHelperBuildsUseRelocatableInstallName() throws {
   let developmentBuild = try readRepositoryFile("Makefile")
   let universalBuild = try readRepositoryFile("scripts/build-universal.sh")
-  let notarizedBuild = try readRepositoryFile("scripts/sign-and-notarize.sh")
 
   #expect(developmentBuild.contains("-install_name @rpath/imsg-bridge-helper.dylib"))
-  for script in [universalBuild, notarizedBuild] {
-    #expect(script.contains(#"-install_name "@rpath/${HELPER_NAME}""#))
-  }
+  #expect(universalBuild.contains(#"-install_name "@rpath/${HELPER_NAME}""#))
 }
 
 @Test
 func bridgeHelperBuildsLinkRichLinkFrameworks() throws {
-  for path in ["Makefile", "scripts/build-universal.sh", "scripts/sign-and-notarize.sh"] {
+  for path in ["Makefile", "scripts/build-universal.sh"] {
     let contents = try readRepositoryFile(path)
     #expect(contents.contains("-framework ImageIO"))
     #expect(contents.contains("-framework LinkPresentation"))
