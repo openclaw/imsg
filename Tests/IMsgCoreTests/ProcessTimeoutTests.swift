@@ -52,6 +52,48 @@ func processTimeoutAllowsQuickExit() throws {
 }
 
 @Test
+func processTimeoutKillsDescendantsAfterLeaderExits() throws {
+  let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: dir) }
+
+  let pidFile = dir.appendingPathComponent("pids")
+  let hung = dir.appendingPathComponent("process-tree")
+  try """
+  #!/bin/sh
+  trap 'exit 0' TERM
+  sh -c 'trap "" TERM; exec sleep 30' >/dev/null 2>&1 &
+  child=$!
+  printf '%s %s\n' "$$" "$child" > "\(pidFile.path)"
+  printf R
+  wait "$child"
+  """.write(to: hung, atomically: true, encoding: .utf8)
+  try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hung.path)
+
+  let readyPipe = Pipe()
+  let process = Process()
+  process.executableURL = hung
+  process.standardOutput = readyPipe
+  process.standardError = FileHandle(forWritingAtPath: "/dev/null")
+  try process.run()
+  readyPipe.fileHandleForWriting.closeFile()
+
+  let ready = readyPipe.fileHandleForReading.readData(ofLength: 1)
+  try #require(ready == Data("R".utf8))
+  let processIDs = try String(contentsOf: pidFile, encoding: .utf8)
+    .split(separator: " ")
+    .compactMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+  try #require(processIDs.count == 2)
+
+  let timedOut = ProcessTimeout.waitUntilExit(process, timeout: 0.5)
+
+  #expect(timedOut)
+  for processID in processIDs {
+    #expect(waitForProcessExit(processID))
+  }
+}
+
+@Test
 func processTimeoutReapsHungOsascript() throws {
   // Same launch shape as MessageSender.runOsascript / ReactCommand.runAppleScript:
   // /usr/bin/osascript -l AppleScript - with source on stdin.
@@ -92,4 +134,19 @@ func processTimeoutAllowsCsrutilStatus() throws {
   let timedOut = ProcessTimeout.waitUntilExit(task, timeout: MessagesLauncher.helperProcessTimeout)
   #expect(!timedOut)
   #expect(!task.isRunning)
+}
+
+private func waitForProcessExit(_ processID: pid_t) -> Bool {
+  let clock = ContinuousClock()
+  let deadline = clock.now + .seconds(2)
+  while clock.now < deadline {
+    errno = 0
+    let result = kill(processID, 0)
+    let probeError = errno
+    if result == -1, probeError == ESRCH {
+      return true
+    }
+    Thread.sleep(forTimeInterval: 0.02)
+  }
+  return false
 }
