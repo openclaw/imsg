@@ -319,6 +319,11 @@ public struct MessageSender {
     #endif
   }
 
+  /// Bound for osascript fallback when NSAppleScript is unauthorized.
+  /// Align with the send-style bridge deadline (150s): Messages can stall
+  /// longer than the short helper default (60s).
+  static let osascriptTimeout: TimeInterval = IMsgBridgeProtocol.defaultSendResponseTimeout
+
   private static func runOsascript(source: String, arguments: [String]) throws {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
@@ -332,7 +337,10 @@ public struct MessageSender {
       stdinPipe.fileHandleForWriting.write(data)
     }
     stdinPipe.fileHandleForWriting.closeFile()
-    process.waitUntilExit()
+    if ProcessTimeout.waitUntilExit(process, timeout: osascriptTimeout) {
+      throw IMsgError.appleScriptFailure(
+        "osascript timed out after \(Int(osascriptTimeout))s")
+    }
     if process.terminationStatus != 0 {
       let data = stderrPipe.fileHandleForReading.readDataToEndOfFile()
       let message = String(data: data, encoding: .utf8) ?? "Unknown osascript error"
