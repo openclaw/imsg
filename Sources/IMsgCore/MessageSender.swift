@@ -320,8 +320,9 @@ public struct MessageSender {
   }
 
   /// Bound for osascript fallback when NSAppleScript is unauthorized.
-  /// Hung Messages automation must not block send/RPC indefinitely.
-  static let osascriptTimeout: TimeInterval = ProcessTimeout.defaultTimeout
+  /// Align with the send-style bridge deadline (150s): Messages can stall
+  /// longer than the short helper default (60s).
+  static let osascriptTimeout: TimeInterval = IMsgBridgeProtocol.defaultSendResponseTimeout
 
   private static func runOsascript(source: String, arguments: [String]) throws {
     let process = Process()

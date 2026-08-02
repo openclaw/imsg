@@ -170,8 +170,9 @@ enum ReactCommand {
     return scalar.properties.isEmoji || scalar.properties.isEmojiPresentation
   }
 
-  /// Bound for react UI automation. Hung osascript must not block the CLI.
-  static let osascriptTimeout: TimeInterval = ProcessTimeout.defaultTimeout
+  /// Bound for react UI automation. Align with the send-style deadline (150s)
+  /// used on main for reaction waits; hung osascript still cannot block forever.
+  static let osascriptTimeout: TimeInterval = IMsgBridgeProtocol.defaultSendResponseTimeout
 
   private static func runAppleScript(_ source: String, arguments: [String]) throws {
     let process = Process()
