@@ -77,7 +77,7 @@ func pollDisplayUsesTheFullSelectionSnapshot() {
   )
 
   let display = pollDisplayText(for: poll)
-  #expect(display == "[poll selections] +15550002000 selected Lobster / Also lobster")
+  #expect(display == "[poll vote] +15550002000 selected Lobster / Also lobster")
   #expect(display.contains("Lobster / Also lobster"))
   #expect(display != "[poll vote] +15550002000 selected Lobster")
 }
@@ -96,13 +96,13 @@ func pollDisplayDoesNotReportARemainingSelectionAsANewVote() {
     votes: [remainingVote]
   )
 
-  #expect(pollDisplayText(for: poll) == "[poll selections] +15550002000 selected Beta")
+  #expect(pollDisplayText(for: poll) == "[poll vote] +15550002000 selected Beta")
 }
 
 @Test
 func pollDisplayHandlesAnEmptySelectionSnapshot() {
   let poll = MessagePollEvent(kind: .vote, votes: [])
-  #expect(pollDisplayText(for: poll) == "[poll selections] no options selected")
+  #expect(pollDisplayText(for: poll) == "[poll vote] no options selected")
 }
 
 @Test

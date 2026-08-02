@@ -49,12 +49,12 @@ func pollDisplayText(for poll: MessagePollEvent) -> String {
         return "\(participant) selected \(selections.joined(separator: " / "))"
       }
       if !snapshots.isEmpty {
-        return "[poll selections] \(snapshots.joined(separator: "; "))"
+        return "[poll vote] \(snapshots.joined(separator: "; "))"
       }
-      return "[poll selections] no options selected"
+      return "[poll vote] no options selected"
     }
     guard let vote = poll.vote else {
-      return "[poll selections] no options selected"
+      return "[poll vote] no options selected"
     }
     let participant = vote.participant ?? "someone"
     let option = vote.optionText ?? vote.optionID
