@@ -97,28 +97,95 @@ public final class IMsgBridgeClient: @unchecked Sendable {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
       try await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
-      guard
-        let data = try? Data(contentsOf: URL(fileURLWithPath: outPath)),
-        data.count > 1
-      else { continue }
-      // Best-effort cleanup; ignore failures (dylib may also unlink).
-      try? FileManager.default.removeItem(atPath: outPath)
-
-      guard
-        let raw = try? JSONSerialization.jsonObject(with: data, options: [])
-          as? [String: Any]
-      else {
-        throw IMsgBridgeError.malformedResponse("non-object body")
+      if let response = try readV2Response(outPath: outPath) {
+        return try unwrapV2Response(response)
       }
-      let response = try BridgeResponse.parse(raw)
-      if response.success {
-        return response.data
+      // No response yet. If the request itself is gone from the inbox, the
+      // queue was cleared out from under us — `MessagesLauncher` wipes both
+      // queue directories when it relaunches Messages.app with the dylib, so a
+      // request that disappears without a reply can never be answered. Polling
+      // on to the deadline just burns the caller's full send timeout (2.5
+      // minutes for sends) waiting for a reply that no longer has a writer.
+      //
+      // A request in normal flight is still on disk: unclaimed as
+      // `<id>.json`, or claimed by the dylib as `<id>.processing.<pid>`.
+      switch requestQueueState(inboxDir: inboxDir, id: id) {
+      case .unclaimed:
+        continue
+      case .claimed:
+        continue
+      case .absent:
+        // Re-check the outbox once: the reply is renamed into place before the
+        // claim is dropped, so a reply may have landed between our two checks.
+        if let response = try readV2Response(outPath: outPath) {
+          return try unwrapV2Response(response)
+        }
+        // A claim can be created, acted on, and removed between two polls. An
+        // absent request therefore never proves that the action did not run,
+        // even when this client did not observe the claimed state. Use the
+        // existing timeout case so callers cannot mistake this for a
+        // retry-safe bridge-not-ready failure.
+        throw IMsgBridgeError.timeout(action: action.rawValue)
       }
-      throw IMsgBridgeError.dylibReturnedError(response.error ?? "unknown")
     }
 
     try? FileManager.default.removeItem(atPath: final)
     throw IMsgBridgeError.timeout(action: action.rawValue)
+  }
+
+  /// Read and consume a v2 reply if one is present.
+  private func readV2Response(outPath: String) throws -> BridgeResponse? {
+    guard
+      let data = try? Data(contentsOf: URL(fileURLWithPath: outPath)),
+      data.count > 1
+    else { return nil }
+    // Best-effort cleanup; ignore failures (dylib may also unlink).
+    try? FileManager.default.removeItem(atPath: outPath)
+
+    guard
+      let raw = try? JSONSerialization.jsonObject(with: data, options: [])
+        as? [String: Any]
+    else {
+      throw IMsgBridgeError.malformedResponse("non-object body")
+    }
+    return try BridgeResponse.parse(raw)
+  }
+
+  private func unwrapV2Response(_ response: BridgeResponse) throws -> [String: Any] {
+    if response.success {
+      return response.data
+    }
+    throw IMsgBridgeError.dylibReturnedError(response.error ?? "unknown")
+  }
+
+  /// On-disk state of a request still awaiting a reply.
+  enum RequestQueueState: Equatable {
+    /// `<id>.json` is present; nothing has read it yet.
+    case unclaimed
+    /// `<id>.processing.<pid>` is present; the dylib is handling it.
+    case claimed
+    /// Neither is present, so it was removed by something other than a
+    /// completed reply.
+    case absent
+  }
+
+  /// Classify the request's on-disk state.
+  ///
+  /// The dylib claims a request by renaming `<id>.json` to
+  /// `<id>.processing.<pid>` (see `processV2InboxFile`). The distinction
+  /// matters because only a never-claimed request is guaranteed not to have
+  /// run.
+  func requestQueueState(inboxDir: String, id: String) -> RequestQueueState {
+    let fm = FileManager.default
+    if fm.fileExists(atPath: (inboxDir as NSString).appendingPathComponent("\(id).json")) {
+      return .unclaimed
+    }
+    guard let entries = try? fm.contentsOfDirectory(atPath: inboxDir) else {
+      // Cannot enumerate: treat as still queued rather than ending a live
+      // request on a transient read error.
+      return .unclaimed
+    }
+    return entries.contains { $0.hasPrefix("\(id).processing.") } ? .claimed : .absent
   }
 
   // MARK: - Legacy path

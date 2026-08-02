@@ -2,6 +2,16 @@
 
 ## 0.13.5 - Unreleased
 
+### JSON-RPC
+- fix: let non-interactive RPC startup proceed without a Contacts prompt while rejecting ambiguous name targets when Contacts is unavailable (#186, #187, thanks @SebTardif).
+- fix: fail vanished bridge queue requests immediately without treating an unobserved claim as safe to retry, avoiding long stalls and duplicate sends (#199, thanks @omarshahine).
+
+### Reliability
+- fix: bound osascript send, reaction, and helper-process waits with process-tree cleanup so stalled subprocesses cannot hang CLI or RPC work (#197, thanks @SebTardif).
+
+### Native Polls
+- fix: render complete native poll selection snapshots in human-readable history and watch output while preserving the existing poll-vote prefix (#198, thanks @clawSean).
+
 ### Dependencies
 - chore: update PhoneNumberKit, SwiftLint, the Linux Swift toolchain, and pinned GitHub Actions to current releases.
 

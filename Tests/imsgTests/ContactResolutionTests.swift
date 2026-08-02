@@ -26,6 +26,14 @@ func contactNameResolutionPassesThroughUnknownNames() throws {
 }
 
 @Test
+func contactNameResolutionRejectsNamesWhenContactsAreUnavailable() {
+  let resolver = MockContactResolver(contactsUnavailable: true)
+  #expect(throws: (any Error).self) {
+    try ChatTargetResolver.resolveRecipientName("Unknown Person", contacts: resolver)
+  }
+}
+
+@Test
 func contactNameResolutionReturnsUniqueMatch() throws {
   let resolver = MockContactResolver(
     matches: [ContactMatch(name: "John Smith", handle: "+15551234567")]
