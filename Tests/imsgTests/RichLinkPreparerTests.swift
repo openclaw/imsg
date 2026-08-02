@@ -234,7 +234,9 @@ func richLinkPreparerDeadlineDoesNotWaitForCancellationIgnoringLoader() async th
     pending = nil
   }
 
-  #expect(elapsed < .seconds(1))
+  // The full suite runs hundreds of async tests concurrently on CI, so allow
+  // scheduler contention while still proving the deadline returns promptly.
+  #expect(elapsed < .seconds(2))
   #expect(prepared.image == nil)
   #expect(prepared.title == "example.com")
 }

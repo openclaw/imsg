@@ -106,6 +106,9 @@ enum PollCommand {
     storeFactory: @escaping (String) throws -> MessageStore,
     invokeBridge: @escaping (BridgeAction, [String: Any]) async throws -> [String: Any]
   ) async throws {
+    if values.option("comment") != nil, values.flag("noComment") {
+      throw ParsedValuesError.invalidOption("comment")
+    }
     let chat = try resolveChatGUID(values: values, storeFactory: storeFactory)
     guard let question = values.option("question"), !question.isEmpty else {
       throw ParsedValuesError.missingOption("question")

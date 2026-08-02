@@ -1,6 +1,14 @@
 # Changelog
 
-## 0.13.4 - Unreleased
+## 0.13.5 - Unreleased
+
+### JSON-RPC
+- fix: let non-interactive RPC startup proceed without a Contacts prompt while rejecting ambiguous name targets when Contacts is unavailable (#186, #187, thanks @SebTardif).
+
+## 0.13.4 - 2026-07-27
+
+### Highlights
+- Native poll captions can now be suppressed with `--no-comment` when callers already render their own context (thanks @omarshahine).
 
 ### Native Polls
 - feat: let CLI and JSON-RPC callers suppress automatic native poll captions with `--no-comment` or `suppress_comment` when they already render context (#196, thanks @omarshahine).
