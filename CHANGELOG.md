@@ -2,6 +2,9 @@
 
 ## 0.13.5 - Unreleased
 
+### Dependencies
+- chore: update PhoneNumberKit, SwiftLint, the Linux Swift toolchain, and pinned GitHub Actions to current releases.
+
 ## 0.13.4 - 2026-07-27
 
 ### Highlights
