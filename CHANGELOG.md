@@ -2,6 +2,9 @@
 
 ## 0.14.0 - Unreleased
 
+### Documentation
+- docs: rewrite the README as a concise front door to installation, core workflows, and the full documentation site.
+
 ### JSON-RPC
 - feat: add bounded `messages.after` pagination with authoritative database-instance-scoped ROWID cursors, cross-chat catchup, and optional standalone reaction events (#200, #201, thanks @vincentkoc).
 
