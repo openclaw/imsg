@@ -3783,12 +3783,14 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
     NSRange zeroRange = NSMakeRange(0, body.length);
     long long associatedType = selectedMessageGuid.length ? 100 : 0;
 
-    // HARD FAIL: threadOriginatorGuid is required for every send.
-    // No fallback to selectedMessageGuid, no silent unthreaded send.
-    if (!threadOriginatorGuid.length) {
+    // When replying (selectedMessageGuid is set), threadOriginatorGuid is
+    // required so the reply lands inside the original thread. Non-reply sends
+    // (broadcasts, new conversations) don't need it — let them through.
+    if (selectedMessageGuid.length && !threadOriginatorGuid.length) {
         return errorResponse(requestId,
-            @"HARD FAIL: threadOriginatorGuid is required but was not provided. "
-            @"Every iMessage send must be threaded. Ensure OpenClaw passes thread_originator_guid.");
+            @"HARD FAIL: threadOriginatorGuid is required for threaded replies "
+            @"but was not provided. Ensure OpenClaw passes thread_originator_guid "
+            @"when reply_to is set.");
     }
 
     NSString *threadLookupGuid = threadOriginatorGuid;
@@ -5351,11 +5353,12 @@ static NSDictionary *handleSendAttachment(NSInteger requestId, NSDictionary *par
             : nil;
         long long associatedType = selectedMessageGuid.length ? 100 : 0;
 
-        // HARD FAIL: threadOriginatorGuid is required for every attachment send.
-        if (!threadOriginatorGuid.length) {
+        // When replying with an attachment, threadOriginatorGuid is required.
+        // Non-reply attachment sends don't need it.
+        if (selectedMessageGuid.length && !threadOriginatorGuid.length) {
             return errorResponse(requestId,
-                @"HARD FAIL: threadOriginatorGuid is required but was not provided for attachment send. "
-                @"Every iMessage send must be threaded.");
+                @"HARD FAIL: threadOriginatorGuid is required for threaded attachment replies "
+                @"but was not provided.");
         }
 
         NSString *threadLookupGuid = threadOriginatorGuid;
