@@ -4,6 +4,7 @@
 
 ### Documentation
 - docs: rewrite the README as a concise front door to installation, core workflows, and the full documentation site.
+- docs: explain the benign Contacts framework stderr message seen with some CardDAV accounts (#207, thanks @prashantkamani).
 
 ### JSON-RPC
 - feat: add bounded `messages.after` pagination with authoritative database-instance-scoped ROWID cursors, cross-chat catchup, and optional standalone reaction events (#200, #201, thanks @vincentkoc).

@@ -42,6 +42,8 @@ Grant it under **System Settings → Privacy & Security → Contacts**.
 
 If you skip this, JSON output simply leaves the resolved name fields empty. Nothing else changes.
 
+On Macs with CardDAV accounts such as Google or Yahoo, Apple's Contacts framework may periodically write `Could not fetch group … :ABGroup` reconciliation messages to stderr. These messages are benign and do not come from `imsg`; a parent process that captures `imsg rpc --json` stderr should not report this specific framework message as an `imsg` error.
+
 ## Why these grants live in three different places
 
 macOS treats each gate as a separate consent decision:
