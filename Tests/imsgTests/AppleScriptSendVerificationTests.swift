@@ -77,6 +77,64 @@ func sendCommandUsesExistingDirectChatAndVerifiesText() async throws {
 }
 
 @Test
+func newRecipientVerificationIgnoresUnrelatedSameTextSend() throws {
+  let store = try CommandTestDatabase.makeStoreForRPCDirectChat()
+  let now = Date()
+  try store.withConnection { db in
+    try db.run(
+      """
+      INSERT INTO message(ROWID, handle_id, text, date, is_from_me, service)
+      VALUES (90, 1, 'same text', ?, 1, 'iMessage')
+      """,
+      CommandTestDatabase.appleEpoch(now)
+    )
+    try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 90)")
+  }
+  let options = MessageSendOptions(
+    recipient: "+999",
+    text: "same text",
+    service: .imessage,
+    allowSMSFallback: false
+  )
+
+  let unrelated = try SentMessageVerifier.resolveSentMessageCandidate(
+    store: store,
+    options: options,
+    chatID: nil,
+    since: now.addingTimeInterval(-1)
+  )
+  #expect(unrelated == nil)
+
+  try store.withConnection { db in
+    try db.run(
+      """
+      INSERT INTO chat(ROWID, chat_identifier, guid, display_name, service_name)
+      VALUES (2, '+999', 'iMessage;-;+999', 'New Direct Chat', 'iMessage')
+      """
+    )
+    try db.run("INSERT INTO handle(ROWID, id) VALUES (99, '+999')")
+    try db.run("INSERT INTO chat_handle_join(chat_id, handle_id) VALUES (2, 99)")
+    try db.run(
+      """
+      INSERT INTO message(ROWID, handle_id, text, date, is_from_me, service)
+      VALUES (99, 99, 'same text', ?, 1, 'iMessage')
+      """,
+      CommandTestDatabase.appleEpoch(now.addingTimeInterval(1))
+    )
+    try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (2, 99)")
+  }
+
+  let intended = try SentMessageVerifier.resolveSentMessageCandidate(
+    store: store,
+    options: options,
+    chatID: nil,
+    since: now.addingTimeInterval(-1)
+  )
+  #expect(intended?.rowID == 99)
+  #expect(intended?.chatID == 2)
+}
+
+@Test
 func rpcAppleScriptSuccessWithoutTextRowReturnsOutcomeUnknown() async throws {
   let store = try CommandTestDatabase.makeStoreForRPCDirectChat()
   let output = TestRPCOutput()

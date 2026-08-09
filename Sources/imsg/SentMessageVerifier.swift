@@ -21,8 +21,9 @@ enum SentMessageVerifier {
     let deadline = Date().addingTimeInterval(8)
     repeat {
       if Task.isCancelled { return nil }
-      if let message = try store.latestSentMessage(
-        matchingText: options.text,
+      if let message = try resolveSentMessageCandidate(
+        store: store,
+        options: options,
         chatID: chatID,
         since: lowerBound
       ) {
@@ -31,6 +32,33 @@ enum SentMessageVerifier {
       try await Task.sleep(nanoseconds: 100_000_000)
     } while Date() < deadline
     return nil
+  }
+
+  static func resolveSentMessageCandidate(
+    store: MessageStore,
+    options: MessageSendOptions,
+    chatID: Int64?,
+    since date: Date
+  ) throws -> Message? {
+    let verificationChatID: Int64?
+    if let chatID {
+      verificationChatID = chatID
+    } else if !options.recipient.isEmpty {
+      verificationChatID = try ChatTargetResolver.existingDirectChat(
+        store: store,
+        recipient: options.recipient,
+        service: options.service
+      )?.id
+    } else {
+      verificationChatID = nil
+    }
+    guard let verificationChatID else { return nil }
+
+    return try store.latestSentMessage(
+      matchingText: options.text,
+      chatID: verificationChatID,
+      since: date
+    )
   }
 
   static func throwIfMisroutedChatSend(
