@@ -9,7 +9,6 @@
 ### JSON-RPC
 - fix: match CLI poll option resolution and preserve reply part indexes for attachment sends.
 - feat: add bounded `messages.after` pagination with authoritative database-instance-scoped ROWID cursors, cross-chat catchup, and optional standalone reaction events (#200, #201, thanks @vincentkoc).
-- fix: validate JSON-RPC framing, IDs, named params, types, aliases, and chat-target conflicts consistently so malformed requests cannot broaden or redirect operations.
 
 ### Advanced IMCore
 - fix: open trusted sticker staging roots directly so sandboxed Messages can send staged stickers (#211, thanks @clawcrab).
