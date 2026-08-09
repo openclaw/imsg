@@ -50,6 +50,12 @@ Runtime database, bridge, permission, and delivery failures use `-32603`
 (internal error). Parse errors and invalid requests whose ID cannot be
 established return the required `null` response ID.
 
+The server admits at most 128 outstanding requests (running plus queued).
+An identified request beyond that bound receives `-32000` (`Server busy`);
+notifications beyond the bound are discarded without a response. Every stdout
+record remains one complete JSON line even when concurrent reads finish at the
+same time.
+
 ## Lifecycle
 
 - The host process spawns one `imsg rpc` child.
@@ -57,6 +63,31 @@ established return the required `null` response ID.
 - No TCP port. No launch agent. No `imsg` daemon to install.
 
 The pattern intentionally mirrors language servers and the way `imsg`'s parent gateway (Clawdis) supervises subprocesses — a single signal-style child that exits cleanly when stdin closes.
+
+Request execution uses three independent lanes:
+
+- Message, chat, group, poll, contact-sharing, typing, and read-state mutations
+  run through one FIFO worker. A mutation includes validation, staging, bridge
+  work, its response, and any post-send verification before the next mutation
+  starts.
+- Read-only history, chat, statistics, cursor, scheduled-message, send-status,
+  handle-check, and contact-sharing inspection requests run with up to four in
+  flight. Their responses may complete out of input order.
+- Parse errors, unknown methods, and watch subscribe/unsubscribe control are
+  independent of both work lanes, so unsubscribe does not wait for a send or a
+  saturated read lane.
+
+Closing stdin stops admission, cancels and awaits every watch subscription,
+then drains all already accepted requests and flushes stdout before `run()`
+returns. Parent-task cancellation cancels subscriptions plus read/control work,
+but never cancels an already-started mutation or claims it did not execute.
+Accepted mutations, including those not yet started, conservatively drain in
+FIFO order because this protocol has no delivery disposition that can safely
+describe an ambiguous cancellation.
+
+A `watch.subscribe` request already queued when EOF closes subscription
+admission receives `-32000` (`Server busy`) with `server is shutting down`; it
+never receives a successful subscription ID for a stream that cannot activate.
 
 ## Methods
 
@@ -198,11 +229,14 @@ Params:
 - `attachments` (bool, default `false`)
 - `include_reactions` (bool, default `false`)
 - `debounce_ms` (int, default `500`)
+- `buffer_limit` (int, default `256`, range `1...4096`) — maximum eligible
+  messages waiting for this subscriber; `bufferLimit` is the explicit
+  camelCase compatibility alias.
 
 Result:
 
 ```json
-{ "subscription": 1 }
+{ "subscription": 1, "buffer_limit": 256 }
 ```
 
 Notifications (one per emitted message):
@@ -222,6 +256,36 @@ The RPC default debounce (`500ms`) is intentionally higher than the CLI default 
 
 Like the CLI watch, RPC watch backs filesystem events with a low-frequency poll so a missed event or a rotated SQLite sidecar doesn't leave the subscription silent.
 
+The server permits at most 64 pending or active subscriptions. A 65th
+identified subscribe request receives `-32000` (`Server busy`). The subscribe
+response is written before that subscription can emit its first notification.
+`watch.unsubscribe` cancels and awaits the subscription before returning
+`{"ok":true}`, so no notification for that subscription can follow the
+unsubscribe response.
+
+Participant and date filters run before buffer admission. If the bounded
+buffer fills, already accepted messages drain first and the subscription then
+ends with one terminal notification:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "watch.overflow",
+  "params": {
+    "subscription": 1,
+    "resume_after_rowid": 9000,
+    "reason": "buffer_limit_exceeded",
+    "terminal": true
+  }
+}
+```
+
+No generic `error` notification accompanies this overflow. Resume with
+`messages.after` using `since_rowid` equal to `resume_after_rowid`, or create a
+new watch subscription with that cursor. The cursor is at or before the first
+dropped eligible message: duplicate replay is possible, but an eligible
+message is never skipped.
+
 If a live all-chat row appears before Messages has joined it to a chat, RPC watch retries it briefly and then drops it fail-closed instead of emitting an empty `chat_id=0` direct-message-shaped payload.
 
 ### `watch.unsubscribe`
@@ -235,6 +299,8 @@ Result:
 ```json
 { "ok": true }
 ```
+
+Cancellation is silent and does not produce a generic subscription error.
 
 ### `send`
 

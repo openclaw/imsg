@@ -33,6 +33,11 @@ imsg watch --chat-id 42 --since-rowid 9000 --json
 
 If you don't pass `--since-rowid`, watch starts at the newest message at the moment of launch. Messages written before then are not replayed; use [`history`](history.md) for that.
 
+The watcher keeps a bounded queue of 256 eligible messages per stream. Date and
+participant filters are applied before queue admission, while the physical scan
+cursor still advances across filtered rows. This prevents excluded traffic from
+consuming a subscriber's capacity.
+
 ## Reactions
 
 By default, tapback events are excluded so the stream stays focused on actual messages. Opt in with `--reactions`:
@@ -90,6 +95,21 @@ could look like a direct message.
 Lower the debounce if you need lower latency and can tolerate occasional duplicate emissions during database churn. Raise it if downstream consumers can't keep up.
 
 `--debounce` accepts Go-style durations: `100ms`, `1s`, `2s500ms`.
+
+## RPC backpressure and overflow
+
+JSON-RPC subscribers can set `buffer_limit` from 1 through 4096 (default 256).
+When the first eligible message cannot enter a full buffer, the watcher stops
+its file sources and polling. Messages already accepted into the buffer drain,
+then RPC emits a terminal `watch.overflow` notification containing
+`resume_after_rowid` and reason `buffer_limit_exceeded`.
+
+Resume with that value as the exclusive `since_rowid` for `messages.after` or a
+new `watch.subscribe`. The cursor is deliberately conservative: replaying a
+message is possible, but skipping the first dropped eligible message is not.
+Cancellation and explicit unsubscribe do not report overflow or a generic
+error. Once `watch.unsubscribe` responds, no later notification for that
+subscription can appear.
 
 ## How it knows when to read
 

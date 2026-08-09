@@ -37,6 +37,29 @@ func rpcMalformedWatchParamsDoNotAllocateSubscription() async throws {
 }
 
 @Test
+func rpcWatchBufferLimitIsStrictAndBounded() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  let server = RPCServer(store: store, verbose: false, output: output)
+  let invalidRequests = [
+    #"{"jsonrpc":"2.0","id":"zero","method":"watch.subscribe","params":{"buffer_limit":0}}"#,
+    #"{"jsonrpc":"2.0","id":"large","method":"watch.subscribe","params":{"buffer_limit":4097}}"#,
+    #"{"jsonrpc":"2.0","id":"bool","method":"watch.subscribe","params":{"buffer_limit":true}}"#,
+    #"{"jsonrpc":"2.0","id":"string","method":"watch.subscribe","params":{"buffer_limit":"2"}}"#,
+    #"{"jsonrpc":"2.0","id":"aliases","method":"watch.subscribe","params":{"buffer_limit":2,"bufferLimit":2}}"#,
+  ]
+
+  for request in invalidRequests {
+    await server.handleLineForTesting(request)
+  }
+
+  #expect(output.responses.isEmpty)
+  #expect(output.errors.count == invalidRequests.count)
+  #expect(output.errors.allSatisfy { rpcErrorCode($0) == -32602 })
+  #expect(await server.subscriptions.count == 0)
+}
+
+@Test
 func rpcRejectsUnknownKeysAcrossHandlerFamilies() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()

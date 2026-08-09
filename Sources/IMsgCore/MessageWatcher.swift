@@ -8,6 +8,11 @@ public struct MessageWatcherConfiguration: Sendable, Equatable {
   public var debounceInterval: TimeInterval
   public var fallbackPollInterval: TimeInterval?
   public var batchLimit: Int
+  public var bufferLimit: Int {
+    didSet {
+      bufferLimit = Self.clampBufferLimit(bufferLimit)
+    }
+  }
   /// When true, reaction events (tapback add/remove) are included in the stream
   public var includeReactions: Bool
 
@@ -15,33 +20,58 @@ public struct MessageWatcherConfiguration: Sendable, Equatable {
     debounceInterval: TimeInterval = 0.25,
     fallbackPollInterval: TimeInterval? = 5,
     batchLimit: Int = 100,
+    bufferLimit: Int = 256,
     includeReactions: Bool = false
   ) {
     self.debounceInterval = debounceInterval
     self.fallbackPollInterval = fallbackPollInterval
     self.batchLimit = batchLimit
+    self.bufferLimit = Self.clampBufferLimit(bufferLimit)
     self.includeReactions = includeReactions
+  }
+
+  private static func clampBufferLimit(_ value: Int) -> Int {
+    min(max(value, 1), 4096)
+  }
+}
+
+public struct MessageWatcherOverflowError: Error, Sendable, Equatable {
+  public let resumeAfterRowID: Int64
+
+  public init(resumeAfterRowID: Int64) {
+    self.resumeAfterRowID = resumeAfterRowID
   }
 }
 
 public final class MessageWatcher: @unchecked Sendable {
   private let store: MessageStore
+  private let didPoll: @Sendable () -> Void
 
   public init(store: MessageStore) {
     self.store = store
+    self.didPoll = {}
+  }
+
+  init(store: MessageStore, didPoll: @escaping @Sendable () -> Void) {
+    self.store = store
+    self.didPoll = didPoll
   }
 
   public func stream(
     chatID: Int64? = nil,
     sinceRowID: Int64? = nil,
-    configuration: MessageWatcherConfiguration = MessageWatcherConfiguration()
+    configuration: MessageWatcherConfiguration = MessageWatcherConfiguration(),
+    filter: MessageFilter = MessageFilter()
   ) -> AsyncThrowingStream<Message, Error> {
-    AsyncThrowingStream { continuation in
+    AsyncThrowingStream(bufferingPolicy: .bufferingOldest(configuration.bufferLimit)) {
+      continuation in
       let state = WatchState(
         store: store,
         chatID: chatID,
         sinceRowID: sinceRowID,
         configuration: configuration,
+        filter: filter,
+        didPoll: didPoll,
         continuation: continuation
       )
       state.start()
@@ -64,10 +94,13 @@ private final class WatchState: @unchecked Sendable {
   private let store: MessageStore
   private let chatID: Int64?
   private let configuration: MessageWatcherConfiguration
+  private let filter: MessageFilter
+  private let didPoll: @Sendable () -> Void
   private let continuation: AsyncThrowingStream<Message, Error>.Continuation
   private let queue = DispatchQueue(label: "imsg.watch", qos: .userInitiated)
 
   private var cursor: Int64
+  private var resumeAfterRowID: Int64
   #if os(macOS)
     private struct FileWatchIdentity: Equatable {
       let device: UInt64
@@ -91,13 +124,18 @@ private final class WatchState: @unchecked Sendable {
     chatID: Int64?,
     sinceRowID: Int64?,
     configuration: MessageWatcherConfiguration,
+    filter: MessageFilter,
+    didPoll: @escaping @Sendable () -> Void,
     continuation: AsyncThrowingStream<Message, Error>.Continuation
   ) {
     self.store = store
     self.chatID = chatID
     self.configuration = configuration
+    self.filter = filter
+    self.didPoll = didPoll
     self.continuation = continuation
     self.cursor = sinceRowID ?? 0
+    self.resumeAfterRowID = sinceRowID ?? 0
   }
 
   func start() {
@@ -105,6 +143,7 @@ private final class WatchState: @unchecked Sendable {
       do {
         if self.cursor == 0 {
           self.cursor = try self.store.maxRowID()
+          self.resumeAfterRowID = self.cursor
         }
         #if os(macOS)
           self.refreshFileSources()
@@ -113,22 +152,14 @@ private final class WatchState: @unchecked Sendable {
         self.poll()
         self.scheduleFallbackPoll()
       } catch {
-        self.continuation.finish(throwing: error)
+        self.finish(throwing: error)
       }
     }
   }
 
   func stop() {
     queue.async {
-      self.stopped = true
-      #if os(macOS)
-        for registration in self.fileSources.values {
-          registration.source.cancel()
-        }
-        self.fileSources.removeAll()
-        self.directorySource?.cancel()
-        self.directorySource = nil
-      #endif
+      self.stopSources()
     }
   }
 
@@ -235,6 +266,7 @@ private final class WatchState: @unchecked Sendable {
 
   private func poll() {
     if stopped { return }
+    defer { didPoll() }
     do {
       let batch = try store.messagesAfterBatch(
         afterRowID: cursor,
@@ -251,7 +283,26 @@ private final class WatchState: @unchecked Sendable {
         case .skip:
           continue
         }
-        continuation.yield(message)
+        guard filter.allows(message) else {
+          if message.rowID > cursor {
+            cursor = message.rowID
+          }
+          continue
+        }
+        switch continuation.yield(message) {
+        case .enqueued:
+          // This is the last cursor guaranteed to reach the consumer if a later yield overflows.
+          resumeAfterRowID = message.rowID
+        case .dropped:
+          finish(throwing: MessageWatcherOverflowError(resumeAfterRowID: resumeAfterRowID))
+          return
+        case .terminated:
+          stopSources()
+          return
+        @unknown default:
+          stopSources()
+          return
+        }
         if message.rowID > cursor {
           cursor = message.rowID
         }
@@ -260,8 +311,26 @@ private final class WatchState: @unchecked Sendable {
         cursor = batch.maxScannedRowID
       }
     } catch {
-      continuation.finish(throwing: error)
+      finish(throwing: error)
     }
+  }
+
+  private func finish(throwing error: Error) {
+    stopSources()
+    continuation.finish(throwing: error)
+  }
+
+  private func stopSources() {
+    guard !stopped else { return }
+    stopped = true
+    #if os(macOS)
+      for registration in fileSources.values {
+        registration.source.cancel()
+      }
+      fileSources.removeAll()
+      directorySource?.cancel()
+      directorySource = nil
+    #endif
   }
 
   private func yieldDecision(for message: Message) -> MessageYieldDecision {

@@ -20,7 +20,16 @@ protocol RPCOutput: Sendable {
   func sendResponse(id: Any, result: Any)
   func sendError(id: Any?, error: RPCError)
   func sendNotification(method: String, params: Any)
+  func flush()
 }
+
+typealias RPCWatchStreamProvider = (
+  _ watcher: MessageWatcher,
+  _ chatID: Int64?,
+  _ sinceRowID: Int64?,
+  _ configuration: MessageWatcherConfiguration,
+  _ filter: MessageFilter
+) -> AsyncThrowingStream<Message, Error>
 
 /// Methods exposed by `imsg rpc` over JSON-RPC. Advertised to clients via
 /// `imsg status --json` (`rpc_methods` field) so capability-aware consumers can
@@ -67,12 +76,14 @@ let kSupportedRPCMethods: [String] = [
   "handles.check",
 ]
 
-final class RPCServer {
+// MessageStore, stdout, and watcher state are serial-queue-owned; caches and subscriptions are
+// actors. Remaining production dependencies are immutable or internally synchronized.
+final class RPCServer: @unchecked Sendable {
   let store: MessageStore
   let watcher: MessageWatcher
   let output: RPCOutput
   let cache: ChatCache
-  let subscriptions = SubscriptionStore()
+  let subscriptions: SubscriptionStore
   let verbose: Bool
   let sendMessage: (MessageSendOptions) throws -> Void
   let resolveSentMessage: SentMessageResolver
@@ -84,6 +95,7 @@ final class RPCServer {
   let startTyping: (String) throws -> Void
   let stopTyping: (String) throws -> Void
   let contactResolver: any ContactResolving
+  let watchStreamProvider: RPCWatchStreamProvider
 
   init(
     store: MessageStore,
@@ -108,11 +120,21 @@ final class RPCServer {
     stopTyping: @escaping (String) throws -> Void = {
       try TypingIndicator.stopTyping(chatIdentifier: $0)
     },
-    contactResolver: any ContactResolving = NoOpContactResolver()
+    contactResolver: any ContactResolving = NoOpContactResolver(),
+    watchStreamProvider: @escaping RPCWatchStreamProvider = {
+      watcher, chatID, sinceRowID, configuration, filter in
+      watcher.stream(
+        chatID: chatID,
+        sinceRowID: sinceRowID,
+        configuration: configuration,
+        filter: filter
+      )
+    }
   ) {
     self.store = store
     self.watcher = MessageWatcher(store: store)
     self.cache = ChatCache(store: store)
+    self.subscriptions = SubscriptionStore(limit: 64)
     self.verbose = verbose
     self.output = output
     self.sendMessage = sendMessage
@@ -125,15 +147,55 @@ final class RPCServer {
     self.startTyping = startTyping
     self.stopTyping = stopTyping
     self.contactResolver = contactResolver
+    self.watchStreamProvider = watchStreamProvider
   }
 
   func run() async throws {
-    while let line = readLine() {
-      let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-      if trimmed.isEmpty { continue }
-      await handleLine(trimmed)
+    try await run(lines: RPCLineSource.standardInput())
+  }
+
+  func run(lines: RPCLineStream) async throws {
+    let scheduler = RPCScheduler(server: self)
+    try await withTaskCancellationHandler {
+      try await run(lines: lines, scheduler: scheduler)
+    } onCancel: {
+      Task.detached { [subscriptions] in
+        await scheduler.stopAdmissionAndCancelReadControl()
+        await subscriptions.cancelAll()
+      }
     }
+  }
+
+  private func run(lines: RPCLineStream, scheduler: RPCScheduler) async throws {
+    var sourceError: Error?
+    do {
+      for try await line in lines {
+        try Task.checkCancellation()
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { continue }
+        await scheduler.submit(trimmed)
+      }
+    } catch {
+      sourceError = error
+    }
+
+    let cancelled = Task.isCancelled || sourceError is CancellationError
+    if cancelled || sourceError != nil {
+      await scheduler.stopAdmissionAndCancelReadControl()
+    } else {
+      await scheduler.stopAdmission()
+    }
+    // EOF and cancellation stop live producers before accepted request drain.
     await subscriptions.cancelAll()
+    await scheduler.waitUntilDrained()
+    output.flush()
+
+    if let sourceError {
+      throw sourceError
+    }
+    if cancelled || Task.isCancelled {
+      throw CancellationError()
+    }
   }
 
   func handleLineForTesting(_ line: String) async {
@@ -145,7 +207,7 @@ final class RPCServer {
     output.sendResponse(id: id, result: result)
   }
 
-  private func handleLine(_ line: String) async {
+  func handleLine(_ line: String) async {
     let request: RPCRequest
     switch RPCRequestParser.parse(line) {
     case .success(let parsed):
@@ -233,6 +295,8 @@ final class RPCServer {
           output.sendError(id: id, error: RPCError.methodNotFound(method))
         }
       }
+    } catch is CancellationError {
+      return
     } catch let err as RPCError {
       if !request.isNotification {
         output.sendError(id: id, error: err)
@@ -247,6 +311,22 @@ final class RPCServer {
     } catch {
       if !request.isNotification {
         output.sendError(id: id, error: RPCError.internalError(error.localizedDescription))
+      }
+    }
+  }
+
+  func rejectBusy(_ line: String) {
+    switch RPCRequestParser.parse(line) {
+    case .success(let request):
+      if !request.isNotification {
+        output.sendError(
+          id: request.id,
+          error: RPCError.serverBusy("outstanding request limit exceeded")
+        )
+      }
+    case .failure(let failure):
+      if failure.shouldRespond {
+        output.sendError(id: failure.id, error: failure.error)
       }
     }
   }

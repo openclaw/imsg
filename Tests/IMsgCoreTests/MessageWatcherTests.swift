@@ -113,6 +113,28 @@ private enum WatcherTestDatabase {
   }
 }
 
+private actor WatcherPollSignal {
+  private var didPoll = false
+  private var waiters: [CheckedContinuation<Void, Never>] = []
+
+  func signal() {
+    guard !didPoll else { return }
+    didPoll = true
+    let currentWaiters = waiters
+    waiters.removeAll()
+    for waiter in currentWaiters {
+      waiter.resume()
+    }
+  }
+
+  func wait() async {
+    if didPoll { return }
+    await withCheckedContinuation { continuation in
+      waiters.append(continuation)
+    }
+  }
+}
+
 private func nextMessage(
   from stream: AsyncThrowingStream<Message, Error>,
   timeoutNanoseconds: UInt64 = 2_000_000_000
@@ -131,6 +153,99 @@ private func nextMessage(
     group.cancelAll()
     return message
   }
+}
+
+private func drainWatcher(
+  _ stream: AsyncThrowingStream<Message, Error>
+) async -> (messages: [Message], error: Error?) {
+  var messages: [Message] = []
+  do {
+    for try await message in stream {
+      messages.append(message)
+    }
+    return (messages, nil)
+  } catch {
+    return (messages, error)
+  }
+}
+
+@Test
+func messageWatcherConfigurationDefaultsToBoundedBuffer() {
+  #expect(MessageWatcherConfiguration().bufferLimit == 256)
+}
+
+@Test
+func messageWatcherConfigurationClampsInvalidDirectBufferLimits() {
+  var configuration = MessageWatcherConfiguration(bufferLimit: 0)
+  #expect(configuration.bufferLimit == 1)
+
+  configuration.bufferLimit = -10
+  #expect(configuration.bufferLimit == 1)
+
+  configuration.bufferLimit = 4097
+  #expect(configuration.bufferLimit == 4096)
+}
+
+@Test(.timeLimit(.minutes(1)))
+func messageWatcherDrainsBufferedMessagesBeforeOverflow() async throws {
+  let fixture = try WatcherTestDatabase.makeMutableStore()
+  try fixture.insertMessage(1, "one")
+  try fixture.insertMessage(2, "two")
+  try fixture.insertMessage(3, "three")
+  let pollSignal = WatcherPollSignal()
+  let watcher = MessageWatcher(store: fixture.store) {
+    Task { await pollSignal.signal() }
+  }
+  let stream = watcher.stream(
+    sinceRowID: -1,
+    configuration: MessageWatcherConfiguration(
+      debounceInterval: 0,
+      fallbackPollInterval: nil,
+      batchLimit: 10,
+      bufferLimit: 2
+    )
+  )
+
+  await pollSignal.wait()
+  let result = await drainWatcher(stream)
+  #expect(result.messages.map(\.rowID) == [1, 2])
+  let overflow = try #require(result.error as? MessageWatcherOverflowError)
+  #expect(overflow.resumeAfterRowID == 2)
+  #expect(overflow.resumeAfterRowID < 3)
+}
+
+@Test(.timeLimit(.minutes(1)))
+func messageWatcherFiltersBeforeBufferAdmission() async throws {
+  let fixture = try WatcherTestDatabase.makeMutableStore()
+  try fixture.insertMessage(1, "filtered")
+  try fixture.insertMessage(2, "two")
+  try fixture.insertMessage(3, "three")
+  try fixture.insertMessage(4, "four")
+  try fixture.store.withConnection { db in
+    try db.run("INSERT INTO handle(ROWID, id) VALUES (2, '+999')")
+    try db.run("UPDATE message SET handle_id = 2 WHERE ROWID = 1")
+  }
+  let pollSignal = WatcherPollSignal()
+  let watcher = MessageWatcher(store: fixture.store) {
+    Task { await pollSignal.signal() }
+  }
+  let stream = watcher.stream(
+    sinceRowID: -1,
+    configuration: MessageWatcherConfiguration(
+      debounceInterval: 0,
+      fallbackPollInterval: nil,
+      batchLimit: 10,
+      bufferLimit: 2
+    ),
+    filter: MessageFilter(participants: ["+123"])
+  )
+
+  await pollSignal.wait()
+  let result = await drainWatcher(stream)
+  #expect(result.messages.map(\.rowID) == [2, 3])
+  let overflow = try #require(result.error as? MessageWatcherOverflowError)
+  #expect(overflow.resumeAfterRowID == 3)
+  #expect(overflow.resumeAfterRowID < 4)
 }
 
 @Test

@@ -21,4 +21,8 @@ enum StdoutWriter {
     guard let line = String(data: data, encoding: .utf8), !line.isEmpty else { return }
     writeLine(line)
   }
+
+  static func flush() {
+    queue.sync {}
+  }
 }

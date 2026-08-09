@@ -62,9 +62,16 @@ enum WatchCommand {
         MessageWatcher,
         Int64?,
         Int64?,
-        MessageWatcherConfiguration
-      ) -> AsyncThrowingStream<Message, Error> = { watcher, chatID, sinceRowID, config in
-        watcher.stream(chatID: chatID, sinceRowID: sinceRowID, configuration: config)
+        MessageWatcherConfiguration,
+        MessageFilter
+      ) -> AsyncThrowingStream<Message, Error> = {
+        watcher, chatID, sinceRowID, config, filter in
+        watcher.stream(
+          chatID: chatID,
+          sinceRowID: sinceRowID,
+          configuration: config,
+          filter: filter
+        )
       }
   ) async throws {
     let dbPath = values.option("db") ?? MessageStore.defaultPath
@@ -119,11 +126,8 @@ enum WatchCommand {
       }
     }
 
-    let stream = streamProvider(watcher, chatID, sinceRowID, config)
+    let stream = streamProvider(watcher, chatID, sinceRowID, config, filter)
     for try await message in stream {
-      if !filter.allows(message) {
-        continue
-      }
       if runtime.jsonOutput {
         let payload = try await buildMessagePayload(
           store: store,

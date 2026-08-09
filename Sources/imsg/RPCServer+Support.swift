@@ -19,6 +19,10 @@ final class RPCWriter: RPCOutput, Sendable {
     send(["jsonrpc": "2.0", "method": method, "params": params])
   }
 
+  func flush() {
+    StdoutWriter.flush()
+  }
+
   private func send(_ object: Any) {
     do {
       let data = try JSONSerialization.data(withJSONObject: object, options: [])
@@ -58,6 +62,10 @@ struct RPCError: Error {
     RPCError(code: -32603, message: "Internal error", data: message)
   }
 
+  static func serverBusy(_ message: String) -> RPCError {
+    RPCError(code: -32000, message: "Server busy", data: message)
+  }
+
   func asDictionary() -> [String: Any] {
     var dict: [String: Any] = [
       "code": code,
@@ -71,28 +79,162 @@ struct RPCError: Error {
 }
 
 actor SubscriptionStore {
-  private var nextID = 1
-  private var tasks: [Int: Task<Void, Never>] = [:]
+  struct Reservation: Sendable, Equatable {
+    let id: Int
+    fileprivate let generation: UInt64
+  }
 
-  func allocateID() -> Int {
+  enum ReservationResult: Sendable, Equatable {
+    case reserved(Reservation)
+    case closed
+    case limitReached
+  }
+
+  enum ActivationResult: Sendable, Equatable {
+    case activated
+    case closed
+    case removed
+  }
+
+  private enum Entry {
+    case pending(generation: UInt64)
+    case active(generation: UInt64, task: Task<Void, Never>)
+  }
+
+  private let limit: Int
+  private var nextID = 1
+  private var nextGeneration: UInt64 = 1
+  private var entries: [Int: Entry] = [:]
+  private var accepting = true
+  private var emptyWaiters: [CheckedContinuation<Void, Never>] = []
+  private var closedWaiters: [CheckedContinuation<Void, Never>] = []
+
+  init(limit: Int) {
+    self.limit = limit
+  }
+
+  func reserve() -> ReservationResult {
+    guard accepting else { return .closed }
+    guard entries.count < limit else { return .limitReached }
     let id = nextID
     nextID += 1
-    return id
+    let generation = nextGeneration
+    nextGeneration += 1
+    let reservation = Reservation(id: id, generation: generation)
+    entries[id] = .pending(generation: generation)
+    return .reserved(reservation)
   }
 
-  func insert(_ task: Task<Void, Never>, for id: Int) {
-    tasks[id] = task
+  func activate(_ task: Task<Void, Never>, reservation: Reservation) -> ActivationResult {
+    guard accepting else { return .closed }
+    guard
+      case .pending(let generation) = entries[reservation.id],
+      generation == reservation.generation
+    else {
+      return .removed
+    }
+    entries[reservation.id] = .active(generation: generation, task: task)
+    return .activated
   }
 
-  func remove(_ id: Int) -> Task<Void, Never>? {
-    tasks.removeValue(forKey: id)
+  func removeForCancellation(_ id: Int) -> Task<Void, Never>? {
+    guard let entry = entries.removeValue(forKey: id) else { return nil }
+    resumeEmptyWaitersIfNeeded()
+    if case .active(_, let task) = entry {
+      return task
+    }
+    return nil
   }
 
-  func cancelAll() {
-    for task in tasks.values {
+  func complete(_ reservation: Reservation) {
+    guard let entry = entries[reservation.id] else { return }
+    let generation: UInt64
+    switch entry {
+    case .pending(let value), .active(let value, _):
+      generation = value
+    }
+    if generation == reservation.generation {
+      entries.removeValue(forKey: reservation.id)
+      resumeEmptyWaitersIfNeeded()
+    }
+  }
+
+  func cancelAll() async {
+    accepting = false
+    resumeClosedWaiters()
+    let tasks = entries.values.compactMap { entry -> Task<Void, Never>? in
+      guard case .active(_, let task) = entry else { return nil }
+      return task
+    }
+    entries.removeAll()
+    resumeEmptyWaitersIfNeeded()
+    for task in tasks {
       task.cancel()
     }
-    tasks.removeAll()
+    for task in tasks {
+      await task.value
+    }
+  }
+
+  var count: Int {
+    entries.count
+  }
+
+  var nextIDForTesting: Int {
+    nextID
+  }
+
+  func waitUntilEmpty() async {
+    guard !entries.isEmpty else { return }
+    await withCheckedContinuation { continuation in
+      emptyWaiters.append(continuation)
+    }
+  }
+
+  func waitUntilClosed() async {
+    guard accepting else { return }
+    await withCheckedContinuation { continuation in
+      closedWaiters.append(continuation)
+    }
+  }
+
+  private func resumeEmptyWaitersIfNeeded() {
+    guard entries.isEmpty else { return }
+    let waiters = emptyWaiters
+    emptyWaiters.removeAll()
+    for waiter in waiters {
+      waiter.resume()
+    }
+  }
+
+  private func resumeClosedWaiters() {
+    let waiters = closedWaiters
+    closedWaiters.removeAll()
+    for waiter in waiters {
+      waiter.resume()
+    }
+  }
+}
+
+actor SubscriptionStartGate {
+  private var result: Bool?
+  private var waiters: [CheckedContinuation<Bool, Never>] = []
+
+  func wait() async -> Bool {
+    if let result { return result }
+    return await withCheckedContinuation { continuation in
+      waiters.append(continuation)
+    }
+  }
+
+  func open(_ result: Bool) {
+    guard self.result == nil else { return }
+    self.result = result
+    let currentWaiters = waiters
+    waiters.removeAll()
+    for waiter in currentWaiters {
+      waiter.resume(returning: result)
+    }
   }
 }
 

@@ -12,9 +12,10 @@ private func singleMessageStreamProvider(
   MessageWatcher,
   Int64?,
   Int64?,
-  MessageWatcherConfiguration
+  MessageWatcherConfiguration,
+  MessageFilter
 ) -> AsyncThrowingStream<Message, Error> {
-  return { _, _, _, _ in
+  return { _, _, _, _, _ in
     AsyncThrowingStream { continuation in
       continuation.yield(message)
       continuation.finish()
