@@ -187,16 +187,35 @@ extension RPCServer {
     guard let file = stringParam(params["file"] ?? params["path"]), !file.isEmpty else {
       throw RPCError.invalidParams("file is required")
     }
+    let reply = stringParam(
+      params["reply_to"] ?? params["replyTo"] ?? params["reply_to_guid"] ?? params["message_guid"]
+    )
+    let partIndex: Int?
+    if let rawPartIndex = params["part_index"] ?? params["partIndex"] {
+      guard
+        let parsedPartIndex = strictBridgeMessageInteger(rawPartIndex), parsedPartIndex >= 0
+      else {
+        throw RPCError.invalidParams("part_index must be a non-negative integer")
+      }
+      guard reply?.isEmpty == false else {
+        throw RPCError.invalidParams("part_index requires reply_to")
+      }
+      partIndex = parsedPartIndex
+    } else {
+      partIndex = nil
+    }
+
     var bridgeParams: [String: Any] = [
       "chatGuid": chatGUID,
       "filePath": try stageAttachment((file as NSString).expandingTildeInPath),
       "isAudioMessage": boolParam(params["audio"] ?? params["is_audio"] ?? params["as_voice"])
         ?? false,
     ]
-    if let reply = stringParam(
-      params["reply_to"] ?? params["replyTo"] ?? params["reply_to_guid"] ?? params["message_guid"]
-    ), !reply.isEmpty {
+    if let reply, !reply.isEmpty {
       bridgeParams["selectedMessageGuid"] = reply
+    }
+    if let partIndex {
+      bridgeParams["partIndex"] = partIndex
     }
     let data = try await invokeBridge(action: .sendAttachment, params: bridgeParams)
     var result: [String: Any] = ["ok": true]
@@ -289,22 +308,60 @@ extension RPCServer {
     else {
       throw RPCError.invalidParams("poll_guid is required")
     }
-    guard
-      let optionID = stringParam(
-        params["option_id"] ?? params["optionId"] ?? params["optionIdentifier"]),
-      !optionID.isEmpty
-    else {
-      throw RPCError.invalidParams("option_id is required")
+    let directOptionID = stringParam(
+      params["option_id"] ?? params["optionId"] ?? params["optionIdentifier"]
+    )?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let rawOptionIndex = params["option_index"] ?? params["optionIndex"]
+    let optionText = stringParam(params["option"])?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let selectors = [
+      directOptionID?.isEmpty == false,
+      rawOptionIndex != nil,
+      optionText?.isEmpty == false,
+    ]
+    guard selectors.contains(true) else {
+      throw RPCError.invalidParams("one of option_id, option_index, or option is required")
     }
-    // Validate the poll exists and the option belongs to it (mirrors the CLI),
-    // so an API caller can't cast a vote against an arbitrary non-poll GUID.
+    guard selectors.filter({ $0 }).count == 1 else {
+      throw RPCError.invalidParams("choose exactly one of option_id, option_index, or option")
+    }
+
+    // Resolve every selector against decoded options, so callers cannot vote
+    // against an arbitrary non-poll GUID or supply caller-trusted option text.
     let pollOptions = try store.pollOptions(guid: pollGUID)
     guard !pollOptions.isEmpty else {
       throw RPCError.invalidParams("poll \(pollGUID) not found or not decodable")
     }
-    guard let matchedOption = pollOptions.first(where: { $0.id == optionID }) else {
-      throw RPCError.invalidParams("option_id \(optionID) is not an option of poll \(pollGUID)")
+
+    let matchedOption: MessagePollOption
+    if let directOptionID, !directOptionID.isEmpty {
+      guard let option = pollOptions.first(where: { $0.id == directOptionID }) else {
+        throw RPCError.invalidParams(
+          "option_id \(directOptionID) is not an option of poll \(pollGUID)")
+      }
+      matchedOption = option
+    } else if let rawOptionIndex {
+      guard let optionIndex = strictBridgeMessageInteger(rawOptionIndex) else {
+        throw RPCError.invalidParams("option_index must be an integer")
+      }
+      guard optionIndex >= 1, optionIndex <= pollOptions.count else {
+        throw RPCError.invalidParams(
+          "option_index \(optionIndex) out of range (1...\(pollOptions.count))")
+      }
+      matchedOption = pollOptions[optionIndex - 1]
+    } else {
+      let text = optionText ?? ""
+      guard
+        let option = pollOptions.first(where: {
+          $0.text.caseInsensitiveCompare(text) == .orderedSame
+        })
+      else {
+        let available = pollOptions.map(\.text).joined(separator: ", ")
+        throw RPCError.invalidParams("option \"\(text)\" (available: \(available))")
+      }
+      matchedOption = option
     }
+    let optionID = matchedOption.id
     var bridgeParams: [String: Any] = [
       "chatGuid": chatGUID,
       // Native votes associate to the bare poll GUID (strip a leading p:<part>/).
@@ -445,6 +502,14 @@ extension RPCServer {
     _ = try await invokeBridge(action: action, params: bridgeParams)
     respond(id: id, result: ["ok": true])
   }
+}
+
+private func strictBridgeMessageInteger(_ value: Any) -> Int? {
+  guard let number = value as? NSNumber else { return nil }
+  guard CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+  let type = String(cString: number.objCType)
+  guard type != "f", type != "d", type != "D" else { return nil }
+  return Int(number.stringValue)
 }
 
 func rpcPollOptionsParam(_ params: [String: Any]) throws -> [String] {

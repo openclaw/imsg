@@ -7,6 +7,7 @@
 - docs: explain the benign Contacts framework stderr message seen with some CardDAV accounts (#207, thanks @prashantkamani).
 
 ### JSON-RPC
+- fix: match CLI poll option resolution and preserve reply part indexes for attachment sends.
 - feat: add bounded `messages.after` pagination with authoritative database-instance-scoped ROWID cursors, cross-chat catchup, and optional standalone reaction events (#200, #201, thanks @vincentkoc).
 
 ### Advanced IMCore

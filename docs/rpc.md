@@ -252,7 +252,7 @@ Missing rows return `pending` with `status_fields: null`.
 These methods require the IMCore bridge and target an existing chat with `chat_id`, `chat_identifier`, or `chat_guid`.
 
 - `send.rich` sends text with optional `effect`, `subject`, `reply_to`, `part_index`, `dd_scan`, and `text_formatting`. Alternatively, pass only one chat target plus an HTTP(S) `url` to send an Apple URL-preview balloon. URL mode is iMessage-only and rejects text/send modifiers; metadata or image lookup failure falls back to a metadata-only card, never a plain-message send.
-- `send.attachment` sends `file` or `path`, with optional `audio` / `is_audio` / `as_voice`.
+- `send.attachment` sends `file` or `path`, with optional `audio` / `is_audio` / `as_voice`. Pass `reply_to` (or `replyTo`, `reply_to_guid`, or `message_guid`) to reply to an existing message. An optional non-negative integer `part_index` / `partIndex` selects that message's part and is invalid without a reply target.
 - `tapback` sends or removes a reaction. Params: `message_id` or `message_guid`, plus `reaction` / `kind` / `emoji`, optional `remove`.
 - `message.edit` edits `message_id` / `message_guid` with `text`.
 - `message.unsend`, `message.delete`, and `message.notifyAnyways` target `message_id` / `message_guid`.
@@ -324,11 +324,12 @@ Response:
 ```
 
 `poll.vote` casts a native vote after validating the poll and option against local history.
-`polls.unvote` removes a selection with the same poll/option parameters:
+`poll.unvote`, `polls.unvote`, and `messages.poll.unvote` remove a selection with the same poll/option parameters. Pass exactly one option selector: `option_id` (stable option ID), `option_index` (one-based option position), or `option` (case-insensitive option text). The camelCase aliases `optionId` / `optionIdentifier` and `optionIndex` are also accepted. Every selector is resolved against the decoded poll options; `option_text` remains response metadata and is not trusted as a resolved input selector.
 
 ```json
 {"jsonrpc":"2.0","id":"vote","method":"poll.vote","params":{"chat_id":42,"poll_guid":"POLL-GUID","option_id":"OPTION-UUID"}}
-{"jsonrpc":"2.0","id":"unvote","method":"polls.unvote","params":{"chat_id":42,"poll_guid":"POLL-GUID","option_id":"OPTION-UUID"}}
+{"jsonrpc":"2.0","id":"vote-index","method":"poll.vote","params":{"chat_id":42,"poll_guid":"POLL-GUID","option_index":2}}
+{"jsonrpc":"2.0","id":"unvote","method":"polls.unvote","params":{"chat_id":42,"poll_guid":"POLL-GUID","option":"Sushi"}}
 ```
 
 `messages.poll.send` is accepted as an alias for `poll.send`. The caption echo is deliberately best-effort: if the poll is created but the follow-up caption send fails, the RPC still returns the poll result to avoid retrying and creating a duplicate poll.

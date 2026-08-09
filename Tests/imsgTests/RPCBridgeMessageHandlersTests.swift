@@ -410,13 +410,14 @@ func rpcSendAttachmentStagesFileBeforeBridgeSend() async throws {
 
   let line =
     #"{"jsonrpc":"2.0","id":"attachment","method":"send.attachment","params":{"#
-    + #""chat_id":1,"file":"~/Desktop/file.png","audio":true,"reply_to":"parent-guid"}}"#
+    + #""chat_id":1,"file":"~/Desktop/file.png","audio":true,"reply_to":"parent-guid","part_index":2}}"#
   await server.handleLineForTesting(line)
 
   #expect(stagedInput?.hasSuffix("/Desktop/file.png") == true)
   #expect(capturedParams["filePath"] as? String == "/tmp/staged-file.png")
   #expect(capturedParams["isAudioMessage"] as? Bool == true)
   #expect(capturedParams["selectedMessageGuid"] as? String == "parent-guid")
+  #expect(capturedParams["partIndex"] as? Int == 2)
   let result = output.responses.first?["result"] as? [String: Any]
   #expect(result?["message_id"] as? String == "attachment-guid")
 }
