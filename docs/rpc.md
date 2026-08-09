@@ -8,11 +8,47 @@ description: "Long-running JSON-RPC 2.0 over stdio for chats, history, watch, an
 ## Transport
 
 - One JSON object per line on stdin (request) and stdout (response/notification).
-- JSON-RPC 2.0 framing: `jsonrpc`, `id`, `method`, `params`.
-- Notifications omit `id`.
+- JSON-RPC 2.0 framing: `jsonrpc` must be exactly `"2.0"`; `id` may be a string,
+  number, or `null`; and `method` must be a non-empty string.
+- `params` may be omitted or provided as a named JSON object. Arrays, scalars,
+  and `null` are invalid params.
+- Notifications omit `id`. They never receive a response, including when the
+  method is unknown or its params are invalid.
 - Stderr is reserved for human-readable diagnostics.
 - Startup failures such as missing Full Disk Access are returned as JSON-RPC
   errors on the first request instead of human-readable stdout banners.
+
+Each method accepts only the keys documented for it. Unknown keys are rejected
+with `-32602` instead of being ignored. Values are type-strict: strings are not
+parsed as numbers or booleans, numbers are not converted to strings or
+booleans, booleans are not accepted as integers, and string arrays must contain
+only strings. This is deliberate fail-closed behavior for long-running agents.
+
+Supported compatibility aliases are explicit and method-specific:
+
+- `chats.list`: `unreadOnly` for `unread_only`.
+- `watch.subscribe`: `debounceMs` for `debounce_ms`.
+- `send`: `textFormatting` or `formatting` for `text_formatting`; `replyTo`,
+  `reply_to_guid`, or `message_guid` for `reply_to`.
+- `send.rich`: `message` for `text`; camelCase forms for `part_index`,
+  `dd_scan`, `effect_id`, and `text_formatting`; `effect` for `effect_id`; and
+  the same reply aliases as `send`.
+- `send.attachment`: `path` for `file`; `is_audio` or `as_voice` for `audio`;
+  `partIndex` for `part_index`; and the same reply aliases as `send`.
+- Poll methods accept their documented `messages.poll.*`/`polls.unvote` method
+  aliases plus camelCase parameter forms such as `creatorHandle`, `pollGuid`,
+  `optionId`, `optionIdentifier`, `optionIndex`, and `suppressComment`.
+- Message mutations accept the existing `messageId`, `messageGuid`, and
+  `message` target aliases, plus their documented text and part-index aliases.
+
+Other spellings, including `chatId`, are not aliases and are rejected.
+
+Protocol/framing failures use the JSON-RPC codes `-32700` (parse error),
+`-32600` (invalid request), and `-32601` (unknown method). Caller-caused value,
+selector, date, or supported-operation errors use `-32602` (invalid params).
+Runtime database, bridge, permission, and delivery failures use `-32603`
+(internal error). Parse errors and invalid requests whose ID cannot be
+established return the required `null` response ID.
 
 ## Lifecycle
 
@@ -36,6 +72,18 @@ Result:
 ```json
 { "chats": [Chat] }
 ```
+
+### `chats.create`
+
+Params:
+
+- `addresses` (non-empty array of phone/email strings, required)
+- `service` (`iMessage`, optional) — matched case-insensitively and normalized
+  to `iMessage`; other services are rejected
+- `name` (string, optional)
+- `text` (string, optional initial message)
+
+This bridge-backed method is iMessage-only, matching `imsg chat-create`.
 
 ### `messages.stats`
 
@@ -200,8 +248,11 @@ Params (direct send):
 
 Params (chat target):
 
-- `chat_id` *or* `chat_identifier` *or* `chat_guid` — exactly one. `chat_id` is preferred.
+- exactly one of `chat_id`, `chat_identifier`, or `chat_guid`.
 - `text` / `file` as above.
+
+`to` and chat selectors are mutually exclusive. Direct sends require `to` and
+no chat selector; chat-target sends require exactly one selector and no `to`.
 
 Result:
 
@@ -249,7 +300,9 @@ Missing rows return `pending` with `status_fields: null`.
 
 ### Bridge Message Actions
 
-These methods require the IMCore bridge and target an existing chat with `chat_id`, `chat_identifier`, or `chat_guid`.
+These methods require the IMCore bridge and target an existing chat with
+exactly one of `chat_id`, `chat_identifier`, or `chat_guid`. Supplying multiple
+selectors is invalid and no bridge operation is attempted.
 
 - `send.rich` sends text with optional `effect`, `subject`, `reply_to`, `part_index`, `dd_scan`, and `text_formatting`. Alternatively, pass only one chat target plus an HTTP(S) `url` to send an Apple URL-preview balloon. URL mode is iMessage-only and rejects text/send modifiers; metadata or image lookup failure falls back to a metadata-only card, never a plain-message send.
 - `send.attachment` sends `file` or `path`, with optional `audio` / `is_audio` / `as_voice`. Pass `reply_to` (or `replyTo`, `reply_to_guid`, or `message_guid`) to reply to an existing message. An optional non-negative integer `part_index` / `partIndex` selects that message's part and is invalid without a reply target.

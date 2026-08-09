@@ -151,7 +151,9 @@ final class RPCServer {
     case .success(let parsed):
       request = parsed
     case .failure(let failure):
-      output.sendError(id: failure.id, error: failure.error)
+      if failure.shouldRespond {
+        output.sendError(id: failure.id, error: failure.error)
+      }
       return
     }
     let method = request.method
@@ -163,16 +165,10 @@ final class RPCServer {
       case "chats.list":
         try await handleChatsList(id: id, params: params)
       case "messages.stats":
-        guard request.paramsAreNamed else {
-          throw RPCError.invalidParams("messages.stats params must be an object")
-        }
         try await handleMessagesStats(id: id, params: params)
       case "messages.history":
         try await handleMessagesHistory(id: id, params: params)
       case "messages.after":
-        guard request.paramsAreNamed else {
-          throw RPCError.invalidParams("messages.after params must be an object")
-        }
         try await handleMessagesAfter(id: id, params: params)
       case "watch.subscribe":
         try await handleWatchSubscribe(id: id, params: params)
@@ -185,14 +181,8 @@ final class RPCServer {
       case "send.attachment":
         try await handleSendAttachment(params: params, id: id)
       case "send.sticker":
-        guard request.paramsAreNamed else {
-          throw RPCError.invalidParams("send.sticker params must be an object")
-        }
         try await handleSendSticker(params: params, id: id)
       case "messages.scheduled":
-        guard request.paramsAreNamed else {
-          throw RPCError.invalidParams("messages.scheduled params must be an object")
-        }
         try await handleMessagesScheduled(params: params, id: id)
       case "poll.send", "messages.poll.send":
         try await handlePollSend(params: params, id: id)
@@ -233,34 +223,31 @@ final class RPCServer {
       case "group.leave":
         try await handleGroupLeave(id: id, params: params)
       case "contacts.shouldShareContact":
-        guard request.paramsAreNamed else {
-          throw RPCError.invalidParams("contacts.shouldShareContact params must be an object")
-        }
         try await handleNamePhotoStatus(params: params, id: id)
       case "contacts.shareContactCard":
-        guard request.paramsAreNamed else {
-          throw RPCError.invalidParams("contacts.shareContactCard params must be an object")
-        }
         try await handleNamePhotoShare(params: params, id: id)
       case "handles.check":
         try await handleHandlesCheck(params: params, id: id)
       default:
-        output.sendError(id: id, error: RPCError.methodNotFound(method))
+        if !request.isNotification {
+          output.sendError(id: id, error: RPCError.methodNotFound(method))
+        }
       }
     } catch let err as RPCError {
-      output.sendError(id: id, error: err)
+      if !request.isNotification {
+        output.sendError(id: id, error: err)
+      }
     } catch let err as IMsgError {
-      switch err {
-      case .invalidService, .invalidChatTarget:
-        output.sendError(
-          id: id,
-          error: RPCError.invalidParams(err.errorDescription ?? "invalid params")
-        )
-      default:
+      guard !request.isNotification else { return }
+      if err.isCallerCausedRPCError {
+        output.sendError(id: id, error: RPCError.invalidParams(err.localizedDescription))
+      } else {
         output.sendError(id: id, error: RPCError.internalError(err.localizedDescription))
       }
     } catch {
-      output.sendError(id: id, error: RPCError.internalError(error.localizedDescription))
+      if !request.isNotification {
+        output.sendError(id: id, error: RPCError.internalError(error.localizedDescription))
+      }
     }
   }
 
@@ -276,5 +263,17 @@ final class RPCServer {
       chatID: chatID,
       sentAt: sentAt
     )
+  }
+}
+
+extension IMsgError {
+  fileprivate var isCallerCausedRPCError: Bool {
+    switch self {
+    case .invalidISODate, .invalidService, .unsupportedService, .invalidChatTarget,
+      .invalidReaction, .unsupportedReaction, .chatNotFound:
+      return true
+    case .permissionDenied, .appleScriptFailure, .typingIndicatorFailed:
+      return false
+    }
   }
 }

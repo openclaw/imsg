@@ -106,12 +106,12 @@ func rpcChatsCreateForwardsBridgeIdentityFields() async throws {
 
   let line =
     #"{"jsonrpc":"2.0","id":"create","method":"chats.create","params":{"#
-    + #""addresses":["+123","+456"],"service":"auto","name":"Group","text":"hello"}}"#
+    + #""addresses":[" +123 ","+456"],"service":"ImEsSaGe","name":"Group","text":"hello"}}"#
   await server.handleLineForTesting(line)
 
   #expect(capturedAction == .createChat)
   #expect(capturedParams["addresses"] as? [String] == ["+123", "+456"])
-  #expect(capturedParams["service"] as? String == "auto")
+  #expect(capturedParams["service"] as? String == "iMessage")
   #expect(capturedParams["displayName"] as? String == "Group")
   #expect(capturedParams["message"] as? String == "hello")
   let result = output.responses.first?["result"] as? [String: Any]

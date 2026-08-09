@@ -323,19 +323,36 @@ func messagePayloadOmitsEmptyReplyToGuid() throws {
 
 @Test
 func watchDebounceIntervalDefaultsToHalfSecond() throws {
-  #expect(try watchDebounceIntervalParam([:]) == 0.5)
+  let params = try RPCParameters(
+    [:], method: "watch.subscribe", supportedKeys: ["debounce_ms", "debounceMs"])
+  #expect(try watchDebounceIntervalParam(params) == 0.5)
 }
 
 @Test
 func watchDebounceIntervalAcceptsSnakeAndCamelCaseMilliseconds() throws {
-  #expect(try watchDebounceIntervalParam(["debounce_ms": 750]) == 0.75)
-  #expect(try watchDebounceIntervalParam(["debounceMs": "125"]) == 0.125)
+  let snake = try RPCParameters(
+    ["debounce_ms": 750],
+    method: "watch.subscribe",
+    supportedKeys: ["debounce_ms", "debounceMs"]
+  )
+  let camel = try RPCParameters(
+    ["debounceMs": 125],
+    method: "watch.subscribe",
+    supportedKeys: ["debounce_ms", "debounceMs"]
+  )
+  #expect(try watchDebounceIntervalParam(snake) == 0.75)
+  #expect(try watchDebounceIntervalParam(camel) == 0.125)
 }
 
 @Test
 func watchDebounceIntervalRejectsInvalidValues() {
   do {
-    _ = try watchDebounceIntervalParam(["debounce_ms": -1])
+    let params = try RPCParameters(
+      ["debounce_ms": -1],
+      method: "watch.subscribe",
+      supportedKeys: ["debounce_ms", "debounceMs"]
+    )
+    _ = try watchDebounceIntervalParam(params)
     #expect(Bool(false))
   } catch let error as RPCError {
     #expect(error.code == -32602)
@@ -346,12 +363,21 @@ func watchDebounceIntervalRejectsInvalidValues() {
 }
 
 @Test
-func paramParsingHelpers() {
-  #expect(stringParam(123 as NSNumber) == "123")
-  #expect(intParam("42") == 42)
-  #expect(int64Param(NSNumber(value: 9_223_372_036_854_775_000 as Int64)) != nil)
-  #expect(boolParam("true") == true)
-  #expect(boolParam("false") == false)
-  #expect(stringArrayParam("a,b , c").count == 3)
-  #expect(stringArrayParam(["x", "y"]).count == 2)
+func rpcParametersPreserveStrictJSONTypes() throws {
+  let params = try RPCParameters(
+    [
+      "string": "value",
+      "integer": 42,
+      "int64": NSNumber(value: 9_223_372_036_854_775_000 as Int64),
+      "boolean": true,
+      "strings": ["x", "y"],
+    ],
+    method: "test",
+    supportedKeys: ["string", "integer", "int64", "boolean", "strings"]
+  )
+  #expect(try params.string("string") == "value")
+  #expect(try params.integer("integer") == 42)
+  #expect(try params.int64("int64") != nil)
+  #expect(try params.boolean("boolean") == true)
+  #expect(try params.stringArray("strings") == ["x", "y"])
 }

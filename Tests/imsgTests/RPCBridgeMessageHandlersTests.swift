@@ -113,8 +113,7 @@ func rpcPollVoteValidatesAndResolvesOption() async throws {
 
   let request =
     #"{"jsonrpc":"2.0","id":"vote","method":"poll.vote","params":{"chat_id":1,"#
-    + #""poll_guid":"p:0/poll-guid-6","option_id":"choice-no","option_text":"spoofed","#
-    + #""voter_handle":"spoofed"}}"#
+    + #""poll_guid":"p:0/poll-guid-6","option_id":"choice-no"}}"#
   await server.handleLineForTesting(request)
 
   #expect(capturedAction == .sendPollVote)

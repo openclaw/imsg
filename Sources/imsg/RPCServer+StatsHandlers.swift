@@ -1,17 +1,17 @@
-import CoreFoundation
 import Foundation
 import IMsgCore
 
 extension RPCServer {
   func handleMessagesStats(id: Any?, params: [String: Any]) async throws {
-    let supportedParams: Set<String> = ["chat_id", "include_media", "time_zone"]
-    if let unknown = params.keys.filter({ !supportedParams.contains($0) }).sorted().first {
-      throw RPCError.invalidParams("unknown messages.stats param: \(unknown)")
-    }
+    let params = try RPCParameters(
+      params,
+      method: "messages.stats",
+      supportedKeys: ["chat_id", "include_media", "time_zone"]
+    )
 
     let chatID: Int64?
-    if let value = params["chat_id"] {
-      guard let parsed = strictStatsInt64(value) else {
+    if params.contains("chat_id") {
+      guard let parsed = try params.int64("chat_id") else {
         throw RPCError.invalidParams("chat_id must be an integer")
       }
       chatID = parsed
@@ -20,24 +20,10 @@ extension RPCServer {
     }
 
     let includeMedia: Bool
-    if let value = params["include_media"] {
-      guard let parsed = strictStatsBool(value) else {
-        throw RPCError.invalidParams("include_media must be a boolean")
-      }
-      includeMedia = parsed
-    } else {
-      includeMedia = false
-    }
+    includeMedia = try params.boolean("include_media") ?? false
 
     let timeZone: String?
-    if let value = params["time_zone"] {
-      guard let parsed = value as? String else {
-        throw RPCError.invalidParams("time_zone must be a string")
-      }
-      timeZone = parsed
-    } else {
-      timeZone = nil
-    }
+    timeZone = try params.string("time_zone")
 
     do {
       let stats = try store.messageStats(
@@ -50,18 +36,6 @@ extension RPCServer {
       throw RPCError.invalidParams(error.description)
     }
   }
-}
-
-private func strictStatsInt64(_ value: Any) -> Int64? {
-  guard let number = value as? NSNumber else { return nil }
-  guard CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
-  return Int64(number.stringValue)
-}
-
-private func strictStatsBool(_ value: Any) -> Bool? {
-  guard let number = value as? NSNumber else { return nil }
-  guard CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
-  return number.boolValue
 }
 
 private func dictionary<T: Encodable>(from value: T) throws -> [String: Any] {

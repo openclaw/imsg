@@ -17,8 +17,13 @@ private enum RPCSendTransport: String {
 
 extension RPCServer {
   func handleChatsList(id: Any?, params: [String: Any]) async throws {
-    let limit = intParam(params["limit"]) ?? 20
-    let unreadOnly = boolParam(params["unread_only"] ?? params["unreadOnly"]) ?? false
+    let params = try RPCParameters(
+      params,
+      method: "chats.list",
+      supportedKeys: ["limit", "unread_only", "unreadOnly"]
+    )
+    let limit = try params.integer("limit") ?? 20
+    let unreadOnly = try params.boolean("unread_only", aliases: ["unreadOnly"]) ?? false
     guard !unreadOnly || store.supportsUnreadState else {
       throw RPCError.invalidParams(
         "unread_only is unavailable because this Messages database has no read-state column")
@@ -55,16 +60,27 @@ extension RPCServer {
   }
 
   func handleMessagesHistory(id: Any?, params: [String: Any]) async throws {
-    guard let chatID = int64Param(params["chat_id"]) else {
+    let params = try RPCParameters(
+      params,
+      method: "messages.history",
+      supportedKeys: [
+        "chat_id", "limit", "participants", "start", "end", "attachments",
+        "convert_attachments",
+      ]
+    )
+    guard let chatID = try params.int64("chat_id") else {
       throw RPCError.invalidParams("chat_id is required")
     }
-    let limit = intParam(params["limit"]) ?? 50
-    let participants = stringArrayParam(params["participants"])
-    let startISO = stringParam(params["start"])
-    let endISO = stringParam(params["end"])
-    let includeAttachments = boolParam(params["attachments"]) ?? false
+    guard chatID > 0 else {
+      throw RPCError.invalidParams("chat_id must be a positive integer")
+    }
+    let limit = try params.integer("limit") ?? 50
+    let participants = try params.stringArray("participants") ?? []
+    let startISO = try params.string("start")
+    let endISO = try params.string("end")
+    let includeAttachments = try params.boolean("attachments") ?? false
     let attachmentOptions = AttachmentQueryOptions(
-      convertUnsupported: boolParam(params["convert_attachments"]) ?? false)
+      convertUnsupported: try params.boolean("convert_attachments") ?? false)
     let filter = try MessageFilter.fromISO(
       participants: participants,
       startISO: startISO,
@@ -93,15 +109,26 @@ extension RPCServer {
   }
 
   func handleWatchSubscribe(id: Any?, params: [String: Any]) async throws {
-    let chatID = int64Param(params["chat_id"])
-    let sinceRowID = int64Param(params["since_rowid"])
-    let participants = stringArrayParam(params["participants"])
-    let startISO = stringParam(params["start"])
-    let endISO = stringParam(params["end"])
-    let includeAttachments = boolParam(params["attachments"]) ?? false
+    let params = try RPCParameters(
+      params,
+      method: "watch.subscribe",
+      supportedKeys: [
+        "chat_id", "since_rowid", "participants", "start", "end", "attachments",
+        "convert_attachments", "include_reactions", "debounce_ms", "debounceMs",
+      ]
+    )
+    let chatID = try params.int64("chat_id")
+    if let chatID, chatID <= 0 {
+      throw RPCError.invalidParams("chat_id must be a positive integer")
+    }
+    let sinceRowID = try params.int64("since_rowid")
+    let participants = try params.stringArray("participants") ?? []
+    let startISO = try params.string("start")
+    let endISO = try params.string("end")
+    let includeAttachments = try params.boolean("attachments") ?? false
     let attachmentOptions = AttachmentQueryOptions(
-      convertUnsupported: boolParam(params["convert_attachments"]) ?? false)
-    let includeReactions = boolParam(params["include_reactions"]) ?? false
+      convertUnsupported: try params.boolean("convert_attachments") ?? false)
+    let includeReactions = try params.boolean("include_reactions") ?? false
     let debounceInterval = try watchDebounceIntervalParam(params)
     let filter = try MessageFilter.fromISO(
       participants: participants,
@@ -163,8 +190,13 @@ extension RPCServer {
   }
 
   func handleWatchUnsubscribe(id: Any?, params: [String: Any]) async throws {
-    guard let subID = intParam(params["subscription"]) else {
+    let params = try RPCParameters(
+      params, method: "watch.unsubscribe", supportedKeys: ["subscription"])
+    guard let subID = try params.integer("subscription") else {
       throw RPCError.invalidParams("subscription is required")
+    }
+    guard subID > 0 else {
+      throw RPCError.invalidParams("subscription must be a positive integer")
     }
     if let task = await subscriptions.remove(subID) {
       task.cancel()
@@ -173,35 +205,34 @@ extension RPCServer {
   }
 
   func handleSend(params: [String: Any], id: Any?) async throws {
-    let text = stringParam(params["text"]) ?? ""
-    let file = stringParam(params["file"]) ?? ""
+    let supportedKeys = RPCParameterKeys.combining(
+      RPCParameterKeys.chatTarget,
+      RPCParameterKeys.replyTarget,
+      [
+        "to", "text", "file", "text_formatting", "textFormatting", "formatting", "service",
+        "transport", "region",
+      ]
+    )
+    let params = try RPCParameters(params, method: "send", supportedKeys: supportedKeys)
+    let text = try params.string("text") ?? ""
+    let file = try params.string("file") ?? ""
     // Optional attributed-text formatting (bold/italic/…, macOS 15+). Only the
     // IMCore bridge transport can render it; AppleScript sends stay plain.
     // Accept `text_formatting`/`textFormatting` (matching `send-rich`) plus the
     // bare `formatting` key that the OpenClaw gateway emits on its `send` calls.
-    let textFormatting =
-      params["text_formatting"] ?? params["textFormatting"] ?? params["formatting"]
-    let serviceRaw = stringParam(params["service"]) ?? "auto"
+    let textFormatting = try params.objectArray(
+      "text_formatting", aliases: ["textFormatting", "formatting"])
+    let serviceRaw = try params.string("service") ?? "auto"
     guard let service = MessageService(rawValue: serviceRaw) else {
       throw RPCError.invalidParams("invalid service")
     }
-    let transport = try RPCSendTransport.parse(stringParam(params["transport"]))
-    let region = stringParam(params["region"]) ?? "US"
-    let selectedMessageGuid = stringParam(
-      params["reply_to"] ?? params["replyTo"] ?? params["reply_to_guid"] ?? params["message_guid"]
+    let transport = try RPCSendTransport.parse(try params.string("transport"))
+    let region = try params.string("region") ?? "US"
+    let selectedMessageGuid = try params.string(
+      "reply_to", aliases: ["replyTo", "reply_to_guid", "message_guid"]
     ).flatMap { $0.isEmpty ? nil : $0 }
-    let rawRecipient = stringParam(params["to"]) ?? ""
-    let rawInput = ChatTargetInput(
-      recipient: rawRecipient,
-      chatID: int64Param(params["chat_id"]),
-      chatIdentifier: stringParam(params["chat_identifier"]) ?? "",
-      chatGUID: stringParam(params["chat_guid"]) ?? ""
-    )
-    try ChatTargetResolver.validateRecipientRequirements(
-      input: rawInput,
-      mixedTargetError: RPCError.invalidParams("use to or chat_*; not both"),
-      missingRecipientError: RPCError.invalidParams("to is required for direct sends")
-    )
+    let rawInput = try params.recipientOrChatTarget()
+    let rawRecipient = rawInput.recipient
     let recipient: String
     do {
       recipient =
@@ -368,70 +399,16 @@ extension RPCServer {
     respond(id: id, result: result)
   }
 
-  func handleHandlesCheck(params: [String: Any], id: Any?) async throws {
-    let address = stringParam(params["address"]) ?? ""
-    guard !address.isEmpty else {
-      throw RPCError.invalidParams("address is required")
-    }
-
-    let aliasType =
-      (stringParam(params["alias_type"]) ?? (address.contains("@") ? "email" : "phone"))
-      .lowercased()
-    guard aliasType == "phone" || aliasType == "email" else {
-      throw RPCError.invalidParams("alias_type must be phone or email")
-    }
-
-    let service = stringParam(params["service"]) ?? "iMessage"
-    guard service.caseInsensitiveCompare("iMessage") == .orderedSame else {
-      throw RPCError.invalidParams("handles.check only supports service iMessage")
-    }
-
-    if !isBridgeReady() {
-      throw RPCError.internalError(
-        "handles.check requires bridge transport (Messages.app must be injected)"
-      )
-    }
-
-    let data = try await bridgeInvoker(
-      .checkImessageAvailability,
-      [
-        "address": address,
-        "aliasType": aliasType,
-      ])
-
-    var result: [String: Any] = ["ok": true]
-    result["address"] = data["address"] as? String ?? address
-    result["alias_type"] = data["alias_type"] as? String ?? aliasType
-    if let destination = data["destination"] as? String, !destination.isEmpty {
-      result["destination"] = destination
-    }
-    if let idStatus = intParam(data["id_status"]) {
-      result["id_status"] = idStatus
-    }
-    if let available = boolParam(data["available"]) {
-      result["available"] = available
-    }
-    result["service"] = "iMessage"
-    respond(id: id, result: result)
-  }
-
   /// `typing` — start/stop the local-user typing indicator. Mirrors the
   /// `imsg typing` CLI surface (which is purely a wrapper over `TypingIndicator`)
   /// so callers that talk to `imsg rpc` over JSON-RPC have parity with the CLI.
   func handleTyping(params: [String: Any], id: Any?) async throws {
-    let isTyping = boolParam(params["typing"]) ?? true
-    let serviceRaw = stringParam(params["service"]) ?? "imessage"
-    let input = ChatTargetInput(
-      recipient: stringParam(params["to"]) ?? "",
-      chatID: int64Param(params["chat_id"]),
-      chatIdentifier: stringParam(params["chat_identifier"]) ?? "",
-      chatGUID: stringParam(params["chat_guid"]) ?? ""
-    )
-    try ChatTargetResolver.validateRecipientRequirements(
-      input: input,
-      mixedTargetError: RPCError.invalidParams("use to or chat_*; not both"),
-      missingRecipientError: RPCError.invalidParams("to is required")
-    )
+    let supportedKeys = RPCParameterKeys.combining(
+      RPCParameterKeys.chatTarget, ["to", "typing", "service"])
+    let params = try RPCParameters(params, method: "typing", supportedKeys: supportedKeys)
+    let isTyping = try params.boolean("typing") ?? true
+    let serviceRaw = try params.string("service") ?? "imessage"
+    let input = try params.recipientOrChatTarget()
     let resolvedTarget = try await ChatTargetResolver.resolveChatTarget(
       input: input,
       lookupChat: { chatID in try await cache.info(chatID: chatID) },
@@ -475,17 +452,9 @@ extension RPCServer {
   /// `read` — mark all messages in a chat as read on this device, which also
   /// fires a read-receipt to the sender if the chat has receipts enabled.
   func handleRead(params: [String: Any], id: Any?) async throws {
-    let input = ChatTargetInput(
-      recipient: stringParam(params["to"]) ?? "",
-      chatID: int64Param(params["chat_id"]),
-      chatIdentifier: stringParam(params["chat_identifier"]) ?? "",
-      chatGUID: stringParam(params["chat_guid"]) ?? ""
-    )
-    try ChatTargetResolver.validateRecipientRequirements(
-      input: input,
-      mixedTargetError: RPCError.invalidParams("use to or chat_*; not both"),
-      missingRecipientError: RPCError.invalidParams("to is required")
-    )
+    let supportedKeys = RPCParameterKeys.combining(RPCParameterKeys.chatTarget, ["to"])
+    let params = try RPCParameters(params, method: "read", supportedKeys: supportedKeys)
+    let input = try params.recipientOrChatTarget()
     let resolvedTarget = try await ChatTargetResolver.resolveChatTarget(
       input: input,
       lookupChat: { chatID in try await cache.info(chatID: chatID) },

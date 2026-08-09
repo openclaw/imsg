@@ -22,9 +22,13 @@ final class RPCStartupErrorServer {
   func handleLineForTesting(_ line: String) async {
     switch RPCRequestParser.parse(line) {
     case .success(let request):
-      output.sendError(id: request.id, error: RPCError.internalError(errorMessage))
+      if !request.isNotification {
+        output.sendError(id: request.id, error: RPCError.internalError(errorMessage))
+      }
     case .failure(let failure):
-      output.sendError(id: failure.id, error: failure.error)
+      if failure.shouldRespond {
+        output.sendError(id: failure.id, error: failure.error)
+      }
     }
   }
 }

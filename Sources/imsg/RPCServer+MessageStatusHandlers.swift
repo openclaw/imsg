@@ -3,7 +3,10 @@ import IMsgCore
 
 extension RPCServer {
   func handleMessageSendStatus(params: [String: Any], id: Any?) async throws {
-    let guid = (stringParam(params["guid"]) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    let params = try RPCParameters(
+      params, method: "message.send_status", supportedKeys: ["guid"])
+    let guid = (try params.string("guid") ?? "").trimmingCharacters(
+      in: .whitespacesAndNewlines)
     guard !guid.isEmpty else {
       throw RPCError.invalidParams("guid is required")
     }

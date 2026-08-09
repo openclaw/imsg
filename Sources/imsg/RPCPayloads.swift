@@ -98,58 +98,14 @@ func isGroupHandle(identifier: String, guid: String) -> Bool {
   return guid.contains(";+;") || identifier.contains(";+;")
 }
 
-func stringParam(_ value: Any?) -> String? {
-  if let value = value as? String { return value }
-  if let number = value as? NSNumber { return number.stringValue }
-  return nil
-}
-
-func intParam(_ value: Any?) -> Int? {
-  if let value = value as? Int { return value }
-  if let value = value as? NSNumber { return value.intValue }
-  if let value = value as? String { return Int(value) }
-  return nil
-}
-
-func int64Param(_ value: Any?) -> Int64? {
-  if let value = value as? Int64 { return value }
-  if let value = value as? Int { return Int64(value) }
-  if let value = value as? NSNumber { return value.int64Value }
-  if let value = value as? String { return Int64(value) }
-  return nil
-}
-
-func boolParam(_ value: Any?) -> Bool? {
-  if let value = value as? Bool { return value }
-  if let value = value as? NSNumber { return value.boolValue }
-  if let value = value as? String {
-    if value == "true" { return true }
-    if value == "false" { return false }
-  }
-  return nil
-}
-
-func stringArrayParam(_ value: Any?) -> [String] {
-  if let list = value as? [String] { return list }
-  if let list = value as? [Any] {
-    return list.compactMap { stringParam($0) }
-  }
-  if let str = value as? String {
-    return
-      str
-      .split(separator: ",")
-      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-      .filter { !$0.isEmpty }
-  }
-  return []
-}
-
 let defaultRPCWatchDebounceInterval: TimeInterval = 0.5
 
-func watchDebounceIntervalParam(_ params: [String: Any]) throws -> TimeInterval {
-  let raw = params["debounce_ms"] ?? params["debounceMs"]
-  guard let raw else { return defaultRPCWatchDebounceInterval }
-  guard let milliseconds = intParam(raw), milliseconds >= 0 else {
+func watchDebounceIntervalParam(_ params: RPCParameters) throws -> TimeInterval {
+  guard let milliseconds = try params.integer("debounce_ms", aliases: ["debounceMs"])
+  else {
+    return defaultRPCWatchDebounceInterval
+  }
+  guard milliseconds >= 0 else {
     throw RPCError.invalidParams("debounce_ms must be a non-negative integer")
   }
   return Double(milliseconds) / 1000
