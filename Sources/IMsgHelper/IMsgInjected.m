@@ -4250,18 +4250,18 @@ static int openUserOwnedDirectorySecurely(NSString *directoryPath,
         return -1;
     }
 
-    NSString *home = [actualUserHomeDirectory() stringByStandardizingPath];
-    if (!home.length || ![root hasPrefix:[home stringByAppendingString:@"/"]]) return -1;
-    int directoryFD = open(home.fileSystemRepresentation,
+    int directoryFD = open(root.fileSystemRepresentation,
                            O_RDONLY | O_CLOEXEC | O_DIRECTORY | O_NOFOLLOW);
     if (directoryFD < 0) return -1;
-    struct stat homeInfo = {0};
-    if (fstat(directoryFD, &homeInfo) != 0 || !S_ISDIR(homeInfo.st_mode)
-        || homeInfo.st_uid != getuid() || (homeInfo.st_mode & S_IWOTH)) {
+    struct stat rootInfo = {0};
+    if (fstat(directoryFD, &rootInfo) != 0 || !S_ISDIR(rootInfo.st_mode)
+        || rootInfo.st_uid != getuid() || (rootInfo.st_mode & S_IWOTH)) {
         close(directoryFD);
         return -1;
     }
-    NSString *relative = [directory substringFromIndex:home.length + 1];
+    if ([directory isEqualToString:root]) return directoryFD;
+
+    NSString *relative = [directory substringFromIndex:root.length + 1];
     NSArray<NSString *> *components = relative.pathComponents;
     for (NSString *component in components) {
         if ([component isEqualToString:@"."] || [component isEqualToString:@".."]

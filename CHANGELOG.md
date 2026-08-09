@@ -9,6 +9,9 @@
 ### JSON-RPC
 - feat: add bounded `messages.after` pagination with authoritative database-instance-scoped ROWID cursors, cross-chat catchup, and optional standalone reaction events (#200, #201, thanks @vincentkoc).
 
+### Advanced IMCore
+- fix: open trusted sticker staging roots directly so sandboxed Messages can send staged stickers (#211, thanks @clawcrab).
+
 ### Dependencies
 - chore: update the documentation workflow to `actions/setup-node` 7.0.0.
 
