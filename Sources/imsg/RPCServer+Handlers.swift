@@ -180,7 +180,8 @@ extension RPCServer {
     let directChatInfo =
       input.hasChatTarget
       ? nil
-      : try resolveDirectChatInfo(
+      : try ChatTargetResolver.existingDirectChat(
+        store: store,
         recipient: input.recipient,
         service: effectiveService,
         includeAnyForSMS: service == .auto && effectiveService == .sms
@@ -199,8 +200,8 @@ extension RPCServer {
       attachmentPath: file,
       service: effectiveService,
       region: region,
-      chatIdentifier: resolvedTarget.chatIdentifier,
-      chatGUID: resolvedTarget.chatGUID,
+      chatIdentifier: input.hasChatTarget ? resolvedTarget.chatIdentifier : "",
+      chatGUID: input.hasChatTarget ? resolvedTarget.chatGUID : (directChatInfo?.guid ?? ""),
       allowSMSFallback: allowSMSFallback
     )
     let sentAt = Date()
@@ -231,14 +232,16 @@ extension RPCServer {
         }
         respond(id: id, result: result)
         return
+      } catch let failure as DeliveryFailure {
+        if transport == .bridge || selectedMessageGuid != nil || !failure.retrySafe {
+          throw failure
+        }
       } catch let err as RPCError {
         if transport == .bridge || selectedMessageGuid != nil {
           throw err
         }
       } catch {
-        if transport == .bridge || selectedMessageGuid != nil {
-          throw RPCError.internalError(String(describing: error))
-        }
+        throw RPCError.internalError(String(describing: error))
       }
     } else if transport == .bridge {
       throw RPCError.invalidParams("bridge transport requires an existing chat target")
@@ -254,13 +257,17 @@ extension RPCServer {
       input.chatID
       ?? resolvedTarget.preferredIdentifier.flatMap { try? store.chatInfo(matchingTarget: $0)?.id }
       ?? directChatInfo?.id
-    let sentMessage = try? await resolveSentMessage(store, options, verificationChatID, sentAt)
-    if sentMessage == nil {
-      try SentMessageVerifier.throwIfMisroutedChatSend(
+    let sentMessage: Message?
+    if input.hasChatTarget || !text.isEmpty {
+      sentMessage = try await SentMessageVerifier.verifyAppleScriptSend(
         store: store,
         options: options,
-        sentAt: sentAt
+        chatID: verificationChatID,
+        sentAt: sentAt,
+        resolve: resolveSentMessage
       )
+    } else {
+      sentMessage = nil
     }
     var result: [String: Any] = ["ok": true, "transport": "applescript"]
     if let sentMessage {
@@ -330,7 +337,8 @@ extension RPCServer {
         guard let service = MessageService(rawValue: serviceRaw.lowercased()) else {
           throw RPCError.invalidParams(serviceRaw)
         }
-        if let info = try resolveDirectChatInfo(recipient: input.recipient, service: service),
+        if let info = try ChatTargetResolver.existingDirectChat(
+          store: store, recipient: input.recipient, service: service),
           let preferred = bridgeChatGUID(resolvedTarget: nil, directChatInfo: info)
         {
           identifier = preferred
@@ -376,31 +384,6 @@ extension RPCServer {
     }
     try await IMCoreBridge.shared.markAsRead(handle: handle)
     respond(id: id, result: ["ok": true])
-  }
-
-  private func resolveDirectChatInfo(
-    recipient: String,
-    service: MessageService,
-    includeAnyForSMS: Bool = false
-  ) throws -> ChatInfo? {
-    let trimmed = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
-    var candidates = ChatTargetResolver.directChatCandidates(recipient: recipient, service: service)
-    let requireExactMatch = includeAnyForSMS
-    if includeAnyForSMS, !trimmed.isEmpty {
-      candidates = ["SMS;-;\(trimmed)", "any;-;\(trimmed)", "any;+;\(trimmed)"]
-    }
-    for candidate in candidates {
-      let info: ChatInfo?
-      if requireExactMatch {
-        info = try store.chatInfo(matchingExactTarget: candidate)
-      } else {
-        info = try store.chatInfo(matchingTarget: candidate)
-      }
-      if let info {
-        return info
-      }
-    }
-    return nil
   }
 
   private func bridgeChatGUID(

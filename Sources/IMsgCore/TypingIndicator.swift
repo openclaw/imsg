@@ -47,8 +47,12 @@ import Foundation
         do {
           try setTypingViaBridge(bridge: bridge, chatIdentifier: chatIdentifier, isTyping: isTyping)
           return
+        } catch let failure as DeliveryFailure {
+          guard failure.retrySafe else { throw failure }
+          // The bridge owner proved it never dispatched, so direct IMCore is safe.
         } catch {
-          // Bridge failed — fall through to direct IMCore access
+          // Without an authoritative delivery fact, a second mutation is unsafe.
+          throw error
         }
       }
 
@@ -60,17 +64,39 @@ import Foundation
     private static func setTypingViaBridge(
       bridge: IMCoreBridge, chatIdentifier: String, isTyping: Bool
     ) throws {
+      try waitForBridgeOperation(operation: "typing") {
+        try await bridge.setTyping(for: chatIdentifier, typing: isTyping)
+      }
+    }
+
+    static let bridgeWaitTimeout: TimeInterval =
+      IMsgBridgeProtocol.defaultResponseTimeout + 2
+
+    static func waitForBridgeOperation(
+      operation: String,
+      timeout: TimeInterval = bridgeWaitTimeout,
+      invoke: @escaping @Sendable () async throws -> Void
+    ) throws {
       let semaphore = DispatchSemaphore(value: 0)
       let box = BridgeResultBox()
-      Task { @Sendable in
+      let task = Task { @Sendable in
         do {
-          try await bridge.setTyping(for: chatIdentifier, typing: isTyping)
+          try await invoke()
         } catch {
           box.setError(error)
         }
         semaphore.signal()
       }
-      semaphore.wait()
+      let boundedTimeout = max(0.01, timeout)
+      guard semaphore.wait(timeout: .now() + boundedTimeout) == .success else {
+        task.cancel()
+        throw DeliveryFailure(
+          disposition: .stillInFlight,
+          transport: .bridgeV2,
+          operation: operation,
+          detail: "The synchronous typing bridge wait expired; the bridge task was cancelled."
+        )
+      }
       if let error = box.error {
         throw error
       }

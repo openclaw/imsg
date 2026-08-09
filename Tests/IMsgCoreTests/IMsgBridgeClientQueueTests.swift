@@ -63,11 +63,11 @@ struct IMsgBridgeClientQueueTests {
 
   @Test
   func unreadableInboxFailsSafeAsPending() {
-    // Cannot enumerate: keep waiting rather than ending a live request.
+    // Cannot enumerate: preserve the request and report unknown ownership.
     #expect(
       client.requestQueueState(
         inboxDir: "/nonexistent/imsg-queue-tests", id: UUID().uuidString
-      ) == .unclaimed
+      ) == .unreadable
     )
   }
 
@@ -102,4 +102,354 @@ struct IMsgBridgeClientQueueTests {
     #expect(client.requestQueueState(inboxDir: inbox, id: claimed) == .absent)
   }
 
+  @Test
+  func unclaimedTimeoutIsReclaimedAsNotStarted() async throws {
+    let harness = try BridgeClientHarness()
+    defer { harness.remove() }
+
+    let failure = try await deliveryFailure {
+      try await harness.client().invoke(action: .sendMessage, timeout: 0)
+    }
+
+    #expect(failure.disposition == .notStarted)
+    #expect(failure.retrySafe)
+    #expect(!FileManager.default.fileExists(atPath: harness.requestPath))
+  }
+
+  @Test
+  func launchFailureBeforePublicationIsNotStarted() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let launcher = MessagesLauncher(
+      containerPath: root.path,
+      readyCheck: { false },
+      launch: { throw MessagesLauncherError.launchFailed("injected launch failure") }
+    )
+    let client = IMsgBridgeClient(testing: launcher)
+
+    let failure = try await deliveryFailure {
+      try await client.invoke(action: .sendMessage, timeout: 0)
+    }
+
+    #expect(failure.disposition == .notStarted)
+    #expect(failure.retrySafe)
+    #expect(!FileManager.default.fileExists(atPath: launcher.bridgeInboxDirectory))
+  }
+
+  @Test
+  func claimedTimeoutStaysInFlightAndPreservesClaim() async throws {
+    let harness = try BridgeClientHarness()
+    defer { harness.remove() }
+    let claimPath = harness.claimPath(pid: 4242)
+    let client = harness.client { publication in
+      try? FileManager.default.moveItem(
+        atPath: publication.requestPath,
+        toPath: claimPath
+      )
+    }
+
+    let failure = try await deliveryFailure {
+      try await client.invoke(action: .sendMessage, timeout: 0)
+    }
+
+    #expect(failure.disposition == .stillInFlight)
+    #expect(FileManager.default.fileExists(atPath: claimPath))
+  }
+
+  @Test
+  func vanishedPublishedRequestIsOutcomeUnknown() async throws {
+    let harness = try BridgeClientHarness()
+    defer { harness.remove() }
+    let client = harness.client { publication in
+      try? FileManager.default.removeItem(atPath: publication.requestPath)
+    }
+
+    let failure = try await deliveryFailure {
+      try await client.invoke(action: .sendMessage, timeout: 0)
+    }
+
+    #expect(failure.disposition == .mayHaveCompleted)
+    #expect(!failure.retrySafe)
+  }
+
+  @Test
+  func unreadableQueueIsStillInFlight() async throws {
+    let harness = try BridgeClientHarness()
+    defer { harness.remove() }
+    let client = harness.client { publication in
+      try? FileManager.default.removeItem(atPath: publication.requestPath)
+      try? FileManager.default.removeItem(atPath: publication.inboxDirectory)
+      FileManager.default.createFile(
+        atPath: publication.inboxDirectory,
+        contents: Data("not-a-directory".utf8)
+      )
+    }
+
+    let failure = try await deliveryFailure {
+      try await client.invoke(action: .sendMessage, timeout: 0)
+    }
+
+    #expect(failure.disposition == .stillInFlight)
+  }
+
+  @Test
+  func finalResponseRecheckWinsClassificationRace() async throws {
+    let harness = try BridgeClientHarness()
+    defer { harness.remove() }
+    let client = harness.client(classificationObserver: { publication in
+      let response: [String: Any] = [
+        "v": 2,
+        "id": publication.id,
+        "success": true,
+        "data": ["messageGuid": "won-race"],
+      ]
+      let data = try? JSONSerialization.data(withJSONObject: response)
+      try? data?.write(to: URL(fileURLWithPath: publication.responsePath))
+    })
+
+    let result = try await client.invoke(action: .sendMessage, timeout: 0)
+
+    #expect(result["messageGuid"] as? String == "won-race")
+  }
+
+  @Test
+  func cancellationUsesSameUnclaimedReclaim() async throws {
+    let harness = try BridgeClientHarness()
+    defer { harness.remove() }
+    let (publications, continuation) = AsyncStream<Void>.makeStream()
+    let client = harness.client(
+      pollInterval: .seconds(30),
+      publicationObserver: { _ in continuation.yield(()) }
+    )
+    let task = Task { () -> DeliveryFailure? in
+      do {
+        _ = try await client.invoke(action: .sendMessage, timeout: 30)
+        return nil
+      } catch let failure as DeliveryFailure {
+        return failure
+      } catch {
+        Issue.record("expected DeliveryFailure, got \(error)")
+        return nil
+      }
+    }
+    for await _ in publications { break }
+    task.cancel()
+
+    guard let failure = await task.value else {
+      Issue.record("expected typed cancellation delivery failure")
+      return
+    }
+    #expect(failure.disposition == .notStarted)
+    #expect(!FileManager.default.fileExists(atPath: harness.requestPath))
+  }
+
+  @Test
+  func legacyMutationTimeoutRemainsInFlight() async throws {
+    let harness = try BridgeClientHarness()
+    defer { harness.remove() }
+    let launcher = MessagesLauncher(
+      containerPath: harness.root.path,
+      readyCheck: { true },
+      injectedReadyCheck: { true }
+    )
+    let client = IMsgBridgeClient(
+      testing: launcher,
+      useLegacyIPC: true,
+      legacyInvoker: { action, _, _ in
+        throw MessagesLauncherError.commandTimeout(action.rawValue)
+      }
+    )
+
+    let failure = try await deliveryFailure {
+      try await client.invoke(action: .sendMessage, timeout: 0.01)
+    }
+
+    #expect(failure.disposition == .stillInFlight)
+    #expect(failure.transport == .bridgeLegacy)
+  }
+
+  @Test
+  func concurrentReadinessCallsShareOneLaunchAttempt() async throws {
+    let state = LaunchAttemptState()
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let launcher = MessagesLauncher(
+      containerPath: root.path,
+      readyCheck: { state.checkReady() },
+      launch: { state.launch() }
+    )
+    let client = IMsgBridgeClient(
+      testing: launcher,
+      pollInterval: .milliseconds(1),
+      idProvider: { state.nextID() },
+      publicationObserver: { state.writeSuccessResponse(for: $0) }
+    )
+
+    let first = Task.detached {
+      let result = try await client.invoke(action: .sendMessage, timeout: 1)
+      return result["messageGuid"] as? String
+    }
+    await state.launchStarted.wait()
+    let second = Task.detached {
+      let result = try await client.invoke(action: .sendMessage, timeout: 1)
+      return result["messageGuid"] as? String
+    }
+    await state.concurrentReadyCheck.wait()
+    state.allowLaunch()
+
+    #expect(try await first.value != nil)
+    #expect(try await second.value != nil)
+    #expect(state.attemptCount == 1)
+  }
+
+}
+
+private enum BridgeClientTestError: Error {
+  case expectedDeliveryFailure
+}
+
+private func deliveryFailure(
+  _ operation: () async throws -> [String: Any]
+) async throws -> DeliveryFailure {
+  do {
+    _ = try await operation()
+    throw BridgeClientTestError.expectedDeliveryFailure
+  } catch let failure as DeliveryFailure {
+    return failure
+  }
+}
+
+private final class BridgeClientHarness: @unchecked Sendable {
+  let root: URL
+  private let id = "delivery-test-id"
+  private let launcher: MessagesLauncher
+
+  init() throws {
+    root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    launcher = MessagesLauncher(
+      containerPath: root.path,
+      readyCheck: { true },
+      injectedReadyCheck: { true }
+    )
+  }
+
+  var requestPath: String {
+    (launcher.bridgeInboxDirectory as NSString).appendingPathComponent("\(id).json")
+  }
+
+  func claimPath(pid: Int) -> String {
+    (launcher.bridgeInboxDirectory as NSString)
+      .appendingPathComponent("\(id).processing.\(pid)")
+  }
+
+  func client(
+    pollInterval: Duration = .milliseconds(1),
+    publicationObserver: (@Sendable (BridgeRequestPublication) -> Void)? = nil,
+    classificationObserver: (@Sendable (BridgeRequestPublication) -> Void)? = nil
+  ) -> IMsgBridgeClient {
+    IMsgBridgeClient(
+      testing: launcher,
+      pollInterval: pollInterval,
+      idProvider: { self.id },
+      publicationObserver: publicationObserver,
+      classificationObserver: classificationObserver
+    )
+  }
+
+  func remove() {
+    try? FileManager.default.removeItem(at: root)
+  }
+}
+
+private final class LaunchAttemptState: @unchecked Sendable {
+  let launchStarted = AsyncTestSignal()
+  let concurrentReadyCheck = AsyncTestSignal()
+  private let launchGate = DispatchSemaphore(value: 0)
+  private let lock = NSLock()
+  private var ready = false
+  private var readyChecks = 0
+  private var attempts = 0
+  private var nextRequestID = 0
+
+  var attemptCount: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return attempts
+  }
+
+  func checkReady() -> Bool {
+    lock.lock()
+    readyChecks += 1
+    let currentChecks = readyChecks
+    let result = ready
+    lock.unlock()
+    // The first caller checks twice (fast path + coordinated path). The third
+    // check proves a second caller reached readiness while launch is blocked.
+    if currentChecks == 3 { concurrentReadyCheck.signal() }
+    return result
+  }
+
+  func launch() {
+    lock.lock()
+    attempts += 1
+    lock.unlock()
+    launchStarted.signal()
+    launchGate.wait()
+    lock.lock()
+    ready = true
+    lock.unlock()
+  }
+
+  func allowLaunch() {
+    launchGate.signal()
+  }
+
+  func nextID() -> String {
+    lock.lock()
+    nextRequestID += 1
+    let value = nextRequestID
+    lock.unlock()
+    return "concurrent-\(value)"
+  }
+
+  func writeSuccessResponse(for publication: BridgeRequestPublication) {
+    let response: [String: Any] = [
+      "v": 2,
+      "id": publication.id,
+      "success": true,
+      "data": ["messageGuid": publication.id],
+    ]
+    guard let data = try? JSONSerialization.data(withJSONObject: response) else { return }
+    try? data.write(to: URL(fileURLWithPath: publication.responsePath))
+  }
+}
+
+private final class AsyncTestSignal: @unchecked Sendable {
+  private let lock = NSLock()
+  private var signaled = false
+  private var waiters: [CheckedContinuation<Void, Never>] = []
+
+  func wait() async {
+    await withCheckedContinuation { continuation in
+      lock.lock()
+      if signaled {
+        lock.unlock()
+        continuation.resume()
+      } else {
+        waiters.append(continuation)
+        lock.unlock()
+      }
+    }
+  }
+
+  func signal() {
+    let current: [CheckedContinuation<Void, Never>]
+    lock.lock()
+    signaled = true
+    current = waiters
+    waiters.removeAll()
+    lock.unlock()
+    for waiter in current { waiter.resume() }
+  }
 }

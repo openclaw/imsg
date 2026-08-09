@@ -47,7 +47,11 @@ imsg send-attachment --chat 'iMessage;-;+15551234567' \
   --file ~/Desktop/audio.caf --audio
 ```
 
-With `--transport auto`, a normal file can fall back to AppleScript when the bridge is unavailable. `--audio` and `--reply-to` remain bridge-only.
+With `--transport auto`, a normal file can fall back to AppleScript only when
+the bridge is unavailable or proves the request was `not_started`. It never
+falls back after publication has an uncertain outcome, including timeout,
+cancellation, a vanished or claimed request, or a malformed response.
+`--audio` and `--reply-to` remain bridge-only.
 
 Send a validated sticker on its own or attach it to an existing bubble part:
 
@@ -159,3 +163,22 @@ The bridge uses a UUID-keyed request queue so concurrent CLI invocations cannot 
 ```
 
 Set `IMSG_BRIDGE_LEGACY_IPC=1` only when debugging against an older, unrebuilt helper that still uses the single-file IPC path.
+
+## Delivery outcomes and retry safety
+
+The v2 client classifies failed mutations from queue ownership, using monotonic
+deadlines:
+
+- An unpublished request, or an unclaimed request that the client atomically
+  owns and removes before a final empty response check, is `not_started` and
+  retry-safe.
+- A `.processing.<pid>` claim or an unreadable inbox is `still_in_flight`.
+  Files are preserved.
+- A published request that vanished without a response is
+  `may_have_completed`.
+
+Malformed or unreadable responses after publication are also uncertain. The
+legacy single-file command timeout is always `still_in_flight` because it has
+no per-request claim proof. Never automatically retry a bridge mutation unless
+the typed disposition is `not_started`; human-readable error wording is not a
+retry contract.

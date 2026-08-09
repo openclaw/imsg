@@ -1,4 +1,5 @@
 import Foundation
+import IMsgCore
 
 typealias RPCLineStream = AsyncThrowingStream<String, Error>
 
@@ -19,7 +20,7 @@ enum RPCLineSource {
   }
 }
 
-private enum RPCRequestLane: Sendable {
+private enum RPCRequestLane: Sendable, Equatable {
   case mutation
   case read
   case control
@@ -56,6 +57,7 @@ actor RPCScheduler {
   private var controlWorker: Task<Void, Never>?
   private var readTasks: [UInt64: Task<Void, Never>] = [:]
   private var drainWaiters: [CheckedContinuation<Void, Never>] = []
+  private var mutationPoison: DeliveryFailure?
 
   init(server: RPCServer, outstandingLimit: Int = 128, readLimit: Int = 4) {
     self.server = server
@@ -70,8 +72,14 @@ actor RPCScheduler {
       return
     }
 
+    let requestLane = lane(for: line)
+    if requestLane == .mutation, let mutationPoison {
+      server.rejectMutationBlocked(line, poison: mutationPoison)
+      return
+    }
+
     outstanding += 1
-    switch lane(for: line) {
+    switch requestLane {
     case .mutation:
       mutationQueue.append(line)
       startMutationWorkerIfNeeded()
@@ -130,8 +138,8 @@ actor RPCScheduler {
     mutationWorker = Task.detached { [server] in
       while let line = await self.takeNextMutation() {
         // A single worker owns the entire mutation lifecycle, including its response.
-        await server.handleLine(line)
-        await self.completeMutation()
+        let result = await server.handleLine(line)
+        await self.completeMutation(result)
       }
     }
   }
@@ -144,8 +152,20 @@ actor RPCScheduler {
     return mutationQueue.removeFirst()
   }
 
-  private func completeMutation() {
+  private func completeMutation(_ result: RPCExecutionResult) {
     outstanding -= 1
+    if case .deliveryFailure(let failure) = result,
+      failure.disposition == .stillInFlight,
+      mutationPoison == nil
+    {
+      mutationPoison = failure
+      let rejected = mutationQueue
+      mutationQueue.removeAll()
+      outstanding -= rejected.count
+      for line in rejected {
+        server.rejectMutationBlocked(line, poison: failure)
+      }
+    }
     resumeDrainWaitersIfNeeded()
   }
 
@@ -154,7 +174,7 @@ actor RPCScheduler {
       let line = readQueue.removeFirst()
       let taskID = allocateTaskID()
       let task = Task.detached { [server] in
-        await server.handleLine(line)
+        _ = await server.handleLine(line)
         await self.completeRead(taskID)
       }
       readTasks[taskID] = task
@@ -173,7 +193,7 @@ actor RPCScheduler {
     guard controlWorker == nil else { return }
     controlWorker = Task.detached { [server] in
       while let line = await self.takeNextControl() {
-        await server.handleLine(line)
+        _ = await server.handleLine(line)
         await self.completeControl()
       }
     }

@@ -281,7 +281,7 @@ func sendCommandResolvesUniqueContactName() async throws {
       values: values,
       runtime: runtime,
       sendMessage: { options in captured = options },
-      resolveSentMessage: { _, _, _, _ in nil },
+      resolveSentMessage: resolvedSentMessageFixture,
       storeFactory: { _ in try CommandTestDatabase.makeStoreForRPC() },
       contactResolverFactory: { _ in resolver }
     )
@@ -335,7 +335,7 @@ func sendCommandRunsWithStubSender() async throws {
       sendMessage: { options in
         captured = options
       },
-      resolveSentMessage: { _, _, _, _ in nil },
+      resolveSentMessage: resolvedSentMessageFixture,
       storeFactory: { _ in try CommandTestDatabase.makeStoreForRPC() }
     )
   }
@@ -360,7 +360,7 @@ func sendCommandResolvesChatID() async throws {
       sendMessage: { options in
         captured = options
       },
-      resolveSentMessage: { _, _, _, _ in nil }
+      resolveSentMessage: resolvedSentMessageFixture
     )
   }
   #expect(captured?.chatIdentifier == "+123")
@@ -435,8 +435,13 @@ func sendCommandRejectsMisroutedChatGhost() async throws {
       resolveSentMessage: { _, _, _, _ in nil }
     )
     #expect(Bool(false))
-  } catch let error as IMsgError {
-    #expect(error.localizedDescription.contains("unjoined empty outgoing row"))
+  } catch let failure as DeliveryFailure {
+    #expect(failure.disposition == .mayHaveCompleted)
+    #expect(failure.transport == .appleScript)
+    #expect(failure.operation == "send")
+    #expect(!failure.retrySafe)
+    #expect(failure.detail.contains("unjoined empty outgoing row (99)"))
+    #expect(failure.description.contains("retry is not safe"))
   }
 }
 
@@ -454,7 +459,7 @@ func sendCommandAutoResolvesToSMSWhenDetected() async throws {
       values: values,
       runtime: runtime,
       sendMessage: { options in captured = options },
-      resolveSentMessage: { _, _, _, _ in nil },
+      resolveSentMessage: resolvedSentMessageFixture,
       storeFactory: { _ in try CommandTestDatabase.makeStoreForRPC() },
       resolveService: { _, _, _ in .sms }
     )
@@ -476,7 +481,7 @@ func sendCommandAutoResolvesUnknownToIMessage() async throws {
       values: values,
       runtime: runtime,
       sendMessage: { options in captured = options },
-      resolveSentMessage: { _, _, _, _ in nil },
+      resolveSentMessage: resolvedSentMessageFixture,
       storeFactory: { _ in try CommandTestDatabase.makeStoreForRPC() },
       resolveService: { _, _, _ in .unknown }
     )
@@ -499,7 +504,7 @@ func sendCommandHonorsNoSMSFallbackFlag() async throws {
       values: values,
       runtime: runtime,
       sendMessage: { options in captured = options },
-      resolveSentMessage: { _, _, _, _ in nil },
+      resolveSentMessage: resolvedSentMessageFixture,
       storeFactory: { _ in try CommandTestDatabase.makeStoreForRPC() },
       resolveService: { _, _, _ in .imessage }
     )
@@ -521,7 +526,7 @@ func sendCommandDisablesSMSFallbackForAttachments() async throws {
       values: values,
       runtime: runtime,
       sendMessage: { options in captured = options },
-      resolveSentMessage: { _, _, _, _ in nil },
+      resolveSentMessage: resolvedSentMessageFixture,
       storeFactory: { _ in try CommandTestDatabase.makeStoreForRPC() },
       resolveService: { _, _, _ in .imessage }
     )
@@ -545,7 +550,7 @@ func sendCommandExplicitServiceSkipsDetection() async throws {
       values: values,
       runtime: runtime,
       sendMessage: { options in captured = options },
-      resolveSentMessage: { _, _, _, _ in nil },
+      resolveSentMessage: resolvedSentMessageFixture,
       storeFactory: { _ in try CommandTestDatabase.makeStoreForRPC() },
       resolveService: { _, _, _ in
         resolverCalled = true

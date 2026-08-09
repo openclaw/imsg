@@ -29,7 +29,19 @@ enum SendAttachmentCommand {
     try await run(values: values, runtime: runtime)
   }
 
-  static func run(values: ParsedValues, runtime: RuntimeOptions) async throws {
+  static func run(
+    values: ParsedValues,
+    runtime: RuntimeOptions,
+    invokeBridge: @escaping (BridgeAction, [String: Any]) async throws -> [String: Any] = {
+      action, params in
+      try await IMsgBridgeClient.shared.invoke(action: action, params: params)
+    },
+    stageAttachment: @escaping (String) throws -> String =
+      MessageSender.stageAttachmentForMessagesApp,
+    sendMessage: @escaping (MessageSendOptions) throws -> Void = {
+      try MessageSender().send($0)
+    }
+  ) async throws {
     guard let chat = values.option("chat"), !chat.isEmpty else {
       throw ParsedValuesError.missingOption("chat")
     }
@@ -51,7 +63,7 @@ enum SendAttachmentCommand {
     }
 
     if transport != "applescript" {
-      let staged = try MessageSender.stageAttachmentForMessagesApp(at: expanded)
+      let staged = try stageAttachment(expanded)
       var params: [String: Any] = [
         "chatGuid": chat,
         "filePath": staged,
@@ -61,19 +73,33 @@ enum SendAttachmentCommand {
         params["selectedMessageGuid"] = replyTo
       }
       do {
-        let data = try await IMsgBridgeClient.shared.invoke(action: .sendAttachment, params: params)
+        let data = try await invokeBridge(.sendAttachment, params)
         let guid = (data["messageGuid"] as? String) ?? ""
         BridgeOutput.emit(data, runtime: runtime, summary: "send-attachment: queued (guid=\(guid))")
         return
-      } catch {
-        if transport == "dylib" || audio || !replyTo.isEmpty {
+      } catch let failure as DeliveryFailure {
+        if transport == "dylib" || audio || !replyTo.isEmpty || !failure.retrySafe {
+          BridgeOutput.emitError(String(describing: failure), runtime: runtime)
+          throw BridgeOutput.EmittedError()
+        }
+      } catch let error as IMsgBridgeError {
+        let bridgeWasNotReady: Bool
+        if case .bridgeNotReady = error {
+          bridgeWasNotReady = true
+        } else {
+          bridgeWasNotReady = false
+        }
+        if transport == "dylib" || audio || !replyTo.isEmpty || !bridgeWasNotReady {
           BridgeOutput.emitError(String(describing: error), runtime: runtime)
           throw BridgeOutput.EmittedError()
         }
+      } catch {
+        BridgeOutput.emitError(String(describing: error), runtime: runtime)
+        throw BridgeOutput.EmittedError()
       }
     }
 
-    try MessageSender().send(
+    try sendMessage(
       MessageSendOptions(
         recipient: "",
         text: "",

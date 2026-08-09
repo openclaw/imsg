@@ -2,6 +2,13 @@ import Foundation
 import IMsgCore
 
 enum SentMessageVerifier {
+  typealias Resolver = (
+    _ store: MessageStore,
+    _ options: MessageSendOptions,
+    _ chatID: Int64?,
+    _ sentAt: Date
+  ) async throws -> Message?
+
   static func resolveSentMessage(
     store: MessageStore,
     options: MessageSendOptions,
@@ -43,8 +50,33 @@ enum SentMessageVerifier {
       return
     }
 
-    throw IMsgError.appleScriptFailure(
-      "Messages accepted the chat send but wrote an unjoined empty outgoing row (\(rowID)); delivery to the target chat was not confirmed"
+    throw DeliveryFailure(
+      disposition: .mayHaveCompleted,
+      transport: .appleScript,
+      operation: "send",
+      detail:
+        "Messages accepted the chat send but wrote an unjoined empty outgoing row (\(rowID)); delivery to the target chat was not confirmed"
+    )
+  }
+
+  static func verifyAppleScriptSend(
+    store: MessageStore,
+    options: MessageSendOptions,
+    chatID: Int64?,
+    sentAt: Date,
+    resolve: Resolver
+  ) async throws -> Message? {
+    let message = try? await resolve(store, options, chatID, sentAt)
+    if let message { return message }
+
+    try throwIfMisroutedChatSend(store: store, options: options, sentAt: sentAt)
+    guard !options.text.isEmpty else { return nil }
+    throw DeliveryFailure(
+      disposition: .mayHaveCompleted,
+      transport: .appleScript,
+      operation: "send",
+      detail:
+        "Messages automation returned success, but no matching outgoing text row was observed within 8 seconds."
     )
   }
 }

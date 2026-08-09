@@ -137,7 +137,7 @@ func rpcSendResolvesChatID() async throws {
     verbose: false,
     output: output,
     sendMessage: { options in captured = options },
-    resolveSentMessage: { _, _, _, _ in nil }
+    resolveSentMessage: resolvedSentMessageFixture
   )
 
   let line = #"{"jsonrpc":"2.0","id":"3","method":"send","params":{"chat_id":1,"text":"yo"}}"#
@@ -162,7 +162,7 @@ func rpcSendResolvesUniqueContactName() async throws {
     verbose: false,
     output: output,
     sendMessage: { options in captured = options },
-    resolveSentMessage: { _, _, _, _ in nil },
+    resolveSentMessage: resolvedSentMessageFixture,
     contactResolver: resolver
   )
 
@@ -252,7 +252,7 @@ func rpcSendReturnsSentMessageIdentifiersWhenResolved() async throws {
 }
 
 @Test
-func rpcSendKeepsOkResponseWhenSentMessageIsNotResolved() async throws {
+func rpcAttachmentOnlyKeepsOkResponseWithoutTextVerification() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()
   let server = RPCServer(
@@ -263,7 +263,8 @@ func rpcSendKeepsOkResponseWhenSentMessageIsNotResolved() async throws {
     resolveSentMessage: { _, _, _, _ in nil }
   )
 
-  let line = #"{"jsonrpc":"2.0","id":"3c","method":"send","params":{"chat_id":1,"text":"yo"}}"#
+  let line =
+    #"{"jsonrpc":"2.0","id":"3c","method":"send","params":{"chat_id":1,"file":"/tmp/photo.jpg"}}"#
   await server.handleLineForTesting(line)
 
   let result = output.responses.first?["result"] as? [String: Any]
@@ -301,8 +302,13 @@ func rpcSendReportsMisroutedChatGhost() async throws {
   await server.handleLineForTesting(line)
 
   let error = output.errors.first?["error"] as? [String: Any]
-  #expect(int64Value(error?["code"]) == -32603)
-  #expect((error?["data"] as? String)?.contains("unjoined empty outgoing row") == true)
+  let data = error?["data"] as? [String: Any]
+  #expect(int64Value(error?["code"]) == -32001)
+  #expect(data?["retry_safe"] as? Bool == false)
+  #expect(data?["disposition"] as? String == "may_have_completed")
+  #expect(data?["transport"] as? String == "applescript")
+  #expect(data?["operation"] as? String == "send")
+  #expect((data?["detail"] as? String)?.contains("unjoined empty outgoing row (99)") == true)
 }
 
 @Test

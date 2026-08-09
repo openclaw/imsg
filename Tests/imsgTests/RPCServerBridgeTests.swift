@@ -309,7 +309,7 @@ func rpcSendAutoSMSDetectionDoesNotUseIMessageBridgeChat() async throws {
 }
 
 @Test
-func rpcSendFallsBackToAppleScriptWhenAutoBridgeFails() async throws {
+func rpcSendDoesNotFallbackWhenBridgeFailureIsUncertain() async throws {
   let store = try CommandTestDatabase.makeStoreForRPCDirectChat()
   let output = TestRPCOutput()
   var captured: MessageSendOptions?
@@ -324,14 +324,16 @@ func rpcSendFallsBackToAppleScriptWhenAutoBridgeFails() async throws {
   )
 
   let line =
-    #"{"jsonrpc":"2.0","id":"3fallback","method":"send","params":{"to":"+123","text":"yo"}}"#
+    #"{"jsonrpc":"2.0","id":"3fallback","method":"send","params":{"to":"+123","text":"private-body-marker"}}"#
   await server.handleLineForTesting(line)
 
-  #expect(captured?.recipient == "+123")
-  let result = output.responses.first?["result"] as? [String: Any]
-  #expect(result?["transport"] as? String == "applescript")
-  #expect(result?["chat_guid"] as? String == "iMessage;-;+123")
-  #expect(result?["service"] as? String == "iMessage")
+  #expect(captured == nil)
+  let error = output.errors.first?["error"] as? [String: Any]
+  let data = error?["data"] as? [String: Any]
+  #expect(error?["code"] as? Int == -32001)
+  #expect(data?["retry_safe"] as? Bool == false)
+  #expect(data?["disposition"] as? String == "may_have_completed")
+  #expect(!String(describing: error).contains("private-body-marker"))
 }
 
 @Test
@@ -393,7 +395,9 @@ func rpcSendReplyTargetDoesNotFallbackToAppleScriptWhenBridgeFails() async throw
   #expect(bridgeCalled == true)
   #expect(output.responses.isEmpty)
   let error = output.errors.first?["error"] as? [String: Any]
-  #expect((error?["data"] as? String)?.contains("bridge unavailable") == true)
+  let data = error?["data"] as? [String: Any]
+  #expect((data?["detail"] as? String)?.contains("bridge unavailable") == true)
+  #expect(data?["retry_safe"] as? Bool == false)
 }
 
 @Test

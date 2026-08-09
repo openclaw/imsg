@@ -36,6 +36,8 @@ func sendCommandDirectSendDoesNotRequireMessagesDatabase() async throws {
   #expect(captured?.recipient == "+436769770569")
   #expect(captured?.service == .auto)
   #expect(captured?.allowSMSFallback == true)
+  #expect(captured?.chatIdentifier.isEmpty == true)
+  #expect(captured?.chatGUID.isEmpty == true)
 }
 
 @Test

@@ -16,6 +16,15 @@ typealias BridgeInvoker = (
 typealias AttachmentStager = (_ path: String) throws -> String
 typealias StickerStager = (_ path: String) throws -> PreparedStickerAsset
 
+enum RPCExecutionResult: Sendable, Equatable {
+  case completed
+  case deliveryFailure(DeliveryFailure)
+}
+
+struct RPCMutationPoisonSignal: Error, Sendable {
+  let failure: DeliveryFailure
+}
+
 protocol RPCOutput: Sendable {
   func sendResponse(id: Any, result: Any)
   func sendError(id: Any?, error: RPCError)
@@ -199,7 +208,7 @@ final class RPCServer: @unchecked Sendable {
   }
 
   func handleLineForTesting(_ line: String) async {
-    await handleLine(line)
+    _ = await handleLine(line)
   }
 
   func respond(id: Any?, result: Any) {
@@ -207,7 +216,7 @@ final class RPCServer: @unchecked Sendable {
     output.sendResponse(id: id, result: result)
   }
 
-  func handleLine(_ line: String) async {
+  func handleLine(_ line: String) async -> RPCExecutionResult {
     let request: RPCRequest
     switch RPCRequestParser.parse(line) {
     case .success(let parsed):
@@ -216,7 +225,7 @@ final class RPCServer: @unchecked Sendable {
       if failure.shouldRespond {
         output.sendError(id: failure.id, error: failure.error)
       }
-      return
+      return .completed
     }
     let method = request.method
     let params = request.params
@@ -296,13 +305,20 @@ final class RPCServer: @unchecked Sendable {
         }
       }
     } catch is CancellationError {
-      return
+      return .completed
+    } catch let signal as RPCMutationPoisonSignal {
+      return .deliveryFailure(signal.failure)
+    } catch let failure as DeliveryFailure {
+      if !request.isNotification {
+        output.sendError(id: id, error: RPCError.deliveryFailure(failure))
+      }
+      return .deliveryFailure(failure)
     } catch let err as RPCError {
       if !request.isNotification {
         output.sendError(id: id, error: err)
       }
     } catch let err as IMsgError {
-      guard !request.isNotification else { return }
+      guard !request.isNotification else { return .completed }
       if err.isCallerCausedRPCError {
         output.sendError(id: id, error: RPCError.invalidParams(err.localizedDescription))
       } else {
@@ -313,6 +329,7 @@ final class RPCServer: @unchecked Sendable {
         output.sendError(id: id, error: RPCError.internalError(error.localizedDescription))
       }
     }
+    return .completed
   }
 
   func rejectBusy(_ line: String) {
@@ -328,6 +345,13 @@ final class RPCServer: @unchecked Sendable {
       if failure.shouldRespond {
         output.sendError(id: failure.id, error: failure.error)
       }
+    }
+  }
+
+  func rejectMutationBlocked(_ line: String, poison: DeliveryFailure) {
+    guard case .success(let request) = RPCRequestParser.parse(line) else { return }
+    if !request.isNotification {
+      output.sendError(id: request.id, error: RPCError.mutationLaneBlocked(poison))
     }
   }
 

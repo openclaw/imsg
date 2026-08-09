@@ -91,3 +91,23 @@ func typingDaemonUnavailableMessageExplainsTahoeEntitlementBlock() {
   #expect(message.contains("history"))
   #expect(message.contains("watch"))
 }
+
+#if os(macOS)
+  @Test
+  func typingBridgeWaitHasFiniteMonotonicBound() {
+    let clock = ContinuousClock()
+    let start = clock.now
+    do {
+      try TypingIndicator.waitForBridgeOperation(operation: "typing", timeout: 0.02) {
+        try await Task.sleep(for: .seconds(10))
+      }
+      Issue.record("expected bounded bridge wait failure")
+    } catch let failure as DeliveryFailure {
+      #expect(failure.disposition == .stillInFlight)
+      #expect(failure.retrySafe == false)
+    } catch {
+      Issue.record("unexpected error: \(error)")
+    }
+    #expect(start.duration(to: clock.now) < .seconds(1))
+  }
+#endif

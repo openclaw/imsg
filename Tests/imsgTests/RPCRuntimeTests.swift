@@ -174,7 +174,7 @@ func makeRuntimeLines() -> (
   return (stream, captured!)
 }
 
-private func renameRequest(id: String, name: String) -> String {
+func renameRequest(id: String, name: String) -> String {
   """
   {"jsonrpc":"2.0","id":"\(id)","method":"group.rename","params":{"chat_id":1,"name":"\(name)"}}
   """

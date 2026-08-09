@@ -174,6 +174,8 @@ extension RPCServer {
   ) async throws -> [String: Any] {
     do {
       return try await bridgeInvoker(action, params)
+    } catch let failure as DeliveryFailure {
+      throw failure
     } catch {
       throw RPCError.internalError(String(describing: error))
     }

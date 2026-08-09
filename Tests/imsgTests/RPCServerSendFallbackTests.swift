@@ -15,7 +15,7 @@ func rpcSendEnablesSMSFallbackForAutoTextDirectSend() async throws {
     verbose: false,
     output: output,
     sendMessage: { options in captured = options },
-    resolveSentMessage: { _, _, _, _ in nil }
+    resolveSentMessage: resolvedSentMessageFixture
   )
 
   let line =
@@ -47,7 +47,7 @@ func rpcSendAutoUsesLocalSMSHistoryForAttachmentSend() async throws {
     verbose: false,
     output: output,
     sendMessage: { options in captured = options },
-    resolveSentMessage: { _, _, _, _ in nil }
+    resolveSentMessage: resolvedSentMessageFixture
   )
 
   let line =
@@ -100,7 +100,7 @@ func rpcSendDisablesSMSFallbackForExplicitService() async throws {
     verbose: false,
     output: output,
     sendMessage: { options in captured = options },
-    resolveSentMessage: { _, _, _, _ in nil }
+    resolveSentMessage: resolvedSentMessageFixture
   )
 
   let line =

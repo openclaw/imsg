@@ -37,10 +37,25 @@ final class RPCWriter: RPCOutput, Sendable {
   }
 }
 
-struct RPCError: Error {
+struct RPCError: Error, @unchecked Sendable {
   let code: Int
   let message: String
   let data: String?
+  let structuredData: [String: Any]?
+
+  init(code: Int, message: String, data: String?) {
+    self.code = code
+    self.message = message
+    self.data = data
+    self.structuredData = nil
+  }
+
+  private init(code: Int, message: String, structuredData: [String: Any]) {
+    self.code = code
+    self.message = message
+    self.data = nil
+    self.structuredData = structuredData
+  }
 
   static func parseError(_ message: String) -> RPCError {
     RPCError(code: -32700, message: "Parse error", data: message)
@@ -66,12 +81,40 @@ struct RPCError: Error {
     RPCError(code: -32000, message: "Server busy", data: message)
   }
 
+  static func deliveryFailure(_ failure: DeliveryFailure) -> RPCError {
+    let unknown = failure.disposition != .notStarted
+    return RPCError(
+      code: unknown ? -32001 : -32603,
+      message: unknown ? "Delivery outcome unknown" : "Delivery failed before dispatch",
+      structuredData: deliveryData(failure)
+    )
+  }
+
+  static func mutationLaneBlocked(_ failure: DeliveryFailure) -> RPCError {
+    var data = deliveryData(failure)
+    data["detail"] =
+      "A prior \(failure.operation) remains in flight. Restart the RPC child before sending another mutation."
+    return RPCError(code: -32004, message: "Mutation lane blocked", structuredData: data)
+  }
+
+  private static func deliveryData(_ failure: DeliveryFailure) -> [String: Any] {
+    [
+      "retry_safe": failure.retrySafe,
+      "disposition": failure.disposition.rawValue,
+      "transport": failure.transport.rawValue,
+      "operation": failure.operation,
+      "detail": failure.detail,
+    ]
+  }
+
   func asDictionary() -> [String: Any] {
     var dict: [String: Any] = [
       "code": code,
       "message": message,
     ]
-    if let data {
+    if let structuredData {
+      dict["data"] = structuredData
+    } else if let data {
       dict["data"] = data
     }
     return dict
@@ -272,10 +315,21 @@ extension RPCServer {
     selectedMessageGuid: String? = nil,
     textFormatting: Any? = nil
   ) async throws -> [String: Any] {
+    let action: BridgeAction = file.isEmpty ? .sendMessage : .sendAttachment
     if !file.isEmpty {
       let requiresMetadata = !text.isEmpty || selectedMessageGuid != nil || textFormatting != nil
       if requiresMetadata {
-        let status = try await bridgeInvoker(.status, [:])
+        let status: [String: Any]
+        do {
+          status = try await bridgeInvoker(.status, [:])
+        } catch {
+          throw DeliveryFailure(
+            disposition: .notStarted,
+            transport: .bridgeV2,
+            operation: action.rawValue,
+            detail: "Bridge capability inspection failed before the send was published."
+          )
+        }
         guard status["attachment_metadata"] as? Bool == true else {
           throw RPCError.internalError(
             "running bridge does not support captioned or threaded attachments; "
@@ -283,7 +337,17 @@ extension RPCServer {
           )
         }
       }
-      let stagedFile = try stageAttachment(file)
+      let stagedFile: String
+      do {
+        stagedFile = try stageAttachment(file)
+      } catch {
+        throw DeliveryFailure(
+          disposition: .notStarted,
+          transport: .bridgeV2,
+          operation: action.rawValue,
+          detail: "The attachment could not be staged before bridge dispatch."
+        )
+      }
       var params: [String: Any] = [
         "chatGuid": chatGUID, "filePath": stagedFile, "isAudioMessage": false,
       ]
@@ -296,7 +360,7 @@ extension RPCServer {
       if let textFormatting {
         params["textFormatting"] = textFormatting
       }
-      return try await bridgeInvoker(.sendAttachment, params)
+      return try await invokeBridgeMutation(.sendAttachment, params: params)
     }
     var params: [String: Any] = ["chatGuid": chatGUID, "message": text]
     if let selectedMessageGuid {
@@ -305,6 +369,37 @@ extension RPCServer {
     if let textFormatting {
       params["textFormatting"] = textFormatting
     }
-    return try await bridgeInvoker(.sendMessage, params)
+    return try await invokeBridgeMutation(.sendMessage, params: params)
+  }
+
+  private func invokeBridgeMutation(
+    _ action: BridgeAction,
+    params: [String: Any]
+  ) async throws -> [String: Any] {
+    do {
+      return try await bridgeInvoker(action, params)
+    } catch let failure as DeliveryFailure {
+      throw failure
+    } catch let error as IMsgBridgeError {
+      let disposition: DeliveryDisposition
+      if case .bridgeNotReady = error {
+        disposition = .notStarted
+      } else {
+        disposition = .mayHaveCompleted
+      }
+      throw DeliveryFailure(
+        disposition: disposition,
+        transport: .bridgeV2,
+        operation: action.rawValue,
+        detail: error.description
+      )
+    } catch {
+      throw DeliveryFailure(
+        disposition: .mayHaveCompleted,
+        transport: .bridgeV2,
+        operation: action.rawValue,
+        detail: "The bridge mutation failed without an authoritative post-dispatch result."
+      )
+    }
   }
 }

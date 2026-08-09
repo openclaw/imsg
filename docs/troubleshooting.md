@@ -45,13 +45,30 @@ Automation permission is missing.
 
 If the toggle isn't visible, run a send once to trigger the prompt, then approve.
 
-## Sends look successful but never arrive
+## Sends report success but never arrive
 
-Two possible causes:
+Current versions verify every AppleScript text send against `chat.db` when the
+database is readable. If Messages returns success but no matching outgoing row
+appears within eight seconds, the CLI exits nonzero and RPC returns `-32001`
+with `may_have_completed`; do not retry automatically. Direct sends made while
+the database is unavailable retain the older best-effort acknowledgment.
 
-**Tahoe ghost-row failure (group sends).** On macOS 26, Messages.app sometimes reports AppleScript success while writing an empty unjoined SMS row instead of delivering. `imsg send` for chat-target sends already detects this and reports an error instead of `sent`. If you're still seeing silent failures with `--chat-id`/`--chat-identifier`/`--chat-guid`, make sure you're on `imsg` 0.6.0 or newer (`imsg --version`).
+Other routing failures to check:
+
+**Tahoe ghost-row failure.** On macOS 26, Messages.app sometimes reports AppleScript success while writing an empty unjoined SMS row instead of delivering. `imsg send` checks explicit chat targets and existing direct chats for this row and preserves the specific ghost-row diagnostic.
 
 **Service mismatch.** A send to a phone number with `--service imessage` fails fast if the recipient isn't on iMessage. With `--service sms`, Text Message Forwarding must be enabled on your iPhone for this Mac. With `--service auto`, `imsg` checks local history first; text-only direct phone sends may retry once over SMS unless `--no-sms-fallback` is set.
+
+**Uncertain delivery outcome.** Errors marked `may_have_completed` or
+`still_in_flight` are deliberately not retried or downgraded: the first
+transport may already have sent the message. Check Messages/history before
+taking another action. Only `not_started` is retry-safe.
+
+For JSON-RPC, `still_in_flight` also blocks queued and future mutations with
+`-32004` while reads and watch control keep working. Resolve the outstanding
+operation as best you can, then restart the supervised `imsg rpc` child to
+clear the process-local mutation-lane poison. Do not repeatedly submit the
+same send to the blocked child.
 
 ## `imsg watch` goes silent after a while
 

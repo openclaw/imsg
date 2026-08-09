@@ -273,6 +273,7 @@ extension RPCServer {
     // needs no knowledge of this. Best-effort: the poll already succeeded, so a
     // comment failure must not fail the RPC.
     let comment = commentValue.flatMap { $0.isEmpty ? nil : $0 } ?? question
+    var poisonAfterResponse: DeliveryFailure?
     if !suppressComment, !comment.isEmpty {
       do {
         _ = try await invokeBridge(
@@ -281,6 +282,14 @@ extension RPCServer {
             "chatGuid": chatGUID,
             "message": comment,
           ])
+      } catch let failure as DeliveryFailure {
+        if failure.disposition == .stillInFlight {
+          poisonAfterResponse = failure
+        }
+        let pollGuid = (data["messageGuid"] as? String) ?? ""
+        let pollDescription = pollGuid.isEmpty ? "queued poll" : "poll \(pollGuid)"
+        FileHandle.standardError.write(
+          Data("[imsg] poll.send: comment echo delivery unresolved for \(pollDescription)\n".utf8))
       } catch {
         let pollGuid = (data["messageGuid"] as? String) ?? ""
         let pollDescription = pollGuid.isEmpty ? "queued poll" : "poll \(pollGuid)"
@@ -289,6 +298,9 @@ extension RPCServer {
       }
     }
     respond(id: id, result: result)
+    if let poisonAfterResponse {
+      throw RPCMutationPoisonSignal(failure: poisonAfterResponse)
+    }
   }
 
   func handlePollVote(params: [String: Any], id: Any?) async throws {

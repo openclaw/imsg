@@ -47,7 +47,11 @@ Protocol/framing failures use the JSON-RPC codes `-32700` (parse error),
 `-32600` (invalid request), and `-32601` (unknown method). Caller-caused value,
 selector, date, or supported-operation errors use `-32602` (invalid params).
 Runtime database, bridge, permission, and delivery failures use `-32603`
-(internal error). Parse errors and invalid requests whose ID cannot be
+(internal error). Delivery failures add two server codes: `-32001` means the
+operation may have completed or remains in flight, and `-32004` means the
+mutation lane is blocked by an earlier in-flight operation. Their `data` is an
+object rather than the ordinary string and contains `retry_safe`,
+`disposition`, `transport`, `operation`, and a redacted `detail`. Parse errors and invalid requests whose ID cannot be
 established return the required `null` response ID.
 
 The server admits at most 128 outstanding requests (running plus queued).
@@ -82,8 +86,23 @@ then drains all already accepted requests and flushes stdout before `run()`
 returns. Parent-task cancellation cancels subscriptions plus read/control work,
 but never cancels an already-started mutation or claims it did not execute.
 Accepted mutations, including those not yet started, conservatively drain in
-FIFO order because this protocol has no delivery disposition that can safely
-describe an ambiguous cancellation.
+FIFO order during normal EOF or parent cancellation; the server never invents
+a retry-safe result for work it already admitted.
+
+Bridge and AppleScript transports do expose a delivery disposition for failed
+mutations:
+
+- `not_started` proves the transport never dispatched the operation;
+  `retry_safe` is `true`.
+- `may_have_completed` means no operation remains observable, but delivery
+  cannot be proved either way. Do not retry automatically.
+- `still_in_flight` means the operation can continue after the response. The
+  server poisons only the mutation lane: queued and future mutations receive
+  `-32004`, while reads, watch subscriptions, and unsubscribe remain healthy.
+
+The poison is intentionally process-local. Restart the `imsg rpc` child to
+clear it after independently resolving the uncertain operation. Notifications
+remain silent when rejected, as required by JSON-RPC.
 
 A `watch.subscribe` request already queued when EOF closes subscription
 admission receives `-32000` (`Server busy`) with `server is shutting down`; it
@@ -530,6 +549,9 @@ Send and receive verification:
 ```
 
 `send` accepts `transport: "auto" | "bridge" | "applescript"`. `auto`
-uses the IMCore bridge for existing chats when it is running, then falls back
-to AppleScript. Use `bridge` when the caller requires private-API delivery and
-should fail instead of falling back.
+uses the IMCore bridge for existing chats when it is running. It falls back to
+AppleScript only when the bridge is not ready or returns authoritative
+`not_started`; a timeout, cancellation, vanished request, claimed request,
+malformed response, or other uncertain post-publication failure never falls
+back. Use `bridge` when the caller requires private-API delivery and should
+fail instead of falling back. Replies remain bridge-only.

@@ -3,7 +3,7 @@ title: Send
 description: "Send text and files to direct chats and groups through Messages.app automation, plus standard tapbacks."
 ---
 
-`imsg send` rides Messages' published AppleScript surface — no private send APIs, no IMCore injection. Sending requires Automation permission for Messages (see [Permissions](permissions.md)).
+`imsg send` rides Messages' published AppleScript surface — no private send APIs, no IMCore injection. Production sends run in a bounded `/usr/bin/osascript` child so a stuck Messages automation call can be terminated and reaped. Sending requires Automation permission for Messages (see [Permissions](permissions.md)).
 
 ## Direct sends
 
@@ -21,6 +21,10 @@ imsg send --to "Jane Appleseed" --text "hi"
 - A contact name. Resolved through Address Book; requires Contacts permission.
 
 For unambiguous routing, prefer phone numbers in E.164 form.
+
+When `chat.db` is readable and the recipient already has a direct chat, `imsg`
+targets that chat's GUID instead of constructing a new buddy send. New
+recipients still use the existing buddy-send behavior.
 
 ## Group sends
 
@@ -62,11 +66,16 @@ imsg send --to "+14155551212" --text "hi" --service sms
 imsg send --to "+14155551212" --text "hi" --no-sms-fallback
 ```
 
-- `auto` — `imsg` first checks local Messages history for the handle's observed service when `chat.db` is readable. Existing SMS-only phone threads use SMS; known iMessage handles use iMessage; unknown handles, or sessions without Full Disk Access, try iMessage. For text-only direct phone sends, a failed iMessage attempt retries once over SMS unless `--no-sms-fallback` is set.
+- `auto` — `imsg` first checks local Messages history for the handle's observed service when `chat.db` is readable. Existing SMS-only phone threads use SMS; known iMessage handles use iMessage; unknown handles, or sessions without Full Disk Access, try iMessage. For text-only direct phone sends, an iMessage attempt retries once over SMS only when the AppleScript transport proves that target/service resolution failed before the first `send` began. A timeout, signal, lost result, nonzero exit, or error during/after `send` has an uncertain outcome and never falls back.
 - `imessage` — force iMessage. Fails fast if the recipient isn't on iMessage.
 - `sms` — force SMS relay. Requires Text Message Forwarding enabled on your iPhone for this Mac.
 
 Fallback is intentionally narrow: it does not run for explicit `--service imessage`, `--service sms`, chat-target sends, email recipients, or attachment sends. For groups, omit `--service`. Group sends always use the chat's existing service.
+
+Failed mutations report one of three delivery dispositions: `not_started`
+(retry is safe), `may_have_completed` (outcome unknown; do not retry), or
+`still_in_flight` (work may continue; do not retry). This is transport-owned
+state, not wording inferred from an error message.
 
 ## Region for phone normalization
 
@@ -80,13 +89,24 @@ Defaults to `US`. Pass an ISO 3166-1 alpha-2 country code to normalize locally-f
 
 Default text mode prints `sent` on success. JSON mode emits `{"status":"sent"}`.
 
-The [JSON-RPC `send` method](rpc.md#send) goes further: it includes the rowid and GUID of the inserted message when it can observe the row in `chat.db` after Messages accepts the send. Use RPC when you need a verified send acknowledgment. RPC `send` also accepts `transport` (`auto`, `bridge`, or `applescript`) for callers that want to prefer or require the IMCore bridge.
+When `chat.db` is readable, every AppleScript text send waits up to eight
+seconds for the matching outgoing row. If Messages reports success but no row
+appears, `imsg` returns `may_have_completed` with no-retry guidance instead of
+reporting success. The lookup uses the known chat rowid when available and a
+bounded global text lookup for a new recipient. Direct sends still retain the
+previous accepted behavior when the database is unavailable. Attachment-only
+verification is unchanged.
+
+The [JSON-RPC `send` method](rpc.md#send) includes the rowid and GUID of the inserted message when available. RPC `send` also accepts `transport` (`auto`, `bridge`, or `applescript`) for callers that want to prefer or require the IMCore bridge.
 
 ## Tahoe ghost-row protection
 
 On macOS 26 (Tahoe), Messages.app has a failure mode where AppleScript reports success but writes an empty outgoing SMS row that isn't joined to the target chat. The send looks fine to the caller but never reaches the recipient.
 
-`imsg send` for chat-target sends (`--chat-id`, `--chat-identifier`, `--chat-guid`) checks for this ghost row after the AppleScript call returns. If it finds one, the command reports an error rather than `sent`. Direct sends (`--to`) are not affected by this failure mode.
+`imsg send` checks for this ghost row after AppleScript sends to an explicit
+chat target or an existing direct chat resolved from `--to`. If it finds one,
+the command reports the established ghost-row diagnostic before the generic
+no-row uncertainty.
 
 This check landed in 0.6.0; see `CHANGELOG.md` for the issue history.
 

@@ -94,6 +94,17 @@ public enum BridgeAction: String, Sendable, CaseIterable {
   case shareNickname = "share-nickname"
   case checkImessageAvailability = "check-imessage-availability"
   case downloadPurgedAttachment = "download-purged-attachment"
+
+  /// Whether invoking this action can mutate Messages state.
+  public var isMutation: Bool {
+    switch self {
+    case .ping, .status, .listChats, .checkTypingStatus, .searchMessages, .getAccountInfo,
+      .getNicknameInfo, .shouldOfferNicknameSharing, .checkImessageAvailability:
+      return false
+    default:
+      return true
+    }
+  }
 }
 
 /// Reaction kinds (BlueBubbles vocabulary) → IMAssociatedMessageType integers.

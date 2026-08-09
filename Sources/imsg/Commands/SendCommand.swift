@@ -132,6 +132,18 @@ enum SendCommand {
       }
     }
 
+    let directChatInfo: ChatInfo?
+    if let store, !input.hasChatTarget {
+      directChatInfo = try ChatTargetResolver.existingDirectChat(
+        store: store,
+        recipient: input.recipient,
+        service: effectiveService,
+        includeAnyForSMS: service == .auto && effectiveService == .sms
+      )
+    } else {
+      directChatInfo = nil
+    }
+
     let allowSMSFallback =
       service == .auto
       && !input.hasChatTarget
@@ -146,31 +158,28 @@ enum SendCommand {
       attachmentPath: file,
       service: effectiveService,
       region: region,
-      chatIdentifier: resolvedTarget.chatIdentifier,
-      chatGUID: resolvedTarget.chatGUID,
+      chatIdentifier: input.hasChatTarget ? resolvedTarget.chatIdentifier : "",
+      chatGUID: input.hasChatTarget ? resolvedTarget.chatGUID : (directChatInfo?.guid ?? ""),
       allowSMSFallback: allowSMSFallback
     )
     let sentAt = Date()
     try sendMessage(options)
 
     var sentMessage: Message?
-    if input.hasChatTarget {
-      guard let store else {
-        throw IMsgError.invalidChatTarget("Messages database unavailable")
-      }
+    if let store, input.hasChatTarget || !text.isEmpty {
       let verificationChatID =
         input.chatID
-        ?? resolvedTarget.preferredIdentifier.flatMap {
+        ?? (input.hasChatTarget ? resolvedTarget.preferredIdentifier : nil).flatMap {
           try? store.chatInfo(matchingTarget: $0)?.id
         }
-      sentMessage = try? await resolveSentMessage(store, options, verificationChatID, sentAt)
-      if sentMessage == nil {
-        try SentMessageVerifier.throwIfMisroutedChatSend(
-          store: store,
-          options: options,
-          sentAt: sentAt
-        )
-      }
+        ?? directChatInfo?.id
+      sentMessage = try await SentMessageVerifier.verifyAppleScriptSend(
+        store: store,
+        options: options,
+        chatID: verificationChatID,
+        sentAt: sentAt,
+        resolve: resolveSentMessage
+      )
     }
 
     if runtime.jsonOutput {

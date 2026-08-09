@@ -97,6 +97,27 @@ enum ChatTargetResolver {
     return candidates
   }
 
+  static func existingDirectChat(
+    store: MessageStore,
+    recipient: String,
+    service: MessageService,
+    includeAnyForSMS: Bool = false
+  ) throws -> ChatInfo? {
+    let trimmed = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
+    var candidates = directChatCandidates(recipient: recipient, service: service)
+    if includeAnyForSMS, !trimmed.isEmpty {
+      candidates = ["SMS;-;\(trimmed)", "any;-;\(trimmed)", "any;+;\(trimmed)"]
+    }
+    for candidate in candidates {
+      let info =
+        includeAnyForSMS
+        ? try store.chatInfo(matchingExactTarget: candidate)
+        : try store.chatInfo(matchingTarget: candidate)
+      if let info { return info }
+    }
+    return nil
+  }
+
   static func looksLikeContactName(_ recipient: String) -> Bool {
     let trimmed = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmed.isEmpty { return false }
