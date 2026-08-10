@@ -34,7 +34,6 @@ go.work.sum
 # SwiftPM
 .build/
 .swiftpm/
-Package.resolved
 *.xcodeproj
 
 # Build artifacts

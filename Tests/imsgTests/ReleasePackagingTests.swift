@@ -19,6 +19,13 @@ func releaseWorkflowPackagesUniversalBuildOutput() throws {
 }
 
 @Test
+func releaseWorkflowHasTrackedDependencyLock() throws {
+  _ = try readRepositoryFile("Package.resolved")
+  let ignoredPaths = try readRepositoryFile(".gitignore").split(separator: "\n")
+  #expect(!ignoredPaths.contains("Package.resolved"))
+}
+
+@Test
 func universalBuildScriptShipsArm64eHelperSlice() throws {
   let script = try readRepositoryFile("scripts/build-universal.sh")
 
