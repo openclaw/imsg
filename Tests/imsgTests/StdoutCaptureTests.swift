@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@Test
+@Test(.timeLimit(.minutes(1)))
 func stdoutCaptureDrainsMoreThanPipeCapacity() async {
   let payloadSize = 1024 * 1024
   let payload = Data(repeating: 0x78, count: payloadSize)
