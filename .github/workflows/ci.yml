@@ -25,7 +25,7 @@ jobs:
       - name: Lint
         run: make lint
       - name: Test
-        run: make test
+        run: scripts/run-macos-tests.sh
       - name: Build
         run: make build ARCHES="$(uname -m)"
 
