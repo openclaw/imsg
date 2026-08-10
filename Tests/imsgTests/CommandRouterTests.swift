@@ -69,8 +69,9 @@ private func runIMsgProcess(
   process.standardOutput = output
   process.standardError = output
   try process.run()
-  process.waitUntilExit()
+  output.fileHandleForWriting.closeFile()
   let data = output.fileHandleForReading.readDataToEndOfFile()
+  process.waitUntilExit()
   return (process.terminationStatus, String(data: data, encoding: .utf8) ?? "")
 }
 
