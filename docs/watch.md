@@ -30,7 +30,6 @@ imsg watch --chat-id 42 --since-rowid 9000 --json
 ```
 
 `--since-rowid` is exclusive: `9000` means "everything strictly after rowid 9000."
-An explicit `--since-rowid 0` replays from the beginning of the current database.
 
 If you don't pass `--since-rowid`, watch starts at the newest message at the moment of launch. Messages written before then are not replayed; use [`history`](history.md) for that.
 

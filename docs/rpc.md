@@ -300,9 +300,7 @@ order by timestamp or return the newest rows first.
 
 Params:
 
-- `since_rowid` (int, required) — exclusive cursor. Use `0` to replay from the
-  beginning; legacy negative cursors remain accepted for compatibility and have
-  the same replay behavior.
+- `since_rowid` (int, required) — exclusive, non-negative cursor.
 - `chat_id` (int, optional) — omit to page across all chats.
 - `limit` (int, default 100, maximum 500)
 - `attachments` (bool, default `false`)
@@ -358,10 +356,7 @@ Older Messages database schemas without scheduling columns return an invalid-par
 Params:
 
 - `chat_id` (int, optional) — omit for all-chat stream.
-- `since_rowid` (int, optional) — exclusive cursor. Explicit `0` is the preferred
-  way to replay from the beginning; legacy negative cursors remain accepted for
-  compatibility and have the same replay behavior. Omission starts at the current
-  maximum rowid.
+- `since_rowid` (int, optional) — exclusive cursor.
 - `participants` (array, optional)
 - `start` / `end` (ISO 8601, optional)
 - `attachments` (bool, default `false`)

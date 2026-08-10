@@ -67,38 +67,30 @@ func messagesAfterBatchAdvancesAcrossSuppressedLateURLPreview() throws {
 }
 
 @Test(.timeLimit(.minutes(1)))
-func messageWatcherDistinguishesOmittedCursorFromExplicitZero() async throws {
-  let currentFixture = try WatcherTestDatabase.makeMutableStore()
-  try currentFixture.insertMessage(1, "existing")
-  let currentPolls = WatcherPollController()
-  let currentWatcher = MessageWatcher(store: currentFixture.store, didPoll: currentPolls.didPoll)
-  let currentStream = currentWatcher.stream(
-    sinceRowID: nil,
-    configuration: MessageWatcherConfiguration(
-      debounceInterval: 0,
-      fallbackPollInterval: 0.01,
-      batchLimit: 10
+func messageWatcherPreservesShippedCursorSemantics() async throws {
+  for cursor in [Int64?.none, Int64?.some(0)] {
+    let fixture = try WatcherTestDatabase.makeMutableStore()
+    try fixture.insertMessage(1, "existing")
+    let polls = WatcherPollController()
+    let stream = MessageWatcher(store: fixture.store, didPoll: polls.didPoll).stream(
+      sinceRowID: cursor,
+      configuration: MessageWatcherConfiguration(
+        debounceInterval: 0,
+        fallbackPollInterval: 0.01,
+        batchLimit: 10
+      )
     )
-  )
-  let currentTask = Task { try await firstReplayMessages(1, from: currentStream) }
+    let nextMessage = Task { try await firstReplayMessages(1, from: stream) }
 
-  await currentPolls.waitForPoll(1)
-  try currentFixture.insertMessage(2, "new")
-  let currentMessages = try await currentTask.value
-  #expect(currentMessages.map(\.rowID) == [2])
+    await polls.waitForPoll(1)
+    try fixture.insertMessage(2, "new")
+    let messages = try await nextMessage.value
+    #expect(messages.map(\.rowID) == [2])
+  }
 
-  let replayFixture = try WatcherTestDatabase.makeMutableStore()
-  try replayFixture.insertMessage(1, "first")
-  try replayFixture.insertMessage(2, "second")
-  let zeroReplayStream = MessageWatcher(store: replayFixture.store).stream(
-    sinceRowID: 0,
-    configuration: MessageWatcherConfiguration(
-      debounceInterval: 0,
-      fallbackPollInterval: nil,
-      batchLimit: 10
-    )
-  )
-  let negativeReplayStream = MessageWatcher(store: replayFixture.store).stream(
+  let fixture = try WatcherTestDatabase.makeMutableStore()
+  try fixture.insertMessage(1, "existing")
+  let replay = MessageWatcher(store: fixture.store).stream(
     sinceRowID: -1,
     configuration: MessageWatcherConfiguration(
       debounceInterval: 0,
@@ -106,10 +98,8 @@ func messageWatcherDistinguishesOmittedCursorFromExplicitZero() async throws {
       batchLimit: 10
     )
   )
-  let zeroReplayMessages = try await firstReplayMessages(2, from: zeroReplayStream)
-  let negativeReplayMessages = try await firstReplayMessages(2, from: negativeReplayStream)
-  #expect(zeroReplayMessages.map(\.rowID) == [1, 2])
-  #expect(negativeReplayMessages.map(\.rowID) == zeroReplayMessages.map(\.rowID))
+  let replayedMessages = try await firstReplayMessages(1, from: replay)
+  #expect(replayedMessages.map(\.rowID) == [1])
 }
 
 @Test(.timeLimit(.minutes(1)))
@@ -144,7 +134,7 @@ func messageWatchersOwnIndependentURLDedupeAcrossOverflow() async throws {
   defer { firstPolls.releaseAll() }
   let pausedFirstPoll = firstPolls.pauseNextPoll()
   let firstStream = MessageWatcher(store: store, didPoll: firstPolls.didPoll).stream(
-    sinceRowID: 0,
+    sinceRowID: -1,
     configuration: MessageWatcherConfiguration(
       debounceInterval: 0,
       fallbackPollInterval: nil,
@@ -158,7 +148,7 @@ func messageWatchersOwnIndependentURLDedupeAcrossOverflow() async throws {
   let secondStream = MessageWatcher(store: store) {
     Task { await secondPoll.signal() }
   }.stream(
-    sinceRowID: 0,
+    sinceRowID: -1,
     configuration: MessageWatcherConfiguration(
       debounceInterval: 0,
       fallbackPollInterval: nil,

@@ -286,7 +286,7 @@ func messageWatcherDrainsBufferedMessagesBeforeOverflow() async throws {
     Task { await pollSignal.signal() }
   }
   let stream = watcher.stream(
-    sinceRowID: 0,
+    sinceRowID: -1,
     configuration: MessageWatcherConfiguration(
       debounceInterval: 0,
       fallbackPollInterval: nil,
@@ -319,7 +319,7 @@ func messageWatcherFiltersBeforeBufferAdmission() async throws {
     Task { await pollSignal.signal() }
   }
   let stream = watcher.stream(
-    sinceRowID: 0,
+    sinceRowID: -1,
     configuration: MessageWatcherConfiguration(
       debounceInterval: 0,
       fallbackPollInterval: nil,
@@ -343,7 +343,7 @@ func messageWatcherYieldsExistingMessages() async throws {
   let watcher = MessageWatcher(store: store)
   let stream = watcher.stream(
     chatID: nil,
-    sinceRowID: 0,
+    sinceRowID: -1,
     configuration: MessageWatcherConfiguration(debounceInterval: 0.01, batchLimit: 10)
   )
 

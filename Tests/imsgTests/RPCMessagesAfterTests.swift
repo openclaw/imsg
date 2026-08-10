@@ -36,32 +36,6 @@ func rpcMessagesAfterPagesMoreThanFiveHundredEqualTimestampRows() async throws {
 }
 
 @Test
-func rpcMessagesAfterLegacyNegativeCursorMatchesZeroReplay() async throws {
-  let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
-  let store = try makeMessagesAfterStore(
-    rows: (1...2).map { (Int64($0), Int64(1), timestamp) }
-  )
-  let output = TestRPCOutput()
-  let server = RPCServer(store: store, verbose: false, output: output)
-
-  await server.handleLineForTesting(
-    #"{"jsonrpc":"2.0","id":"zero","method":"messages.after","params":{"since_rowid":0}}"#
-  )
-  await server.handleLineForTesting(
-    #"{"jsonrpc":"2.0","id":"negative","method":"messages.after","params":{"since_rowid":-1}}"#
-  )
-
-  let zeroResult = try #require(output.responses.first?["result"] as? [String: Any])
-  let zeroMessages = try #require(zeroResult["messages"] as? [[String: Any]])
-  let negativeResult = try #require(output.responses.last?["result"] as? [String: Any])
-  let negativeMessages = try #require(negativeResult["messages"] as? [[String: Any]])
-  let zeroRowIDs = zeroMessages.compactMap { testInt64($0["id"]) }
-  let negativeRowIDs = negativeMessages.compactMap { testInt64($0["id"]) }
-  #expect(zeroRowIDs == [1, 2])
-  #expect(negativeRowIDs == zeroRowIDs)
-}
-
-@Test
 func rpcMessagesAfterFiltersInterleavedChatsWithoutGuessingFromGlobalRowIDs() async throws {
   let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
   let store = try makeMessagesAfterStore(
@@ -163,7 +137,7 @@ func rpcMessagesAfterReturnsStableEmptyPageAndAdvertisesCapability() async throw
 @Test(
   arguments: [
     #"{"jsonrpc":"2.0","id":1,"method":"messages.after","params":{}}"#,
-    #"{"jsonrpc":"2.0","id":1,"method":"messages.after","params":{"since_rowid":"0"}}"#,
+    #"{"jsonrpc":"2.0","id":1,"method":"messages.after","params":{"since_rowid":-1}}"#,
     #"{"jsonrpc":"2.0","id":1,"method":"messages.after","params":{"since_rowid":true}}"#,
     #"{"jsonrpc":"2.0","id":1,"method":"messages.after","params":{"since_rowid":1.5}}"#,
     #"{"jsonrpc":"2.0","id":1,"method":"messages.after","params":{"since_rowid":0,"chat_id":0}}"#,

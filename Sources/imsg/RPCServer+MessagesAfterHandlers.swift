@@ -16,8 +16,8 @@ extension RPCServer {
       ]
     )
 
-    guard let sinceRowID = try params.int64("since_rowid") else {
-      throw RPCError.invalidParams("since_rowid must be an integer")
+    guard let sinceRowID = try params.int64("since_rowid"), sinceRowID >= 0 else {
+      throw RPCError.invalidParams("since_rowid must be a non-negative integer")
     }
 
     let chatID: Int64?

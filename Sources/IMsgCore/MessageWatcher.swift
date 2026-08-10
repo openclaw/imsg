@@ -101,7 +101,6 @@ private final class WatchState: @unchecked Sendable {
 
   private var cursor: Int64
   private var resumeAfterRowID: Int64
-  private let startsAtCurrentRowID: Bool
   private var urlBalloonDedupe = URLBalloonDedupeState()
   #if os(macOS)
     private struct FileWatchIdentity: Equatable {
@@ -138,13 +137,12 @@ private final class WatchState: @unchecked Sendable {
     self.continuation = continuation
     self.cursor = sinceRowID ?? 0
     self.resumeAfterRowID = sinceRowID ?? 0
-    self.startsAtCurrentRowID = sinceRowID == nil
   }
 
   func start() {
     queue.async {
       do {
-        if self.startsAtCurrentRowID {
+        if self.cursor == 0 {
           self.cursor = try self.store.maxRowID()
           self.resumeAfterRowID = self.cursor
         }
