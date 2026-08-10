@@ -327,6 +327,15 @@ func rpcInitializeAndStatusUseControlAndReadSchedulerLanes() {
   #expect(kSupportedRPCMethods.prefix(3) == ["initialize", "status", "watch.unsubscribe"])
 }
 
+@Test
+func everyRPCMethodDescriptorNameIsDispatchable() {
+  for descriptor in rpcMethodDescriptors {
+    for name in descriptor.names {
+      #expect(rpcDispatchRoutes[name] == descriptor.route)
+    }
+  }
+}
+
 @Test(.timeLimit(.minutes(1)))
 func rpcDegradedStartupWritesOnlyJSONLinesToStdout() async throws {
   let server = RPCServer(

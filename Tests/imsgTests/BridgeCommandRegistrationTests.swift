@@ -27,6 +27,21 @@ func commandRouterIncludesAllBridgeCommands() {
 }
 
 @Test
+func injectedHelperReportsAuthoritativeMultipartCapability() throws {
+  let testFile = URL(fileURLWithPath: #filePath)
+  let repoRoot =
+    testFile
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
+  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
+  let statusBody = try #require(functionBody(named: "handleStatus", in: source))
+
+  #expect(statusBody.contains(#"@"sendMultipart": @(chatSend)"#))
+}
+
+@Test
 func bridgeMessagingCommandsExposeChatRequirement() async {
   // Each new bridge messaging command requires a `--chat` option (the chat
   // guid is the universal addressing key in v2). Ensure missing args bubble

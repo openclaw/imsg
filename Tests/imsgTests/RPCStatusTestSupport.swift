@@ -38,6 +38,7 @@ func fullRPCStatusBridgeSelectors() -> [String: Bool] {
   [
     "sendMessage": true,
     "sendAttachment": true,
+    "sendMultipart": true,
     "sendReaction": true,
     "stickerSend": true,
     "pollPayloadMessage": true,

@@ -12,7 +12,11 @@ imsg history --chat-id 42 --attachments --json
 imsg watch   --chat-id 42 --attachments --json
 ```
 
-Each message gains an `attachments` array. Per-attachment fields:
+Every message JSON object contains an `attachments` array. CLI `history` and
+`watch` JSON preserve their historical behavior of populating attachment
+metadata even without `--attachments`; that flag controls human-readable
+display. RPC read methods populate the array only when their documented
+`attachments` flag is true. Otherwise it is empty. Per-attachment fields:
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -20,14 +24,14 @@ Each message gains an `attachments` array. Per-attachment fields:
 | `transfer_name` | string | Original filename as sent. |
 | `uti` | string | Apple Uniform Type Identifier. |
 | `mime_type` | string | Best-effort MIME from UTI. |
-| `byte_size` | int | Size in bytes. |
+| `total_bytes` | int | Size in bytes. |
 | `is_sticker` | bool | True for sticker-pack attachments. |
 | `missing` | bool | True when the file couldn't be located on disk. |
-| `path` | string | Resolved absolute path under `~/Library/Messages/Attachments/`. |
+| `original_path` | string | Resolved absolute path under `~/Library/Messages/Attachments/`. |
 | `converted_path` | string | Set only with `--convert-attachments`; see below. |
 | `converted_mime_type` | string | Set only with `--convert-attachments`. |
 
-When an attachment is referenced in `chat.db` but the underlying file has been pruned (Messages can age out big files), `missing` is `true` and `path` may be empty.
+When an attachment is referenced in `chat.db` but the underlying file has been pruned (Messages can age out big files), `missing` is `true` and `original_path` may be empty.
 
 ## Converted variants
 

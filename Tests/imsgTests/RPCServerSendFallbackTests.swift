@@ -27,6 +27,31 @@ func rpcSendEnablesSMSFallbackForAutoTextDirectSend() async throws {
 }
 
 @Test
+func rpcSendCanDisableOtherwiseEligibleSMSFallbackWithoutChangingAutoService() async throws {
+  for key in ["allow_sms_fallback", "allowSMSFallback"] {
+    let store = try CommandTestDatabase.makeStoreForRPC()
+    let output = TestRPCOutput()
+    var captured: MessageSendOptions?
+    let server = RPCServer(
+      store: store,
+      verbose: false,
+      output: output,
+      sendMessage: { captured = $0 },
+      resolveSentMessage: resolvedSentMessageFixture
+    )
+
+    await server.handleLineForTesting(
+      "{\"jsonrpc\":\"2.0\",\"id\":\"no-fallback\",\"method\":\"send\","
+        + "\"params\":{\"to\":\"+15551234567\",\"text\":\"yo\",\"\(key)\":false}}"
+    )
+
+    #expect(captured?.service == .auto)
+    #expect(captured?.allowSMSFallback == false)
+    #expect(output.errors.isEmpty)
+  }
+}
+
+@Test
 func rpcSendAutoUsesLocalSMSHistoryForAttachmentSend() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   try store.withConnection { db in

@@ -56,6 +56,38 @@ struct ChatPayload: Codable {
   }
 }
 
+extension ChatPayload {
+  func asDictionary() throws -> [String: Any] {
+    let data = try JSONEncoder().encode(self)
+    let object = try JSONSerialization.jsonObject(with: data)
+    guard let dictionary = object as? [String: Any] else {
+      throw EncodingError.invalidValue(
+        self,
+        EncodingError.Context(
+          codingPath: [], debugDescription: "Chat payload encoding did not produce an object"))
+    }
+    return dictionary
+  }
+}
+
+func contactNameForChat(
+  chat: Chat,
+  chatInfo: ChatInfo?,
+  participants: [String],
+  contacts: any ContactResolving
+) -> String? {
+  let identifier = chatInfo?.identifier ?? chat.identifier
+  let guid = chatInfo?.guid ?? ""
+  guard !isGroupHandle(identifier: identifier, guid: guid) else { return nil }
+  if let name = contacts.displayName(for: identifier) {
+    return name
+  }
+  if participants.count == 1 {
+    return contacts.displayName(for: participants[0])
+  }
+  return nil
+}
+
 struct MessagePayload: Codable {
   struct URLPreviewPayload: Codable {
     let id: Int64

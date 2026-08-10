@@ -34,6 +34,39 @@ enum SentMessageVerifier {
     return nil
   }
 
+  static func resolveSentMessage(
+    store: MessageStore,
+    messageGUID: String,
+    chatInfo: ChatInfo,
+    afterRowID: Int64
+  ) async throws -> Message? {
+    guard !messageGUID.isEmpty, !chatInfo.guid.isEmpty else { return nil }
+
+    let deadline = Date().addingTimeInterval(8)
+    repeat {
+      if Task.isCancelled { return nil }
+      if let status = try store.messageSendStatus(guid: messageGUID),
+        status.rowID > afterRowID,
+        try store.messageBelongsToChat(messageGUID: messageGUID, chatGUID: chatInfo.guid)
+      {
+        return Message(
+          rowID: status.rowID,
+          chatID: chatInfo.id,
+          sender: "",
+          text: "",
+          date: Date(),
+          isFromMe: true,
+          service: status.service,
+          handleID: nil,
+          attachmentsCount: 1,
+          guid: status.guid
+        )
+      }
+      try await Task.sleep(nanoseconds: 100_000_000)
+    } while Date() < deadline
+    return nil
+  }
+
   static func resolveSentMessageCandidate(
     store: MessageStore,
     options: MessageSendOptions,

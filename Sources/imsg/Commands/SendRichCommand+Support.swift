@@ -46,17 +46,61 @@ extension SendRichCommand {
         Int64?,
         Date
       ) async throws -> Message?,
-    storeFactory: (String) throws -> MessageStore
+    storeFactory: (String) throws -> MessageStore,
+    resolveRow: Bool = false
   ) async throws -> [String: Any] {
+    let store = try? storeFactory(dbPath)
+    let chatInfo = try? store?.chatInfo(matchingTarget: chat)
+    return await enrichedSentMessageResponse(
+      data,
+      chat: chat,
+      text: text,
+      sentAt: sentAt,
+      store: store,
+      chatInfo: chatInfo,
+      resolveSentMessage: resolveSentMessage,
+      resolveRow: resolveRow
+    )
+  }
+
+  static func enrichedSentMessageResponse(
+    _ data: [String: Any],
+    chat: String,
+    text: String,
+    sentAt: Date,
+    store: MessageStore?,
+    chatInfo: ChatInfo?,
+    resolveSentMessage:
+      @escaping (
+        MessageStore,
+        MessageSendOptions,
+        Int64?,
+        Date
+      ) async throws -> Message?,
+    resolveRow: Bool = false
+  ) async -> [String: Any] {
     var enriched = data
-    guard !text.isEmpty, data["queued"] as? Bool == true else {
+    let bridgeGUID = (data["messageGuid"] as? String) ?? ""
+    let resolvedChatGUID = chatInfo?.guid ?? ""
+    let responseChatGUID =
+      ((data["chatGuid"] as? String).flatMap { $0.isEmpty ? nil : $0 })
+      ?? (!resolvedChatGUID.isEmpty ? resolvedChatGUID : chat)
+    if !responseChatGUID.isEmpty {
+      enriched["chat_guid"] = responseChatGUID
+    }
+
+    let queued = data["queued"] as? Bool == true
+    guard !text.isEmpty, queued || resolveRow, let store else {
+      if queued {
+        enriched.removeValue(forKey: "messageGuid")
+      } else if !bridgeGUID.isEmpty {
+        enriched["guid"] = bridgeGUID
+        enriched["message_id"] = bridgeGUID
+      }
       return enriched
     }
 
     do {
-      let store = try storeFactory(dbPath)
-      let chatInfo = try store.chatInfo(matchingTarget: chat)
-      let resolvedChatGUID = chatInfo?.guid ?? ""
       let options = MessageSendOptions(
         recipient: "",
         text: text,
@@ -71,13 +115,17 @@ extension SendRichCommand {
           enriched["message_id"] = sentMessage.guid
           enriched["messageGuid"] = sentMessage.guid
         }
-      } else if data["queued"] as? Bool == true {
+      } else if queued {
         enriched.removeValue(forKey: "messageGuid")
       }
     } catch {
-      if data["queued"] as? Bool == true {
+      if queued {
         enriched.removeValue(forKey: "messageGuid")
       }
+    }
+    if enriched["guid"] == nil, !queued, !bridgeGUID.isEmpty {
+      enriched["guid"] = bridgeGUID
+      enriched["message_id"] = bridgeGUID
     }
     return enriched
   }

@@ -12,35 +12,46 @@ func isGroupHandleFlagsGroup() {
 }
 
 @Test
-func chatPayloadIncludesParticipantsAndGroupFlag() {
+func canonicalChatPayloadIncludesParticipantsAndGroupFlag() throws {
   let date = Date(timeIntervalSince1970: 0)
-  let payload = chatPayload(
+  let chat = Chat(
+    id: 1,
+    identifier: "iMessage;+;chat123",
+    name: "Group",
+    service: "iMessage",
+    lastMessageAt: date
+  )
+  let info = ChatInfo(
     id: 1,
     identifier: "iMessage;+;chat123",
     guid: "iMessage;+;chat123",
-    name: "Group",
-    service: "iMessage",
-    lastMessageAt: date,
-    participants: ["+111", "+222"]
+    name: "Group title",
+    service: "iMessage"
   )
-  #expect(payload["id"] as? Int64 == 1)
+  let payload = try ChatPayload(
+    chat: chat, chatInfo: info, participants: ["+111", "+222"]
+  ).asDictionary()
+  #expect((payload["id"] as? NSNumber)?.int64Value == 1)
   #expect(payload["identifier"] as? String == "iMessage;+;chat123")
+  #expect(payload["display_name"] as? String == "Group title")
   #expect(payload["is_group"] as? Bool == true)
   #expect((payload["participants"] as? [String])?.count == 2)
 }
 
 @Test
-func chatPayloadIncludesContactName() {
-  let payload = chatPayload(
+func canonicalChatPayloadIncludesContactName() throws {
+  let chat = Chat(
     id: 2,
     identifier: "+15551234567",
-    guid: "iMessage;-;+15551234567",
     name: "+15551234567",
     service: "iMessage",
-    lastMessageAt: Date(timeIntervalSince1970: 0),
+    lastMessageAt: Date(timeIntervalSince1970: 0)
+  )
+  let payload = try ChatPayload(
+    chat: chat,
     participants: ["+15551234567"],
     contactName: "Alice"
-  )
+  ).asDictionary()
   #expect(payload["contact_name"] as? String == "Alice")
 }
 
@@ -106,9 +117,16 @@ func messagePayloadIncludesChatFields() throws {
   #expect(payload["chat_name"] as? String == "Group")
   #expect(payload["is_group"] as? Bool == true)
   #expect((payload["attachments"] as? [[String: Any]])?.count == 1)
-  let attachmentPayload = (payload["attachments"] as? [[String: Any]])?.first
-  #expect(attachmentPayload?["converted_path"] as? String == "/tmp/file.png")
-  #expect(attachmentPayload?["converted_mime_type"] as? String == "image/png")
+  let attachmentPayload = try #require((payload["attachments"] as? [[String: Any]])?.first)
+  #expect(
+    Set(attachmentPayload.keys) == [
+      "filename", "transfer_name", "uti", "mime_type", "total_bytes", "is_sticker",
+      "original_path", "converted_path", "converted_mime_type", "missing",
+    ])
+  #expect((attachmentPayload["total_bytes"] as? NSNumber)?.int64Value == 12)
+  #expect(attachmentPayload["original_path"] as? String == "/tmp/file.dat")
+  #expect(attachmentPayload["converted_path"] as? String == "/tmp/file.png")
+  #expect(attachmentPayload["converted_mime_type"] as? String == "image/png")
   #expect(
     (payload["reactions"] as? [[String: Any]])?.first?["emoji"] as? String
       == ReactionType.like.emoji)

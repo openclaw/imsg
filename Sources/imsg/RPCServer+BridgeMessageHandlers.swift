@@ -8,8 +8,8 @@ extension RPCServer {
       RPCParameterKeys.replyTarget,
       RPCParameterKeys.partIndex,
       [
-        "text", "message", "url", "dd_scan", "ddScan", "effect_id", "effectId", "effect",
-        "subject", "text_formatting", "textFormatting",
+        "text", "message", "file", "path", "url", "dd_scan", "ddScan", "effect_id",
+        "effectId", "effect", "subject", "text_formatting", "textFormatting",
       ]
     )
     let params = try RPCParameters(params, method: "send.rich", supportedKeys: supportedKeys)
@@ -18,6 +18,12 @@ extension RPCServer {
       return
     }
     let text = try params.string("text", aliases: ["message"]) ?? ""
+    let file = try params.string("file", aliases: ["path"]) ?? ""
+    if params.contains("file") || params.contains("path") {
+      guard !file.isEmpty else {
+        throw RPCError.invalidParams("file must be a non-empty string")
+      }
+    }
     let partIndex = try params.integer("part_index", aliases: ["partIndex"]) ?? 0
     let ddScan = try params.boolean("dd_scan", aliases: ["ddScan"]) ?? true
     let effect = try params.string("effect_id", aliases: ["effectId", "effect"])
@@ -46,35 +52,56 @@ extension RPCServer {
     }
 
     let sentAt = Date()
-    let data = try await invokeBridge(action: .sendMessage, params: bridgeParams)
-    var result: [String: Any] = ["ok": true]
-    if let queued = data["queued"] as? Bool {
-      result["queued"] = queued
+    let action: BridgeAction
+    if file.isEmpty {
+      action = .sendMessage
+    } else {
+      try await requireRichAttachmentCapability(
+        requiresMetadata: !text.isEmpty || effect?.isEmpty == false || subject?.isEmpty == false
+          || reply?.isEmpty == false || partIndex != 0 || formatting != nil
+      )
+      do {
+        bridgeParams["filePath"] = try stageAttachment((file as NSString).expandingTildeInPath)
+      } catch {
+        throw DeliveryFailure(
+          disposition: .notStarted,
+          transport: .bridgeV2,
+          operation: BridgeAction.sendAttachment.rawValue,
+          detail: "The attachment could not be staged before bridge dispatch."
+        )
+      }
+      bridgeParams["isAudioMessage"] = false
+      action = .sendAttachment
     }
-    let database = await databaseResources.available()
-    let chatID =
-      (try params.int64("chat_id"))
-      ?? (try? database?.store.chatInfo(matchingTarget: chatGUID)?.id)
-    let options = MessageSendOptions(
-      recipient: "",
-      text: text,
-      service: .auto,
-      chatGUID: chatGUID
-    )
-    if data["queued"] as? Bool == true,
-      !text.isEmpty,
-      let database,
-      let sentMessage = try? await resolveSentMessage(database.store, options, chatID, sentAt),
-      !sentMessage.guid.isEmpty
-    {
-      result["guid"] = sentMessage.guid
-      result["message_id"] = sentMessage.guid
-    } else if data["queued"] as? Bool != true,
-      let guid = data["messageGuid"] as? String, !guid.isEmpty
-    {
-      result["guid"] = guid
-      result["message_id"] = guid
+    let emptyTextBaselineRowID = await bridgeSendVerificationBaseline(
+      requiresGUIDVerification: !file.isEmpty && text.isEmpty)
+    let data = try await invokeBridge(action: action, params: bridgeParams)
+    var result: [String: Any]
+    if file.isEmpty {
+      let database = await databaseResources.available()
+      let chatInfo = try bridgeResponseChatInfo(
+        params: params, chatGUID: chatGUID, database: database)
+      result = await SendRichCommand.enrichedSentMessageResponse(
+        data,
+        chat: chatGUID,
+        text: text,
+        sentAt: sentAt,
+        store: database?.store,
+        chatInfo: chatInfo,
+        resolveSentMessage: resolveSentMessage
+      )
+    } else {
+      result = try await verifiedBridgeSendResponse(
+        data,
+        params: params,
+        chatGUID: chatGUID,
+        text: text,
+        sentAt: sentAt,
+        action: action,
+        emptyTextBaselineRowID: emptyTextBaselineRowID
+      )
     }
+    result["ok"] = true
     respond(id: id, result: result)
   }
 
@@ -82,7 +109,7 @@ extension RPCServer {
     let incompatibleKeys = [
       "text", "message", "dd_scan", "ddScan", "effect_id", "effectId", "effect", "subject",
       "reply_to", "replyTo", "reply_to_guid", "message_guid", "part_index", "partIndex",
-      "text_formatting", "textFormatting",
+      "text_formatting", "textFormatting", "file", "path",
     ]
     if let unsupported = incompatibleKeys.first(where: params.contains) {
       throw RPCError.invalidParams("\(unsupported) is not supported with url")
@@ -125,58 +152,17 @@ extension RPCServer {
     } catch {
       throw error
     }
-    var result: [String: Any] = ["ok": true]
-    if let queued = data["queued"] as? Bool {
-      result["queued"] = queued
-    }
-    let options = MessageSendOptions(
-      recipient: "",
+    var result = await SendRichCommand.enrichedSentMessageResponse(
+      data,
+      chat: chatGUID,
       text: prepared.originalURL,
-      service: .imessage,
-      chatGUID: chatGUID
+      sentAt: sentAt,
+      store: database.store,
+      chatInfo: chatInfo,
+      resolveSentMessage: resolveSentMessage
     )
-    if data["queued"] as? Bool == true,
-      let sentMessage = try? await resolveSentMessage(
-        database.store, options, chatInfo.id, sentAt),
-      !sentMessage.guid.isEmpty
-    {
-      result["guid"] = sentMessage.guid
-      result["message_id"] = sentMessage.guid
-    } else if data["queued"] as? Bool != true,
-      let guid = data["messageGuid"] as? String, !guid.isEmpty
-    {
-      result["guid"] = guid
-      result["message_id"] = guid
-    }
+    result["ok"] = true
     respond(id: id, result: result)
-  }
-
-  private func strictRichLinkChatInfo(
-    _ params: RPCParameters,
-    database: RPCDatabaseResources
-  ) async throws -> ChatInfo {
-    let target = try params.chatTarget()
-
-    let info: ChatInfo?
-    if let chatID = target.chatID {
-      info = try database.store.chatInfo(chatID: chatID)
-    } else if !target.chatIdentifier.isEmpty {
-      info = try database.store.chatInfo(
-        matchingExactIdentifier: target.chatIdentifier,
-        preferredServices: ["iMessage", "iMessageLite"]
-      )
-    } else {
-      info = try database.store.chatInfo(matchingExactGUID: target.chatGUID)
-    }
-
-    guard let info, !info.guid.isEmpty else {
-      throw RPCError.invalidParams("rich links require an existing chat")
-    }
-    let service = info.service.lowercased()
-    guard service == "imessage" || service == "imessagelite" else {
-      throw RPCError.invalidParams("rich links require an iMessage chat")
-    }
-    return info
   }
 
   func handleSendAttachment(params: [String: Any], id: Any?) async throws {
@@ -216,11 +202,19 @@ extension RPCServer {
       bridgeParams["partIndex"] = partIndex
     }
     let data = try await invokeBridge(action: .sendAttachment, params: bridgeParams)
-    var result: [String: Any] = ["ok": true]
-    if let guid = data["messageGuid"] as? String, !guid.isEmpty {
-      result["guid"] = guid
-      result["message_id"] = guid
-    }
+    let database = await databaseResources.available()
+    let chatInfo = try bridgeResponseChatInfo(
+      params: params, chatGUID: chatGUID, database: database)
+    var result = await SendRichCommand.enrichedSentMessageResponse(
+      data,
+      chat: chatGUID,
+      text: "",
+      sentAt: Date(),
+      store: database?.store,
+      chatInfo: chatInfo,
+      resolveSentMessage: resolveSentMessage
+    )
+    result["ok"] = true
     respond(id: id, result: result)
   }
 
@@ -244,6 +238,9 @@ extension RPCServer {
     let commentValue = try params.string("comment")
     let suppressComment =
       try params.boolean("suppress_comment", aliases: ["suppressComment"]) ?? false
+    if commentValue != nil, suppressComment {
+      throw RPCError.invalidParams("comment cannot be combined with suppress_comment: true")
+    }
     let chatGUID = try await resolveChatGUIDParam(params)
     var bridgeParams: [String: Any] = [
       "chatGuid": chatGUID,

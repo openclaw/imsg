@@ -168,6 +168,7 @@ func rpcRejectsCoercedNumericAndBooleanValues() async throws {
     #"{"jsonrpc":"2.0","id":"bool-chat","method":"messages.history","params":{"chat_id":true}}"#,
     #"{"jsonrpc":"2.0","id":"bool-limit","method":"chats.list","params":{"limit":false}}"#,
     #"{"jsonrpc":"2.0","id":"number-bool","method":"chats.list","params":{"unread_only":1}}"#,
+    #"{"jsonrpc":"2.0","id":"sms-fallback","method":"send","params":{"to":"+123","text":"hi","allow_sms_fallback":1}}"#,
   ]
 
   for request in requests {
@@ -200,6 +201,11 @@ func rpcRejectsDocumentedInvalidSemanticValuesBeforeSideEffects() async throws {
   )
   let requests = [
     #"{"jsonrpc":"2.0","id":"history-id","method":"messages.history","params":{"chat_id":0}}"#,
+    #"{"jsonrpc":"2.0","id":"history-limit","method":"messages.history","params":{"chat_id":1,"limit":0}}"#,
+    #"{"jsonrpc":"2.0","id":"chats-limit","method":"chats.list","params":{"limit":-1}}"#,
+    #"{"jsonrpc":"2.0","id":"search-empty","method":"messages.search","params":{"query":"   "}}"#,
+    #"{"jsonrpc":"2.0","id":"search-match","method":"messages.search","params":{"query":"hello","match":"prefix"}}"#,
+    #"{"jsonrpc":"2.0","id":"search-limit","method":"messages.search","params":{"query":"hello","limit":101}}"#,
     #"{"jsonrpc":"2.0","id":"watch-id","method":"watch.subscribe","params":{"chat_id":-1}}"#,
     #"{"jsonrpc":"2.0","id":"send-id","method":"send","params":{"chat_id":0,"text":"hi"}}"#,
     #"{"jsonrpc":"2.0","id":"subscription","method":"watch.unsubscribe","params":{"subscription":0}}"#,
@@ -208,6 +214,9 @@ func rpcRejectsDocumentedInvalidSemanticValuesBeforeSideEffects() async throws {
     #"{"jsonrpc":"2.0","id":"empty-address","method":"group.addParticipant","params":{"chat_id":1,"address":""}}"#,
     #"{"jsonrpc":"2.0","id":"negative-part","method":"send.sticker","params":{"#
       + #""chat_id":1,"file":"sticker.png","attach_to":"parent-guid","part_index":-1}}"#,
+    #"{"jsonrpc":"2.0","id":"poll-comment","method":"poll.send","params":{"#
+      + #""chat_id":1,"question":"Q","options":["A","B"],"comment":"caption","#
+      + #""suppress_comment":true}}"#,
   ]
 
   for request in requests {
@@ -219,6 +228,49 @@ func rpcRejectsDocumentedInvalidSemanticValuesBeforeSideEffects() async throws {
   #expect(output.errors.allSatisfy { rpcErrorCode($0) == -32602 })
   #expect(bridgeCalls == 0)
   #expect(stageCalls == 0)
+}
+
+@Test
+func rpcMultipartRejectsInvalidPartsBeforeBridgeDispatch() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  var bridgeCalls = 0
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { _, _ in
+      bridgeCalls += 1
+      return [:]
+    }
+  )
+  let tooMany = Array(repeating: #"{"text":"x"}"#, count: 21).joined(separator: ",")
+  let params = [
+    #"{}"#,
+    #"{"parts":[]}"#,
+    #"{"parts":["text"]}"#,
+    #"{"parts":[{"text":""}]}"#,
+    #"{"parts":[{"text":1}]}"#,
+    #"{"parts":[{"text":"hi","extra":true}]}"#,
+    #"{"parts":[{"text":"hi","file":"photo.jpg"}]}"#,
+    #"{"parts":[{"text":"hi","attachment":{}}]}"#,
+    #"{"parts":[{"text":"hi","mention":"+123"}]}"#,
+    #"{"parts":[{"text":"hi","text_formatting":[]}],"effect":1}"#,
+    #"{"chat_id":1,"parts":[{"text":"hi","textFormatting":[],"text_formatting":[]}]}"#,
+    "{\"chat_id\":1,\"parts\":[\(tooMany)]}",
+  ]
+
+  for (index, value) in params.enumerated() {
+    await server.handleLineForTesting(
+      "{\"jsonrpc\":\"2.0\",\"id\":\"multipart-\(index)\","
+        + "\"method\":\"send.multipart\",\"params\":\(value)}"
+    )
+  }
+
+  #expect(output.responses.isEmpty)
+  #expect(output.errors.count == params.count)
+  #expect(output.errors.allSatisfy { rpcErrorCode($0) == -32602 })
+  #expect(bridgeCalls == 0)
 }
 
 @Test
@@ -242,6 +294,8 @@ func rpcRejectsConflictingAliasesBeforeSideEffects() async throws {
     #"{"jsonrpc":"2.0","id":"watch","method":"watch.subscribe","params":{"debounce_ms":1,"debounceMs":1}}"#,
     #"{"jsonrpc":"2.0","id":"send-format","method":"send","params":{"to":"+123","text":"hi","formatting":[],"textFormatting":[]}}"#,
     #"{"jsonrpc":"2.0","id":"send-reply","method":"send","params":{"to":"+123","text":"hi","reply_to":"a","replyTo":"a"}}"#,
+    #"{"jsonrpc":"2.0","id":"send-fallback","method":"send","params":{"#
+      + #""to":"+123","text":"hi","allow_sms_fallback":true,"allowSMSFallback":true}}"#,
     #"{"jsonrpc":"2.0","id":"rich","method":"send.rich","params":{"chat_id":1,"text":"hi","message":"hi"}}"#,
     #"{"jsonrpc":"2.0","id":"attachment","method":"send.attachment","params":{"chat_id":1,"file":"a","path":"a"}}"#,
     #"{"jsonrpc":"2.0","id":"attachment-audio","method":"send.attachment","params":{"#

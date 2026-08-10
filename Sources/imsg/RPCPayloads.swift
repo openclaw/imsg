@@ -1,36 +1,6 @@
 import Foundation
 import IMsgCore
 
-func chatPayload(
-  id: Int64,
-  identifier: String,
-  guid: String,
-  name: String,
-  service: String,
-  lastMessageAt: Date,
-  participants: [String],
-  contactName: String? = nil,
-  unreadCount: Int? = nil
-) -> [String: Any] {
-  var payload: [String: Any] = [
-    "id": id,
-    "identifier": identifier,
-    "guid": guid,
-    "name": name,
-    "service": service,
-    "last_message_at": CLIISO8601.format(lastMessageAt),
-    "participants": participants,
-    "is_group": isGroupHandle(identifier: identifier, guid: guid),
-  ]
-  if let unreadCount {
-    payload["unread_count"] = unreadCount
-  }
-  if let contactName {
-    payload["contact_name"] = contactName
-  }
-  return payload
-}
-
 func messagePayload(
   message: Message,
   chatInfo: ChatInfo?,

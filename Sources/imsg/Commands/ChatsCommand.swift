@@ -77,21 +77,4 @@ enum ChatsCommand {
     }
   }
 
-  private static func contactNameForChat(
-    chat: Chat,
-    chatInfo: ChatInfo?,
-    participants: [String],
-    contacts: any ContactResolving
-  ) -> String? {
-    let identifier = chatInfo?.identifier ?? chat.identifier
-    let guid = chatInfo?.guid ?? ""
-    guard !isGroupHandle(identifier: identifier, guid: guid) else { return nil }
-    if let name = contacts.displayName(for: identifier) {
-      return name
-    }
-    if participants.count == 1 {
-      return contacts.displayName(for: participants[0])
-    }
-    return nil
-  }
 }

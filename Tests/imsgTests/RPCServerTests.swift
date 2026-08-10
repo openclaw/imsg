@@ -27,7 +27,15 @@ func rpcChatsListReturnsChatPayload() async throws {
   let chats = result?["chats"] as? [[String: Any]] ?? []
   #expect(chats.count == 1)
   let chat = chats[0]
+  #expect(
+    Set(chat.keys) == [
+      "id", "name", "identifier", "service", "last_message_at", "guid", "display_name",
+      "is_group", "participants", "account_id", "account_login", "last_addressed_handle",
+    ])
   #expect(int64Value(chat["id"]) == 1)
+  #expect(chat["name"] as? String == "Group Chat")
+  #expect(chat["display_name"] as? String == "Group Chat")
+  #expect(chat["guid"] as? String == "iMessage;+;chat123")
   #expect(chat["identifier"] as? String == "iMessage;+;chat123")
   #expect(chat["is_group"] as? Bool == true)
   #expect(chat["contact_name"] == nil)

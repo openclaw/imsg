@@ -1085,6 +1085,7 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"sendMessageReason": @(gHasSendMessageReason),
         @"sendMessage": @(chatSend),
         @"sendAttachment": @(attachmentSend),
+        @"sendMultipart": @(chatSend),
         @"sendReaction": @(reactionSend),
         @"pollPayloadMessage": @(
             [chatClass instancesRespondToSelector:@selector(sendMessage:)]

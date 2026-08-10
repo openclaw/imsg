@@ -30,7 +30,8 @@ Supported compatibility aliases are explicit and method-specific:
 - `chats.list`: `unreadOnly` for `unread_only`.
 - `watch.subscribe`: `debounceMs` for `debounce_ms`.
 - `send`: `textFormatting` or `formatting` for `text_formatting`; `replyTo`,
-  `reply_to_guid`, or `message_guid` for `reply_to`.
+  `reply_to_guid`, or `message_guid` for `reply_to`; and `allowSMSFallback` for
+  `allow_sms_fallback`.
 - `send.rich`: `message` for `text`; camelCase forms for `part_index`,
   `dd_scan`, `effect_id`, and `text_formatting`; `effect` for `effect_id`; and
   the same reply aliases as `send`.
@@ -41,6 +42,8 @@ Supported compatibility aliases are explicit and method-specific:
   `optionId`, `optionIdentifier`, `optionIndex`, and `suppressComment`.
 - Message mutations accept the existing `messageId`, `messageGuid`, and
   `message` target aliases, plus their documented text and part-index aliases.
+- `send.multipart`: camelCase forms for `effect_id` and per-part
+  `text_formatting`; `effect` is also accepted for `effect_id`.
 
 Other spellings, including `chatId`, are not aliases and are rejected.
 
@@ -198,7 +201,7 @@ the helper.
 
 Params:
 
-- `limit` (int, default 20)
+- `limit` (positive int, default 20)
 - `unread_only` (bool, default `false`) — when true, return only chats with `unread_count > 0`; unavailable database schemas return an invalid-params error rather than an empty list
 
 Result:
@@ -251,7 +254,7 @@ UTI/MIME and chat. Otherwise the `media` key is omitted. Invalid, non-positive, 
 Params:
 
 - `chat_id` (int, required) — preferred identifier.
-- `limit` (int, default 50)
+- `limit` (positive int, default 50)
 - `participants` (array of handle strings, optional)
 - `start` / `end` (ISO 8601, optional)
 - `attachments` (bool, default `false`)
@@ -261,6 +264,28 @@ Result:
 ```json
 { "messages": [Message] }
 ```
+
+The `attachments` array remains present on every message and is populated only
+when `attachments` is true.
+
+### `messages.search`
+
+Searches local `chat.db` through the same logical-message and JSON payload
+pipeline as `imsg search`; it never invokes the bridge.
+
+Params:
+
+- `query` (non-empty string, required)
+- `match` (`contains` | `exact`, default `contains`)
+- `limit` (positive int, default 50, maximum 100)
+
+Result:
+
+```json
+{ "messages": [Message] }
+```
+
+Search results always contain an empty `attachments` array.
 
 ### `messages.after`
 
@@ -414,6 +439,9 @@ Params (direct send):
 - `file` (string, optional)
 - `service` (`imessage` | `sms` | `auto`, optional)
 - `region` (string, optional)
+- `allow_sms_fallback` (bool, default `true`) — gates only the narrow
+  `service: auto`, direct-recipient, text-only retry described below; false
+  leaves service selection on `auto` but disables that retry
 
 Params (chat target):
 
@@ -485,8 +513,9 @@ membership or payload state—poll vote/unvote and stickers—still require the
 database even with an explicit GUID. Rich-link mode also requires a stored
 existing iMessage chat; ordinary `send.rich` text does not.
 
-- `send.rich` sends text with optional `effect`, `subject`, `reply_to`, `part_index`, `dd_scan`, and `text_formatting`. Alternatively, pass only one chat target plus an HTTP(S) `url` to send an Apple URL-preview balloon. URL mode is iMessage-only and rejects text/send modifiers; metadata or image lookup failure falls back to a metadata-only card, never a plain-message send.
+- `send.rich` sends text with optional `effect`, `subject`, `reply_to`, `part_index`, `dd_scan`, and `text_formatting`. It also accepts `file` or `path` and securely stages the file before sending it through the attachment bridge while preserving those same caption/effect/subject/reply/part/formatting semantics. Attachment capability is checked before staging or publishing the send. Alternatively, pass only one chat target plus an HTTP(S) `url` to send an Apple URL-preview balloon. URL mode is iMessage-only and rejects text, file, and other send modifiers; metadata or image lookup failure falls back to a metadata-only card, never a plain-message send.
 - `send.attachment` sends `file` or `path`, with optional `audio` / `is_audio` / `as_voice`. Pass `reply_to` (or `replyTo`, `reply_to_guid`, or `message_guid`) to reply to an existing message. An optional non-negative integer `part_index` / `partIndex` selects that message's part and is invalid without a reply target.
+- `send.multipart` sends 1–20 text parts. `parts` is a required array of objects containing a non-empty `text` string and optional `text_formatting` array. Top-level `effect` / `effect_id` and `subject` match `imsg send-multipart`. File, attachment, and mention parts are rejected before bridge dispatch.
 - `tapback` sends or removes a reaction. Params: `message_id` or `message_guid`, plus `reaction` / `kind` / `emoji`, optional `remove`.
 - `message.edit` edits `message_id` / `message_guid` with `text`.
 - `message.unsend`, `message.delete`, and `message.notifyAnyways` target `message_id` / `message_guid`.
@@ -503,7 +532,13 @@ Result:
 { "ok": true }
 ```
 
-`send.rich` and `send.attachment` return `guid` / `message_id` when the bridge reports the sent message GUID.
+`send.rich` file/path mode and `send.multipart` return success only after a
+matching outgoing row is observed in the resolved chat. Their successful
+results include numeric `id`, `guid` / `message_id`, and `chat_guid`; an
+unobserved result is reported as delivery outcome unknown (`-32001`) and must
+not be retried automatically. Existing `send.rich` text/URL mode and
+`send.attachment` return `guid` / `message_id` and `chat_guid` when available.
+`send.multipart` additionally returns `parts_count`.
 
 ### `handles.check`
 
@@ -531,7 +566,7 @@ Result:
 
 ### Native polls
 
-`poll.send` creates a native Apple Messages Polls extension balloon through the IMCore bridge. The bridge must be injected with `imsg launch`; the AppleScript transport cannot send native extension payloads. Messages does not render the poll payload title on the balloon, so `poll.send` also sends a best-effort plain caption message right after the poll. The caption defaults to `question`; pass `comment` when the visible caption should differ from the stored poll question, or set `suppress_comment` to `true` when the caller already sent its own visible context and needs only the poll balloon. The camelCase alias `suppressComment` is also accepted.
+`poll.send` creates a native Apple Messages Polls extension balloon through the IMCore bridge. The bridge must be injected with `imsg launch`; the AppleScript transport cannot send native extension payloads. Messages does not render the poll payload title on the balloon, so `poll.send` also sends a best-effort plain caption message right after the poll. The caption defaults to `question`; pass `comment` when the visible caption should differ from the stored poll question, or set `suppress_comment` to `true` when the caller already sent its own visible context and needs only the poll balloon. `comment` and `suppress_comment: true` are mutually exclusive. The camelCase alias `suppressComment` is also accepted.
 
 Request:
 

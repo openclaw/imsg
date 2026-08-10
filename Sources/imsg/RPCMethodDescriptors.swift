@@ -36,8 +36,19 @@ struct RPCBridgeRequirement: Sendable, Equatable {
   }
 }
 
+enum RPCDispatchRoute: Sendable, Equatable {
+  case initialize, status, chatsList, messagesStats, messagesHistory, messagesSearch
+  case messagesAfter, watchSubscribe, watchUnsubscribe, send, sendRich, sendAttachment
+  case sendMultipart, sendSticker, messagesScheduled, pollSend, pollVote, pollUnvote
+  case tapback, typing, read, messageEdit, messageUnsend, messageDelete
+  case messageNotifyAnyways, messageSendStatus, chatsCreate, chatsDelete, chatsMarkUnread
+  case groupRename, groupSetIcon, groupAddParticipant, groupRemoveParticipant, groupLeave
+  case contactsShouldShare, contactsShare, handlesCheck
+}
+
 struct RPCMethodDescriptor: Sendable, Equatable {
   let names: [String]
+  let route: RPCDispatchRoute
   let lane: RPCRequestLane
   let database: [RPCDatabaseRequirement]
   let bridge: RPCBridgeRequirement
@@ -53,12 +64,14 @@ struct RPCMethodDescriptor: Sendable, Equatable {
 
   init(
     _ names: String...,
+    route: RPCDispatchRoute,
     lane: RPCRequestLane,
     database: [RPCDatabaseRequirement] = [],
     bridge: RPCBridgeRequirement = .none,
     macOSOnly: Bool = false
   ) {
     self.names = names
+    self.route = route
     self.lane = lane
     self.database = database
     self.bridge = bridge
@@ -85,80 +98,100 @@ struct RPCMethodDescriptor: Sendable, Equatable {
 }
 
 let rpcMethodDescriptors: [RPCMethodDescriptor] = [
-  RPCMethodDescriptor("initialize", lane: .control),
-  RPCMethodDescriptor("status", lane: .read),
-  RPCMethodDescriptor("watch.unsubscribe", lane: .control),
-  RPCMethodDescriptor("chats.list", lane: .read, database: [.ready]),
-  RPCMethodDescriptor("messages.stats", lane: .read, database: [.ready]),
-  RPCMethodDescriptor("messages.history", lane: .read, database: [.ready]),
-  RPCMethodDescriptor("messages.after", lane: .read, database: [.ready]),
-  RPCMethodDescriptor("messages.scheduled", lane: .read, database: [.scheduledMessages]),
-  RPCMethodDescriptor("watch.subscribe", lane: .control, database: [.ready]),
-  RPCMethodDescriptor("message.send_status", lane: .read, database: [.ready]),
-  RPCMethodDescriptor("send", lane: .mutation, macOSOnly: true),
+  RPCMethodDescriptor("initialize", route: .initialize, lane: .control),
+  RPCMethodDescriptor("status", route: .status, lane: .read),
+  RPCMethodDescriptor("watch.unsubscribe", route: .watchUnsubscribe, lane: .control),
+  RPCMethodDescriptor("chats.list", route: .chatsList, lane: .read, database: [.ready]),
   RPCMethodDescriptor(
-    "chats.create", lane: .mutation, bridge: .selector("createChat"), macOSOnly: true),
+    "messages.stats", route: .messagesStats, lane: .read, database: [.ready]),
   RPCMethodDescriptor(
-    "chats.delete", lane: .mutation, bridge: .anySelector("deleteChat", "removeChat"),
+    "messages.history", route: .messagesHistory, lane: .read, database: [.ready]),
+  RPCMethodDescriptor(
+    "messages.search", route: .messagesSearch, lane: .read, database: [.ready]),
+  RPCMethodDescriptor(
+    "messages.after", route: .messagesAfter, lane: .read, database: [.ready]),
+  RPCMethodDescriptor(
+    "messages.scheduled", route: .messagesScheduled, lane: .read,
+    database: [.scheduledMessages]),
+  RPCMethodDescriptor(
+    "watch.subscribe", route: .watchSubscribe, lane: .control, database: [.ready]),
+  RPCMethodDescriptor(
+    "message.send_status", route: .messageSendStatus, lane: .read, database: [.ready]),
+  RPCMethodDescriptor("send", route: .send, lane: .mutation, macOSOnly: true),
+  RPCMethodDescriptor(
+    "chats.create", route: .chatsCreate, lane: .mutation, bridge: .selector("createChat"),
     macOSOnly: true),
   RPCMethodDescriptor(
-    "chats.markUnread", lane: .mutation, bridge: .selector("markChatUnread"),
+    "chats.delete", route: .chatsDelete, lane: .mutation,
+    bridge: .anySelector("deleteChat", "removeChat"), macOSOnly: true),
+  RPCMethodDescriptor(
+    "chats.markUnread", route: .chatsMarkUnread, lane: .mutation,
+    bridge: .selector("markChatUnread"), macOSOnly: true),
+  RPCMethodDescriptor(
+    "send.rich", route: .sendRich, lane: .mutation, bridge: .selector("sendMessage"),
     macOSOnly: true),
   RPCMethodDescriptor(
-    "send.rich", lane: .mutation, bridge: .selector("sendMessage"), macOSOnly: true),
+    "send.attachment", route: .sendAttachment, lane: .mutation,
+    bridge: .selector("sendAttachment"), macOSOnly: true),
   RPCMethodDescriptor(
-    "send.attachment", lane: .mutation, bridge: .selector("sendAttachment"),
-    macOSOnly: true),
+    "send.multipart", route: .sendMultipart, lane: .mutation,
+    bridge: .selector("sendMultipart"), macOSOnly: true),
   RPCMethodDescriptor(
-    "send.sticker", lane: .mutation, database: [.ready], bridge: .selector("stickerSend"),
-    macOSOnly: true),
+    "send.sticker", route: .sendSticker, lane: .mutation, database: [.ready],
+    bridge: .selector("stickerSend"), macOSOnly: true),
   RPCMethodDescriptor(
-    "poll.send", "messages.poll.send", lane: .mutation,
+    "poll.send", "messages.poll.send", route: .pollSend, lane: .mutation,
     bridge: .selector("pollPayloadMessage"), macOSOnly: true),
   RPCMethodDescriptor(
-    "poll.vote", "messages.poll.vote", lane: .mutation,
+    "poll.vote", "messages.poll.vote", route: .pollVote, lane: .mutation,
     database: [.ready, .balloonPayloads], bridge: .selector("pollVoteMessage"),
     macOSOnly: true),
   RPCMethodDescriptor(
-    "poll.unvote", "polls.unvote", "messages.poll.unvote", lane: .mutation,
+    "poll.unvote", "polls.unvote", "messages.poll.unvote", route: .pollUnvote,
+    lane: .mutation,
     database: [.ready, .balloonPayloads, .reactions],
     bridge: .selector("pollVoteMessage"), macOSOnly: true),
   RPCMethodDescriptor(
-    "tapback", lane: .mutation, bridge: .selector("sendReaction"), macOSOnly: true),
-  RPCMethodDescriptor("typing", lane: .mutation, macOSOnly: true),
-  RPCMethodDescriptor("read", lane: .mutation, macOSOnly: true),
+    "tapback", route: .tapback, lane: .mutation, bridge: .selector("sendReaction"),
+    macOSOnly: true),
+  RPCMethodDescriptor("typing", route: .typing, lane: .mutation, macOSOnly: true),
+  RPCMethodDescriptor("read", route: .read, lane: .mutation, macOSOnly: true),
   RPCMethodDescriptor(
-    "message.edit", lane: .mutation,
+    "message.edit", route: .messageEdit, lane: .mutation,
     bridge: .anySelector("editMessageItemTranslation", "editMessageItem", "editMessage"),
     macOSOnly: true),
   RPCMethodDescriptor(
-    "message.unsend", lane: .mutation, bridge: .selector("retractMessagePart"),
+    "message.unsend", route: .messageUnsend, lane: .mutation,
+    bridge: .selector("retractMessagePart"), macOSOnly: true),
+  RPCMethodDescriptor(
+    "message.delete", route: .messageDelete, lane: .mutation,
+    bridge: .selector("deleteMessage"), macOSOnly: true),
+  RPCMethodDescriptor(
+    "message.notifyAnyways", route: .messageNotifyAnyways, lane: .mutation,
+    bridge: .selector("notifyAnyways"), macOSOnly: true),
+  RPCMethodDescriptor(
+    "group.rename", route: .groupRename, lane: .mutation,
+    bridge: .selector("setDisplayName"), macOSOnly: true),
+  RPCMethodDescriptor(
+    "group.setIcon", route: .groupSetIcon, lane: .mutation,
+    bridge: .selector("updateGroupPhoto"), macOSOnly: true),
+  RPCMethodDescriptor(
+    "group.addParticipant", route: .groupAddParticipant, lane: .mutation,
+    bridge: .selector("addParticipant"), macOSOnly: true),
+  RPCMethodDescriptor(
+    "group.removeParticipant", route: .groupRemoveParticipant, lane: .mutation,
+    bridge: .selector("removeParticipant"), macOSOnly: true),
+  RPCMethodDescriptor(
+    "group.leave", route: .groupLeave, lane: .mutation, bridge: .selector("leaveChat"),
     macOSOnly: true),
   RPCMethodDescriptor(
-    "message.delete", lane: .mutation, bridge: .selector("deleteMessage"), macOSOnly: true),
+    "contacts.shouldShareContact", route: .contactsShouldShare, lane: .read,
+    bridge: .selector("namePhotoShouldOffer"), macOSOnly: true),
   RPCMethodDescriptor(
-    "message.notifyAnyways", lane: .mutation, bridge: .selector("notifyAnyways"),
-    macOSOnly: true),
+    "contacts.shareContactCard", route: .contactsShare, lane: .mutation,
+    bridge: .selector("namePhotoShare"), macOSOnly: true),
   RPCMethodDescriptor(
-    "group.rename", lane: .mutation, bridge: .selector("setDisplayName"), macOSOnly: true),
-  RPCMethodDescriptor(
-    "group.setIcon", lane: .mutation, bridge: .selector("updateGroupPhoto"), macOSOnly: true),
-  RPCMethodDescriptor(
-    "group.addParticipant", lane: .mutation, bridge: .selector("addParticipant"),
-    macOSOnly: true),
-  RPCMethodDescriptor(
-    "group.removeParticipant", lane: .mutation, bridge: .selector("removeParticipant"),
-    macOSOnly: true),
-  RPCMethodDescriptor(
-    "group.leave", lane: .mutation, bridge: .selector("leaveChat"), macOSOnly: true),
-  RPCMethodDescriptor(
-    "contacts.shouldShareContact", lane: .read, bridge: .selector("namePhotoShouldOffer"),
-    macOSOnly: true),
-  RPCMethodDescriptor(
-    "contacts.shareContactCard", lane: .mutation, bridge: .selector("namePhotoShare"),
-    macOSOnly: true),
-  RPCMethodDescriptor(
-    "handles.check", lane: .read,
+    "handles.check", route: .handlesCheck, lane: .read,
     bridge: .selector("checkIMessageAvailability", requiresRegistry: false),
     macOSOnly: true),
 ]
@@ -191,3 +224,11 @@ func rpcUsableMethods(
     .filter { $0.isUsable(database: database, bridge: bridge) }
     .flatMap(\.names)
 }
+
+let rpcDispatchRoutes: [String: RPCDispatchRoute] = {
+  var result: [String: RPCDispatchRoute] = [:]
+  for descriptor in rpcMethodDescriptors {
+    for name in descriptor.names { result[name] = descriptor.route }
+  }
+  return result
+}()

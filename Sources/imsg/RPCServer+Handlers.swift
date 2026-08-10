@@ -23,6 +23,9 @@ extension RPCServer {
       supportedKeys: ["limit", "unread_only", "unreadOnly"]
     )
     let limit = try params.integer("limit") ?? 20
+    guard limit > 0 else {
+      throw RPCError.invalidParams("limit must be a positive integer")
+    }
     let unreadOnly = try params.boolean("unread_only", aliases: ["unreadOnly"]) ?? false
     let database = try await databaseResources.require()
     let store = database.store
@@ -30,32 +33,26 @@ extension RPCServer {
       throw RPCError.invalidParams(
         "unread_only is unavailable because this Messages database has no read-state column")
     }
-    let chats = try store.listChats(limit: max(limit, 1), unreadOnly: unreadOnly)
+    let chats = try store.listChats(limit: limit, unreadOnly: unreadOnly)
     var payloads: [[String: Any]] = []
     payloads.reserveCapacity(chats.count)
 
     for chat in chats {
       let info = try store.chatInfo(chatID: chat.id)
       let participants = try store.participants(chatID: chat.id)
-      let identifier = info?.identifier ?? chat.identifier
-      let guid = info?.guid ?? ""
-      let name = (info?.name.isEmpty == false ? info?.name : nil) ?? chat.name
-      let service = info?.service ?? chat.service
-      let contactName =
-        isGroupHandle(identifier: identifier, guid: guid)
-        ? nil : contactResolver.displayName(for: identifier)
+      let contactName = contactNameForChat(
+        chat: chat,
+        chatInfo: info,
+        participants: participants,
+        contacts: contactResolver
+      )
       payloads.append(
-        chatPayload(
-          id: chat.id,
-          identifier: identifier,
-          guid: guid,
-          name: name,
-          service: service,
-          lastMessageAt: chat.lastMessageAt,
+        try ChatPayload(
+          chat: chat,
+          chatInfo: info,
           participants: participants,
-          contactName: contactName,
-          unreadCount: chat.unreadCount
-        ))
+          contactName: contactName
+        ).asDictionary())
     }
 
     respond(id: id, result: ["chats": payloads])
@@ -77,6 +74,9 @@ extension RPCServer {
       throw RPCError.invalidParams("chat_id must be a positive integer")
     }
     let limit = try params.integer("limit") ?? 50
+    guard limit > 0 else {
+      throw RPCError.invalidParams("limit must be a positive integer")
+    }
     let participants = try params.stringArray("participants") ?? []
     let startISO = try params.string("start")
     let endISO = try params.string("end")
@@ -90,7 +90,7 @@ extension RPCServer {
       startISO: startISO,
       endISO: endISO
     )
-    let filtered = try store.messages(chatID: chatID, limit: max(limit, 1), filter: filter)
+    let filtered = try store.messages(chatID: chatID, limit: limit, filter: filter)
     let reactionsByMessageID = try store.reactions(for: filtered)
 
     var payloads: [[String: Any]] = []
@@ -117,7 +117,7 @@ extension RPCServer {
       RPCParameterKeys.replyTarget,
       [
         "to", "text", "file", "text_formatting", "textFormatting", "formatting", "service",
-        "transport", "region",
+        "transport", "region", "allow_sms_fallback", "allowSMSFallback",
       ]
     )
     let params = try RPCParameters(params, method: "send", supportedKeys: supportedKeys)
@@ -135,6 +135,8 @@ extension RPCServer {
     }
     let transport = try RPCSendTransport.parse(try params.string("transport"))
     let region = try params.string("region") ?? "US"
+    let requestedSMSFallback =
+      try params.boolean("allow_sms_fallback", aliases: ["allowSMSFallback"]) ?? true
     let requestContacts =
       (contactResolver as? ContactResolver)?.resolver(region: region) ?? contactResolver
     let selectedMessageGuid = try params.string(
@@ -204,7 +206,8 @@ extension RPCServer {
       } ?? nil
 
     let allowSMSFallback =
-      service == .auto
+      requestedSMSFallback
+      && service == .auto
       && !input.hasChatTarget
       && !input.recipient.isEmpty
       && !text.isEmpty

@@ -27,6 +27,7 @@ func rpcStatusAdvertisesBridgeMessageMethods() {
   for method in [
     "send.rich",
     "send.attachment",
+    "send.multipart",
     "send.sticker",
     "poll.send",
     "messages.poll.send",
@@ -419,6 +420,7 @@ func rpcSendAttachmentStagesFileBeforeBridgeSend() async throws {
   #expect(capturedParams["partIndex"] as? Int == 2)
   let result = output.responses.first?["result"] as? [String: Any]
   #expect(result?["message_id"] as? String == "attachment-guid")
+  #expect(result?["chat_guid"] as? String == "iMessage;+;chat123")
 }
 
 @Test
