@@ -52,17 +52,15 @@ extension RPCServer {
       bridgeParams["subject"] = subject
     }
 
-    let sentAt = Date()
+    let verification = try await bridgeSendVerificationBaseline()
     let data = try await invokeBridge(action: .sendMultipart, params: bridgeParams)
-    let combinedText = parts.compactMap { $0["text"] as? String }.joined()
     var result = try await verifiedBridgeSendResponse(
       data,
       params: params,
       chatGUID: chatGUID,
-      text: combinedText,
-      sentAt: sentAt,
       action: .sendMultipart,
-      emptyTextBaselineRowID: nil
+      database: verification.database,
+      baselineRowID: verification.rowID
     )
     result["ok"] = true
     result["parts_count"] = parts.count

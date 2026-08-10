@@ -72,100 +72,66 @@ func normalizeBridgeReactionType(_ raw: String, remove: Bool = false) throws -> 
 }
 
 extension RPCServer {
-  func bridgeSendVerificationBaseline(requiresGUIDVerification: Bool) async -> Int64? {
-    guard requiresGUIDVerification, let database = await databaseResources.available() else {
-      return nil
-    }
-    return try? database.store.maxRowID()
+  func bridgeSendVerificationBaseline() async throws -> (
+    database: RPCDatabaseResources, rowID: Int64
+  ) {
+    let database = try await databaseResources.require()
+    return (database, try database.store.maxRowID())
   }
 
   func verifiedBridgeSendResponse(
     _ data: [String: Any],
     params: RPCParameters,
     chatGUID: String,
-    text: String,
-    sentAt: Date,
     action: BridgeAction,
-    emptyTextBaselineRowID: Int64?
+    database: RPCDatabaseResources,
+    baselineRowID: Int64
   ) async throws -> [String: Any] {
-    guard let database = await databaseResources.available() else {
+    guard let bridgeGUID = data["messageGuid"] as? String, !bridgeGUID.isEmpty else {
       throw bridgeDeliveryVerificationFailure(
         action: action,
-        detail: "The Messages database was unavailable after bridge publication."
-      )
-    }
-
-    let chatInfo: ChatInfo?
-    do {
-      chatInfo = try bridgeResponseChatInfo(
-        params: params,
-        chatGUID: chatGUID,
-        database: database
-      )
-    } catch {
-      throw bridgeDeliveryVerificationFailure(
-        action: action,
-        detail: "The resolved chat could not be read after bridge publication."
+        detail: "The bridge completed, but returned no message GUID to verify."
       )
     }
 
     let sentMessage: Message?
-    if text.isEmpty {
+    do {
       guard
-        let chatInfo,
-        let emptyTextBaselineRowID,
-        let bridgeGUID = data["messageGuid"] as? String,
-        !bridgeGUID.isEmpty
+        let chatInfo = try bridgeResponseChatInfo(
+          params: params,
+          chatGUID: chatGUID,
+          database: database
+        )
       else {
         throw bridgeDeliveryVerificationFailure(
-          action: action,
-          detail: "The bridge completed, but the attachment had no verifiable text or new row GUID."
+          action: action, detail: "The target chat could not be resolved after bridge publication."
         )
       }
-      do {
-        sentMessage = try await SentMessageVerifier.resolveSentMessage(
-          store: database.store,
-          messageGUID: bridgeGUID,
-          chatInfo: chatInfo,
-          afterRowID: emptyTextBaselineRowID
-        )
-      } catch {
-        throw bridgeDeliveryVerificationFailure(
-          action: action,
-          detail: "The Messages database could not verify the published bridge operation."
-        )
-      }
-    } else {
-      do {
-        let resolvedChatGUID = chatInfo?.guid ?? ""
-        let options = MessageSendOptions(
-          recipient: "",
-          text: text,
-          service: .auto,
-          chatIdentifier: chatInfo?.identifier ?? "",
-          chatGUID: resolvedChatGUID.isEmpty ? chatGUID : resolvedChatGUID
-        )
-        sentMessage = try await resolveSentMessage(
-          database.store, options, chatInfo?.id, sentAt)
-      } catch {
-        throw bridgeDeliveryVerificationFailure(
-          action: action,
-          detail: "The Messages database could not verify the published bridge operation."
-        )
-      }
+      sentMessage = try await SentMessageVerifier.resolveSentMessage(
+        store: database.store,
+        messageGUID: bridgeGUID,
+        chatInfo: chatInfo,
+        afterRowID: baselineRowID
+      )
+    } catch let failure as DeliveryFailure {
+      throw failure
+    } catch {
+      throw bridgeDeliveryVerificationFailure(
+        action: action,
+        detail: "The Messages database could not verify the published bridge operation."
+      )
     }
 
     guard let sentMessage, !sentMessage.guid.isEmpty else {
       throw bridgeDeliveryVerificationFailure(
         action: action,
-        detail: "The bridge completed, but no matching outgoing row was observed within 8 seconds."
+        detail: "The bridge completed, but its message GUID was not a new row in the target chat."
       )
     }
 
     var enriched = data
     let responseChatGUID =
       ((data["chatGuid"] as? String).flatMap { $0.isEmpty ? nil : $0 })
-      ?? chatInfo?.guid
       ?? chatGUID
     if !responseChatGUID.isEmpty {
       enriched["chat_guid"] = responseChatGUID

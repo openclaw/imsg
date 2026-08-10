@@ -135,7 +135,7 @@ let rpcMethodDescriptors: [RPCMethodDescriptor] = [
     bridge: .selector("sendAttachment"), macOSOnly: true),
   RPCMethodDescriptor(
     "send.multipart", route: .sendMultipart, lane: .mutation,
-    bridge: .selector("sendMultipart"), macOSOnly: true),
+    database: [.ready], bridge: .selector("sendMultipart"), macOSOnly: true),
   RPCMethodDescriptor(
     "send.sticker", route: .sendSticker, lane: .mutation, database: [.ready],
     bridge: .selector("stickerSend"), macOSOnly: true),

@@ -51,37 +51,13 @@ extension RPCServer {
       bridgeParams["textFormatting"] = formatting
     }
 
-    let sentAt = Date()
-    let action: BridgeAction
     if file.isEmpty {
-      action = .sendMessage
-    } else {
-      try await requireRichAttachmentCapability(
-        requiresMetadata: !text.isEmpty || effect?.isEmpty == false || subject?.isEmpty == false
-          || reply?.isEmpty == false || partIndex != 0 || formatting != nil
-      )
-      do {
-        bridgeParams["filePath"] = try stageAttachment((file as NSString).expandingTildeInPath)
-      } catch {
-        throw DeliveryFailure(
-          disposition: .notStarted,
-          transport: .bridgeV2,
-          operation: BridgeAction.sendAttachment.rawValue,
-          detail: "The attachment could not be staged before bridge dispatch."
-        )
-      }
-      bridgeParams["isAudioMessage"] = false
-      action = .sendAttachment
-    }
-    let emptyTextBaselineRowID = await bridgeSendVerificationBaseline(
-      requiresGUIDVerification: !file.isEmpty && text.isEmpty)
-    let data = try await invokeBridge(action: action, params: bridgeParams)
-    var result: [String: Any]
-    if file.isEmpty {
+      let sentAt = Date()
+      let data = try await invokeBridge(action: .sendMessage, params: bridgeParams)
       let database = await databaseResources.available()
       let chatInfo = try bridgeResponseChatInfo(
         params: params, chatGUID: chatGUID, database: database)
-      result = await SendRichCommand.enrichedSentMessageResponse(
+      var result = await SendRichCommand.enrichedSentMessageResponse(
         data,
         chat: chatGUID,
         text: text,
@@ -90,17 +66,36 @@ extension RPCServer {
         chatInfo: chatInfo,
         resolveSentMessage: resolveSentMessage
       )
-    } else {
-      result = try await verifiedBridgeSendResponse(
-        data,
-        params: params,
-        chatGUID: chatGUID,
-        text: text,
-        sentAt: sentAt,
-        action: action,
-        emptyTextBaselineRowID: emptyTextBaselineRowID
+      result["ok"] = true
+      respond(id: id, result: result)
+      return
+    }
+
+    let verification = try await bridgeSendVerificationBaseline()
+    try await requireRichAttachmentCapability(
+      requiresMetadata: !text.isEmpty || effect?.isEmpty == false || subject?.isEmpty == false
+        || reply?.isEmpty == false || partIndex != 0 || formatting != nil
+    )
+    do {
+      bridgeParams["filePath"] = try stageAttachment((file as NSString).expandingTildeInPath)
+    } catch {
+      throw DeliveryFailure(
+        disposition: .notStarted,
+        transport: .bridgeV2,
+        operation: BridgeAction.sendAttachment.rawValue,
+        detail: "The attachment could not be staged before bridge dispatch."
       )
     }
+    bridgeParams["isAudioMessage"] = false
+    let data = try await invokeBridge(action: .sendAttachment, params: bridgeParams)
+    var result = try await verifiedBridgeSendResponse(
+      data,
+      params: params,
+      chatGUID: chatGUID,
+      action: .sendAttachment,
+      database: verification.database,
+      baselineRowID: verification.rowID
+    )
     result["ok"] = true
     respond(id: id, result: result)
   }

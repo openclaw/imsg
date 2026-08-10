@@ -510,7 +510,8 @@ selectors is invalid and no bridge operation is attempted.
 An explicit `chat_guid` or `chat_identifier` does not require `chat.db` merely
 to reach the bridge. `chat_id` always does. Operations that validate local
 membership or payload state—poll vote/unvote and stickers—still require the
-database even with an explicit GUID. Rich-link mode also requires a stored
+database even with an explicit GUID. Strictly verified `send.rich` file/path
+mode and `send.multipart` also require it. Rich-link mode requires a stored
 existing iMessage chat; ordinary `send.rich` text does not.
 
 - `send.rich` sends text with optional `effect`, `subject`, `reply_to`, `part_index`, `dd_scan`, and `text_formatting`. It also accepts `file` or `path` and securely stages the file before sending it through the attachment bridge while preserving those same caption/effect/subject/reply/part/formatting semantics. Attachment capability is checked before staging or publishing the send. Alternatively, pass only one chat target plus an HTTP(S) `url` to send an Apple URL-preview balloon. URL mode is iMessage-only and rejects text, file, and other send modifiers; metadata or image lookup failure falls back to a metadata-only card, never a plain-message send.

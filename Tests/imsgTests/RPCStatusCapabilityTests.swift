@@ -68,6 +68,7 @@ func rpcStatusCalculatesDynamicMethodsAcrossResourceStates() async throws {
   #expect(bridgeOnlyMethods.contains("group.rename"))
   #expect(bridgeOnlyMethods.contains("poll.send"))
   #expect(!bridgeOnlyMethods.contains("chats.list"))
+  #expect(!bridgeOnlyMethods.contains("send.multipart"))
   #expect(!bridgeOnlyMethods.contains("send.sticker"))
   #expect(!bridgeOnlyMethods.contains("poll.vote"))
 
