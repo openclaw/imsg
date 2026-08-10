@@ -216,8 +216,6 @@ func richLinkPreparerPropagatesCancellationDuringImageStaging() async throws {
 func richLinkPreparerDeadlineDoesNotWaitForCancellationIgnoringLoader() async throws {
   typealias Continuation = CheckedContinuation<RichLinkFetchedMetadata?, Never>
   let continuation = RichLinkTestBox<Continuation?>(nil)
-  let clock = ContinuousClock()
-  let started = clock.now
 
   let prepared = try await RichLinkPreparer.prepare(
     "https://example.com",
@@ -228,15 +226,11 @@ func richLinkPreparerDeadlineDoesNotWaitForCancellationIgnoringLoader() async th
       }
     }
   )
-  let elapsed = started.duration(to: clock.now)
-  continuation.withValue { pending in
-    pending?.resume(returning: nil)
-    pending = nil
+  let pendingLoader = continuation.withValue { pending in
+    defer { pending = nil }
+    return pending
   }
-
-  // The full suite runs hundreds of async tests concurrently on CI, so allow
-  // scheduler contention while still proving the deadline returns promptly.
-  #expect(elapsed < .seconds(2))
+  try #require(pendingLoader).resume(returning: nil)
   #expect(prepared.image == nil)
   #expect(prepared.title == "example.com")
 }
