@@ -18,8 +18,8 @@ jobs:
       contents: write
       pull-requests: write
       statuses: read
-    # Pin the immutable Swift Linux Bash-shell fix until the v1 compatibility tag includes it.
-    uses: openclaw/release-workflows/.github/workflows/release-swift-cli.yml@61a1fc61b482dc1befdaa0fc172e5506958b8608
+    # Pin immutable Swift release hotfixes until the v1 compatibility tag includes them.
+    uses: openclaw/release-workflows/.github/workflows/release-swift-cli.yml@0d04fb8583639378db1bc3f8ed897ee2eafb61d1
     with:
       version: ${{ inputs.version }}
       repository-type: personal

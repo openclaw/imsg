@@ -7,7 +7,7 @@ func releaseWorkflowPackagesUniversalBuildOutput() throws {
 
   #expect(
     workflow.contains(
-      "uses: openclaw/release-workflows/.github/workflows/release-swift-cli.yml@61a1fc61b482dc1befdaa0fc172e5506958b8608"
+      "uses: openclaw/release-workflows/.github/workflows/release-swift-cli.yml@0d04fb8583639378db1bc3f8ed897ee2eafb61d1"
     ))
   #expect(workflow.contains("macos-archive-name: imsg-macos.zip"))
   #expect(workflow.contains("helper-name: imsg-bridge-helper.dylib"))
