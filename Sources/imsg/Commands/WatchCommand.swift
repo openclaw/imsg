@@ -86,7 +86,7 @@ enum WatchCommand {
     }
     let sinceRowID: Int64?
     if values.option("sinceRowID") != nil {
-      guard let parsed = values.optionInt64("sinceRowID"), parsed >= 0 else {
+      guard let parsed = values.optionInt64("sinceRowID") else {
         throw ParsedValuesError.invalidOption("since-rowid")
       }
       sinceRowID = parsed

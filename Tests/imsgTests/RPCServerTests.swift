@@ -464,14 +464,16 @@ func rpcSendRejectsUnknownChatID() async throws {
   #expect(int64Value(error?["code"]) == -32602)
 }
 
-@Test
-func rpcWatchSubscribeEmitsNotificationAndUnsubscribe() async throws {
+@Test(arguments: [Int64(0), Int64(-1)])
+func rpcWatchSubscribeReplaysFromZeroAndLegacyNegativeCursor(_ cursor: Int64) async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()
   let server = RPCServer(store: store, verbose: false, output: output)
 
   let subscribe =
-    #"{"jsonrpc":"2.0","id":10,"method":"watch.subscribe","params":{"chat_id":1,"since_rowid":0}}"#
+    """
+    {"jsonrpc":"2.0","id":10,"method":"watch.subscribe","params":{"chat_id":1,"since_rowid":\(cursor)}}
+    """
   await server.handleLineForTesting(subscribe)
 
   let result = output.responses.first?["result"] as? [String: Any]

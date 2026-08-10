@@ -17,9 +17,6 @@ extension RPCServer {
       throw RPCError.invalidParams("chat_id must be a positive integer")
     }
     let sinceRowID = try params.int64("since_rowid")
-    if let sinceRowID, sinceRowID < 0 {
-      throw RPCError.invalidParams("since_rowid must be a non-negative integer")
-    }
     let participants = try params.stringArray("participants") ?? []
     let startISO = try params.string("start")
     let endISO = try params.string("end")

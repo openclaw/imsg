@@ -43,12 +43,12 @@ func watchCommandRejectsInvalidDebounce() async {
   }
 }
 
-@Test(arguments: ["-1", "not-a-number"])
-func watchCommandRejectsInvalidSinceRowID(_ value: String) async throws {
+@Test
+func watchCommandRejectsNonnumericSinceRowID() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let values = ParsedValues(
     positional: [],
-    options: ["db": ["/tmp/unused"], "sinceRowID": [value]],
+    options: ["db": ["/tmp/unused"], "sinceRowID": ["not-a-number"]],
     flags: []
   )
 
@@ -63,6 +63,31 @@ func watchCommandRejectsInvalidSinceRowID(_ value: String) async throws {
       }
     )
   }
+}
+
+@Test
+func watchCommandPassesZeroReplayCursorThrough() async throws {
+  let cursor = Int64(0)
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let values = ParsedValues(
+    positional: [],
+    options: ["db": ["/tmp/unused"], "sinceRowID": [String(cursor)]],
+    flags: []
+  )
+  var receivedCursor: Int64?
+
+  try await WatchCommand.run(
+    values: values,
+    runtime: RuntimeOptions(parsedValues: values),
+    storeFactory: { _ in store },
+    contactResolverFactory: { NoOpContactResolver() },
+    streamProvider: { _, _, sinceRowID, _, _ in
+      receivedCursor = sinceRowID
+      return AsyncThrowingStream { continuation in continuation.finish() }
+    }
+  )
+
+  #expect(receivedCursor == cursor)
 }
 
 @Test

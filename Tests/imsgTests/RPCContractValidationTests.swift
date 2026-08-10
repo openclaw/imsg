@@ -15,7 +15,7 @@ func rpcMalformedWatchParamsDoNotAllocateSubscription() async throws {
     #"{"jsonrpc":"2.0","id":"typo","method":"watch.subscribe","params":{"chatId":1}}"#,
     #"{"jsonrpc":"2.0","id":"participants","method":"watch.subscribe","params":{"participants":["+123",1]}}"#,
     #"{"jsonrpc":"2.0","id":"boolean","method":"watch.subscribe","params":{"attachments":"false"}}"#,
-    #"{"jsonrpc":"2.0","id":"cursor","method":"watch.subscribe","params":{"since_rowid":-1}}"#,
+    #"{"jsonrpc":"2.0","id":"cursor","method":"watch.subscribe","params":{"since_rowid":"bogus"}}"#,
   ]
 
   for request in invalidRequests {

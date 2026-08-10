@@ -90,7 +90,7 @@ func messageWatcherDistinguishesOmittedCursorFromExplicitZero() async throws {
   let replayFixture = try WatcherTestDatabase.makeMutableStore()
   try replayFixture.insertMessage(1, "first")
   try replayFixture.insertMessage(2, "second")
-  let replayStream = MessageWatcher(store: replayFixture.store).stream(
+  let zeroReplayStream = MessageWatcher(store: replayFixture.store).stream(
     sinceRowID: 0,
     configuration: MessageWatcherConfiguration(
       debounceInterval: 0,
@@ -98,8 +98,18 @@ func messageWatcherDistinguishesOmittedCursorFromExplicitZero() async throws {
       batchLimit: 10
     )
   )
-  let replayMessages = try await firstReplayMessages(2, from: replayStream)
-  #expect(replayMessages.map(\.rowID) == [1, 2])
+  let negativeReplayStream = MessageWatcher(store: replayFixture.store).stream(
+    sinceRowID: -1,
+    configuration: MessageWatcherConfiguration(
+      debounceInterval: 0,
+      fallbackPollInterval: nil,
+      batchLimit: 10
+    )
+  )
+  let zeroReplayMessages = try await firstReplayMessages(2, from: zeroReplayStream)
+  let negativeReplayMessages = try await firstReplayMessages(2, from: negativeReplayStream)
+  #expect(zeroReplayMessages.map(\.rowID) == [1, 2])
+  #expect(negativeReplayMessages.map(\.rowID) == zeroReplayMessages.map(\.rowID))
 }
 
 @Test(.timeLimit(.minutes(1)))
