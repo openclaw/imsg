@@ -416,6 +416,71 @@ message is never skipped.
 
 If a live all-chat row appears before Messages has joined it to a chat, RPC watch retries it briefly and then drops it fail-closed instead of emitting an empty `chat_id=0` direct-message-shaped payload.
 
+### `bridge.events.subscribe`
+
+macOS only. Subscribes to typing and alias-removal events from an existing v2
+bridge without launching Messages. The method appears in status `methods` only
+when the non-launching bridge probe succeeds and the event path is a readable
+regular file. It remains in `supported_methods` on macOS so callers can
+distinguish a temporarily inactive bridge from an unsupported build.
+
+Params:
+
+- `buffer_limit` (int, default `256`, range `1...4096`)
+
+Result:
+
+```json
+{ "subscription": 2, "buffer_limit": 256, "resumable": false }
+```
+
+Each event uses the normalized event-log shape:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "bridge.event",
+  "params": {
+    "subscription": 2,
+    "event": {
+      "event": "started-typing",
+      "ts": "2026-08-10T00:00:00Z",
+      "data": { "chatGuid": "iMessage;-;+15551234567" }
+    }
+  }
+}
+```
+
+Bridge events begin at the current event-log EOF and are not replayed or
+resumable. Rotation preserves the old log's remaining order before reading the
+new file from offset zero. This ordering is independent of `watch.subscribe`;
+no ordering between database messages and bridge events is promised.
+
+The subscription shares the server-wide 64-subscription cap and ID space with
+database watches. It deliberately reuses `watch.unsubscribe`; awaiting that
+response guarantees no later notification for the shared subscription ID.
+Process EOF performs the same source cleanup silently.
+
+On the first event rejected by a full buffer, accepted events drain and the
+stream emits one terminal notification with no ROWID or cursor:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "bridge.events.overflow",
+  "params": {
+    "subscription": 2,
+    "reason": "buffer_limit_exceeded",
+    "resumable": false,
+    "terminal": true
+  }
+}
+```
+
+Open, read, and other source failures terminate with
+`bridge.events.error`. Its `error` object contains a stable `code` and an
+actionable `message`; cancellation does not emit an error.
+
 ### `watch.unsubscribe`
 
 Params:

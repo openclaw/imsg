@@ -143,3 +143,19 @@ When you send a link, Messages writes a "balloon" placeholder row first, then la
 Each line is a complete JSON object. See [JSON output → Message](json.md#message) for the full field list. For tapback events also see the reaction fields above. For native polls, see [JSON output → Native poll extension](json.md#native-poll-extension).
 
 Lines are flushed immediately when stdout is buffered (e.g. piped through `jq -c`), so downstream consumers don't experience batching artifacts.
+
+## Bridge events
+
+On macOS, `--bb-events` adds typing and alias-removal events written by an
+already-running injected bridge:
+
+```bash
+imsg watch --bb-events --json
+```
+
+Database messages and bridge events are two independently ordered,
+best-effort streams sharing serialized stdout. Each source preserves its own
+order, but their relative output order has no meaning. Database messages remain
+resumable with `--since-rowid`; bridge events start at the event log's current
+EOF, have no replay cursor, and are not resumable. When either source ends or
+fails, `watch` cancels and awaits the other before exiting.

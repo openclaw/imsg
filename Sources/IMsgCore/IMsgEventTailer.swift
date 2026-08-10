@@ -4,19 +4,37 @@ import Foundation
   import Darwin
 #endif
 
-/// Live tailer for `.imsg-events.jsonl` written by the injected dylib.
+public struct IMsgEventTailerOverflowError: Error, Sendable, Equatable {}
+
+public enum IMsgEventTailerError: Error, Sendable, Equatable, LocalizedError {
+  case invalidBufferLimit(Int)
+  case alreadyStarted
+  case openFailed(path: String, errno: Int32)
+  case readFailed(path: String, errno: Int32)
+  case unsupportedPlatform
+
+  public var errorDescription: String? {
+    switch self {
+    case .invalidBufferLimit(let limit):
+      return "Event buffer limit \(limit) is outside the supported range 1...4096."
+    case .alreadyStarted:
+      return "This bridge event tailer has already started."
+    case .openFailed(let path, let code):
+      return "Could not open bridge event log at \(path) (errno \(code))."
+    case .readFailed(let path, let code):
+      return "Could not read bridge event log at \(path) (errno \(code))."
+    case .unsupportedPlatform:
+      return "Bridge events are only available on macOS."
+    }
+  }
+}
+
+/// Live, bounded tailer for `.imsg-events.jsonl` written by the injected helper.
 ///
-/// Uses `DispatchSource.makeFileSystemObjectSource` watching `.write`,
-/// `.extend`, and `.rename`. On rename (file rotation by the dylib at 1 MiB)
-/// the source closes and reopens. Each newly-written full line is decoded as
-/// a JSON object and surfaced via the `events` AsyncStream.
-///
-/// Designed to be co-resident with `MessageWatcher` inside `imsg watch`.
+/// Initial startup begins at EOF unless replay is explicitly requested. Rotation
+/// drains the old inode and opens the replacement at offset zero, preserving
+/// per-log order without claiming ordering relative to database watch events.
 public final class IMsgEventTailer: @unchecked Sendable {
-  /// One decoded event line. `payloadJSON` is the raw JSON-encoded `data`
-  /// object (UTF-8 bytes); decode lazily on the consumer side via
-  /// `JSONSerialization` if you need typed access. Holding raw Data keeps the
-  /// type Sendable across actor boundaries under Swift 6 strict concurrency.
   public struct Event: Sendable {
     public let timestamp: String?
     public let name: String
@@ -28,148 +46,331 @@ public final class IMsgEventTailer: @unchecked Sendable {
       self.payloadJSON = payloadJSON
     }
 
-    /// Decode `payloadJSON` to a dictionary. Returns `[:]` on any error.
     public func decodedPayload() -> [String: Any] {
       guard
-        let obj = try? JSONSerialization.jsonObject(with: payloadJSON, options: [])
-          as? [String: Any]
+        let object = try? JSONSerialization.jsonObject(with: payloadJSON) as? [String: Any]
       else { return [:] }
-      return obj
+      return object
     }
   }
 
   private let path: String
   private let replayExisting: Bool
+  private let bufferLimit: Int
+  private let didStart: (@Sendable () -> Void)?
+  private let didStop: @Sendable () -> Void
+  private let queue = DispatchQueue(label: "imsg.event.tailer", qos: .userInitiated)
+  private var continuation: AsyncThrowingStream<Event, Error>.Continuation?
+  private var started = false
+  private var stopped = false
+
   #if os(macOS)
-    private var source: DispatchSourceFileSystemObject?
-    private var fd: Int32 = -1
+    private struct FileIdentity: Equatable {
+      let device: UInt64
+      let inode: UInt64
+    }
+
+    private struct FileRegistration {
+      let fd: Int32
+      let identity: FileIdentity
+      let source: DispatchSourceFileSystemObject
+    }
+
+    private var fileRegistration: FileRegistration?
+    private var directorySource: DispatchSourceFileSystemObject?
     private var pending = Data()
   #endif
-  private var continuation: AsyncStream<Event>.Continuation?
-  private let queue = DispatchQueue(label: "imsg.event.tailer")
 
-  public init(path: String, replayExisting: Bool = false) {
-    self.path = path
-    self.replayExisting = replayExisting
+  public convenience init(path: String, replayExisting: Bool = false) {
+    self.init(
+      uncheckedPath: path,
+      replayExisting: replayExisting,
+      bufferLimit: 256,
+      didStart: nil,
+      didStop: {}
+    )
   }
 
-  /// Start tailing and return an AsyncStream of decoded events. Starts at EOF
-  /// by default so `watch --bb-events` only emits live events.
-  public func events() -> AsyncStream<Event> {
-    return AsyncStream { continuation in
-      self.continuation = continuation
-      continuation.onTermination = { @Sendable _ in
-        self.stop()
-      }
-      #if os(macOS)
-        self.queue.async {
-          self.openAndStart()
+  public convenience init(
+    path: String,
+    replayExisting: Bool = false,
+    bufferLimit: Int
+  ) throws {
+    guard (1...4096).contains(bufferLimit) else {
+      throw IMsgEventTailerError.invalidBufferLimit(bufferLimit)
+    }
+    self.init(
+      uncheckedPath: path,
+      replayExisting: replayExisting,
+      bufferLimit: bufferLimit,
+      didStart: nil,
+      didStop: {})
+  }
+
+  private init(
+    uncheckedPath path: String,
+    replayExisting: Bool,
+    bufferLimit: Int,
+    didStart: (@Sendable () -> Void)?,
+    didStop: @escaping @Sendable () -> Void
+  ) {
+    self.path = path
+    self.replayExisting = replayExisting
+    self.bufferLimit = bufferLimit
+    self.didStart = didStart
+    self.didStop = didStop
+  }
+
+  /// Starts one event stream. The first event rejected by the bounded buffer
+  /// stops the file sources; accepted events drain before the overflow error.
+  public func events() -> AsyncThrowingStream<Event, Error> {
+    AsyncThrowingStream(bufferingPolicy: .bufferingOldest(bufferLimit)) { continuation in
+      queue.async {
+        guard !self.started else {
+          continuation.finish(throwing: IMsgEventTailerError.alreadyStarted)
+          return
         }
-      #endif
+        guard !self.stopped else {
+          continuation.finish()
+          return
+        }
+        self.started = true
+        self.continuation = continuation
+        continuation.onTermination = { @Sendable _ in
+          self.stop()
+        }
+        #if os(macOS)
+          self.startMacOS()
+        #else
+          self.finish(throwing: IMsgEventTailerError.unsupportedPlatform)
+        #endif
+      }
     }
   }
 
   public func stop() {
-    #if os(macOS)
-      queue.async { [weak self] in
-        guard let self else { return }
-        self.source?.cancel()
-        self.source = nil
-        if self.fd >= 0 {
-          close(self.fd)
-          self.fd = -1
-        }
-      }
-    #endif
+    queue.async {
+      self.finish()
+    }
   }
 
-  // MARK: - Private
+  private func finish(throwing error: Error? = nil) {
+    guard !stopped else { return }
+    stopped = true
+    let activeContinuation = continuation
+    continuation = nil
+    #if os(macOS)
+      fileRegistration?.source.cancel()
+      fileRegistration = nil
+      directorySource?.cancel()
+      directorySource = nil
+    #endif
+    if let error {
+      activeContinuation?.finish(throwing: error)
+    } else {
+      activeContinuation?.finish()
+    }
+    didStop()
+  }
 
   #if os(macOS)
-    private func openAndStart() {
-      if !FileManager.default.fileExists(atPath: path) {
-        // Create empty file so we can watch it. The dylib appends; missing
-        // file means injection isn't active yet — caller can retry later.
-        FileManager.default.createFile(atPath: path, contents: Data(), attributes: nil)
+    private func startMacOS() {
+      do {
+        try installDirectorySource()
+        try openInitialFile()
+        guard !stopped else { return }
+        didStart?()
+      } catch {
+        finish(throwing: error)
       }
-      let fd = open(path, O_RDONLY)
-      if fd < 0 { return }
-      self.fd = fd
-      if replayExisting {
-        drainAvailable()
-      } else {
-        lseek(fd, 0, SEEK_END)
-      }
+    }
 
-      let src = DispatchSource.makeFileSystemObjectSource(
+    private func installDirectorySource() throws {
+      let directory = URL(fileURLWithPath: path).deletingLastPathComponent().path
+      let fd = open(directory, O_EVTONLY | O_CLOEXEC)
+      guard fd >= 0 else {
+        throw IMsgEventTailerError.openFailed(path: directory, errno: errno)
+      }
+      let source = DispatchSource.makeFileSystemObjectSource(
+        fileDescriptor: fd,
+        eventMask: [.write, .rename, .delete],
+        queue: queue
+      )
+      source.setEventHandler { [weak self] in
+        self?.reconcileCurrentPath()
+      }
+      source.setCancelHandler {
+        close(fd)
+      }
+      source.resume()
+      directorySource = source
+    }
+
+    private func openInitialFile() throws {
+      let registration = try makeFileRegistration()
+      if !replayExisting, lseek(registration.fd, 0, SEEK_END) < 0 {
+        let code = errno
+        registration.source.cancel()
+        throw IMsgEventTailerError.readFailed(path: path, errno: code)
+      }
+      fileRegistration = registration
+      try drainAvailable()
+      reconcileCurrentPath()
+    }
+
+    private func makeFileRegistration() throws -> FileRegistration {
+      let fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+      guard fd >= 0 else {
+        throw IMsgEventTailerError.openFailed(path: path, errno: errno)
+      }
+      var info = stat()
+      guard fstat(fd, &info) == 0 else {
+        let code = errno
+        close(fd)
+        throw IMsgEventTailerError.openFailed(path: path, errno: code)
+      }
+      let identity = FileIdentity(device: UInt64(info.st_dev), inode: UInt64(info.st_ino))
+      let source = DispatchSource.makeFileSystemObjectSource(
         fileDescriptor: fd,
         eventMask: [.extend, .write, .rename, .delete],
         queue: queue
       )
-      src.setEventHandler { [weak self] in
-        guard let self else { return }
-        let mask = src.data
-        if mask.contains(.rename) || mask.contains(.delete) {
-          // File rotated by the dylib — close and reopen the new file.
-          self.reopen()
+      source.setEventHandler { [weak self] in
+        self?.handleFileEvent()
+      }
+      source.setCancelHandler {
+        close(fd)
+      }
+      source.resume()
+      return FileRegistration(fd: fd, identity: identity, source: source)
+    }
+
+    private func handleFileEvent() {
+      guard !stopped, let registration = fileRegistration else { return }
+      let events = registration.source.data
+      do {
+        try drainAvailable()
+      } catch {
+        finish(throwing: error)
+        return
+      }
+      if events.contains(.delete), !events.contains(.rename) {
+        do {
+          if try currentPathIdentity() == nil {
+            finish(throwing: IMsgEventTailerError.openFailed(path: path, errno: ENOENT))
+            return
+          }
+        } catch {
+          finish(throwing: error)
           return
         }
-        self.drainAvailable()
       }
-      src.setCancelHandler { [weak self] in
-        guard let self else { return }
-        if self.fd >= 0 {
-          close(self.fd)
-          self.fd = -1
+      reconcileCurrentPath()
+    }
+
+    private func reconcileCurrentPath() {
+      do {
+        guard !stopped, let current = fileRegistration else { return }
+        guard let pathIdentity = try currentPathIdentity() else {
+          // A rename and replacement are two syscalls. The directory source owns
+          // the gap and calls back as soon as the new path is created.
+          return
         }
+        guard pathIdentity != current.identity else { return }
+        try drainAvailable()
+        let replacement = try makeFileRegistration()
+        guard replacement.identity == pathIdentity else {
+          replacement.source.cancel()
+          reconcileCurrentPath()
+          return
+        }
+        pending.removeAll(keepingCapacity: true)
+        fileRegistration = replacement
+        current.source.cancel()
+        try drainAvailable()
+        reconcileCurrentPath()
+      } catch {
+        finish(throwing: error)
       }
-      src.resume()
-      self.source = src
     }
 
-    private func reopen() {
-      source?.cancel()
-      source = nil
-      if fd >= 0 {
-        close(fd)
-        fd = -1
+    private func currentPathIdentity() throws -> FileIdentity? {
+      var info = stat()
+      guard lstat(path, &info) == 0 else {
+        if errno == ENOENT { return nil }
+        throw IMsgEventTailerError.openFailed(path: path, errno: errno)
       }
-      pending.removeAll(keepingCapacity: true)
-      // Small delay lets the dylib finish the rename; then start fresh.
-      queue.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-        self?.openAndStart()
+      guard (info.st_mode & S_IFMT) == S_IFREG else {
+        throw IMsgEventTailerError.openFailed(path: path, errno: EINVAL)
       }
+      return FileIdentity(device: UInt64(info.st_dev), inode: UInt64(info.st_ino))
     }
 
-    private func drainAvailable() {
-      guard fd >= 0 else { return }
-      var buffer = Data(count: 8192)
+    private func drainAvailable() throws {
+      guard let registration = fileRegistration else { return }
+      var bytes = [UInt8](repeating: 0, count: 8192)
       while true {
-        let n = buffer.withUnsafeMutableBytes { (raw: UnsafeMutableRawBufferPointer) -> Int in
-          guard let base = raw.baseAddress else { return -1 }
-          return read(fd, base, raw.count)
+        let count = read(registration.fd, &bytes, bytes.count)
+        if count > 0 {
+          pending.append(bytes, count: count)
+          processPending()
+          if stopped { return }
+          continue
         }
-        if n <= 0 { break }
-        pending.append(buffer.prefix(n))
-        processPending()
+        if count == 0 { return }
+        if errno == EINTR { continue }
+        throw IMsgEventTailerError.readFailed(path: path, errno: errno)
       }
     }
 
     private func processPending() {
-      while let nl = pending.firstIndex(of: 0x0A) {
-        let line = pending[..<nl]
-        pending.removeSubrange(...nl)
-        guard !line.isEmpty else { continue }
-        guard
-          let obj = try? JSONSerialization.jsonObject(with: line, options: [])
-            as? [String: Any]
+      while let newline = pending.firstIndex(of: 0x0A) {
+        let line = pending[..<newline]
+        pending.removeSubrange(...newline)
+        guard !line.isEmpty,
+          let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any]
         else { continue }
-        let name = (obj["event"] as? String) ?? "unknown"
-        let ts = obj["ts"] as? String
-        let data = (obj["data"] as? [String: Any]) ?? [:]
-        let payloadData = (try? JSONSerialization.data(withJSONObject: data, options: [])) ?? Data()
-        continuation?.yield(Event(timestamp: ts, name: name, payloadJSON: payloadData))
+        let name = object["event"] as? String ?? "unknown"
+        let timestamp = object["ts"] as? String
+        let payload = object["data"] as? [String: Any] ?? [:]
+        let payloadJSON =
+          (try? JSONSerialization.data(withJSONObject: payload, options: [])) ?? Data("{}".utf8)
+        let event = Event(timestamp: timestamp, name: name, payloadJSON: payloadJSON)
+        switch continuation?.yield(event) {
+        case .enqueued:
+          continue
+        case .dropped:
+          finish(throwing: IMsgEventTailerOverflowError())
+          return
+        case .terminated, .none:
+          finish()
+          return
+        @unknown default:
+          finish()
+          return
+        }
       }
     }
   #endif
+}
+
+extension IMsgEventTailer {
+  convenience init(
+    path: String,
+    replayExisting: Bool = false,
+    bufferLimit: Int = 256,
+    didStart: (@Sendable () -> Void)? = nil,
+    didStop: @escaping @Sendable () -> Void
+  ) throws {
+    guard (1...4096).contains(bufferLimit) else {
+      throw IMsgEventTailerError.invalidBufferLimit(bufferLimit)
+    }
+    self.init(
+      uncheckedPath: path,
+      replayExisting: replayExisting,
+      bufferLimit: bufferLimit,
+      didStart: didStart,
+      didStop: didStop
+    )
+  }
 }

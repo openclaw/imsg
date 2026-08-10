@@ -3,113 +3,228 @@ import Testing
 
 @testable import IMsgCore
 
-/// Smoke tests for the events-jsonl tailer. Writes a temp file, appends a few
-/// JSON lines, asserts they surface in order through the AsyncStream.
 @Suite("IMsgEventTailer")
 struct IMsgEventTailerTests {
-  @Test
-  func tailerEmitsAppendedLines() async throws {
-    let dir = NSTemporaryDirectory() + "imsg-tailer-test-\(UUID().uuidString)"
-    try FileManager.default.createDirectory(
-      atPath: dir, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(atPath: dir) }
+  @Test(.timeLimit(.minutes(1)))
+  func initialEOFSkipsExistingAndAppendOrderIsStable() async throws {
+    try await withEventFile(existing: ["old"]) { path in
+      let started = CallbackProbe()
+      let tailer = try IMsgEventTailer(
+        path: path,
+        didStart: { Task { await started.record() } },
+        didStop: {})
+      let stream = tailer.events()
+      await started.wait()
 
-    let path = (dir as NSString).appendingPathComponent("events.jsonl")
-    FileManager.default.createFile(atPath: path, contents: Data(), attributes: nil)
+      try appendEvents(["first", "second"], to: path)
+      var iterator = stream.makeAsyncIterator()
+      #expect(try await iterator.next()?.name == "first")
+      #expect(try await iterator.next()?.name == "second")
+      tailer.stop()
+      let startCount = await started.callCount()
+      #expect(startCount == 1)
+    }
+  }
 
-    let tailer = IMsgEventTailer(path: path)
-    let stream = tailer.events()
+  @Test(.timeLimit(.minutes(1)))
+  func rotationIncludesTriggerAndImmediateNextEventExactlyOnce() async throws {
+    try await withEventFile { path in
+      let started = CallbackProbe()
+      let tailer = try IMsgEventTailer(
+        path: path,
+        didStart: { Task { await started.record() } },
+        didStop: {})
+      let stream = tailer.events()
+      await started.wait()
 
-    // Append two events on a background task so the tailer has a chance to
-    // open and start watching before lines arrive.
-    Task.detached {
-      try? await Task.sleep(nanoseconds: 200_000_000)
-      let line1 = """
-        {"event":"started-typing","data":{"chatGuid":"iMessage;-;+15551"}}
-        """ + "\n"
-      let line2 = """
-        {"event":"stopped-typing","data":{"chatGuid":"iMessage;-;+15551"}}
-        """ + "\n"
-      let fp = fopen(path, "a")
-      if let fp = fp {
-        line1.utf8CString.withUnsafeBufferPointer { buf in
-          guard let base = buf.baseAddress else { return }
-          fwrite(base, 1, strlen(base), fp)
-        }
-        line2.utf8CString.withUnsafeBufferPointer { buf in
-          guard let base = buf.baseAddress else { return }
-          fwrite(base, 1, strlen(base), fp)
-        }
-        fflush(fp)
-        fclose(fp)
+      try appendEvents(["before-rotation"], to: path)
+      let rotated = path + ".1"
+      try FileManager.default.moveItem(atPath: path, toPath: rotated)
+      try eventLine("rotation-trigger").write(
+        to: URL(fileURLWithPath: path), atomically: false, encoding: .utf8)
+      try appendEvents(["immediate-next"], to: path)
+
+      var names: [String] = []
+      for try await event in stream {
+        names.append(event.name)
+        if names.count == 3 { break }
       }
+      #expect(names == ["before-rotation", "rotation-trigger", "immediate-next"])
+      tailer.stop()
     }
+  }
 
-    var collected: [String] = []
-    let deadline = Date().addingTimeInterval(3.0)
-    for await event in stream {
-      collected.append(event.name)
-      if collected.count >= 2 { break }
-      if Date() > deadline { break }
+  @Test(.timeLimit(.minutes(1)))
+  func missingPathFinishesWithOpenFailure() async throws {
+    let path = NSTemporaryDirectory() + "/missing-event-log-\(UUID().uuidString)"
+    let started = CallbackProbe()
+    let tailer = try IMsgEventTailer(
+      path: path,
+      didStart: { Task { await started.record() } },
+      didStop: {})
+    var iterator = tailer.events().makeAsyncIterator()
+    do {
+      _ = try await iterator.next()
+      Issue.record("expected open failure")
+    } catch let error as IMsgEventTailerError {
+      guard case .openFailed(let failedPath, _) = error else {
+        Issue.record("unexpected error: \(error)")
+        return
+      }
+      #expect(failedPath == path)
     }
-    tailer.stop()
+    let startCount = await started.callCount()
+    #expect(startCount == 0)
+  }
 
-    #expect(collected == ["started-typing", "stopped-typing"])
+  @Test(.timeLimit(.minutes(1)))
+  func unreadableSourceFinishesWithReadFailure() async throws {
+    let directory = NSTemporaryDirectory() + "/imsg-event-directory-\(UUID().uuidString)"
+    try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: directory) }
+    let started = CallbackProbe()
+    let tailer = try IMsgEventTailer(
+      path: directory,
+      replayExisting: true,
+      didStart: { Task { await started.record() } },
+      didStop: {})
+    var iterator = tailer.events().makeAsyncIterator()
+    do {
+      _ = try await iterator.next()
+      Issue.record("expected read failure")
+    } catch let error as IMsgEventTailerError {
+      guard case .readFailed(let failedPath, _) = error else {
+        Issue.record("unexpected error: \(error)")
+        return
+      }
+      #expect(failedPath == directory)
+    }
+    let startCount = await started.callCount()
+    #expect(startCount == 0)
+  }
+
+  @Test(.timeLimit(.minutes(1)))
+  func bufferOneDrainsAcceptedEventThenThrowsOverflowAndStops() async throws {
+    try await withEventFile(existing: ["accepted", "rejected"]) { path in
+      let stopped = CallbackProbe()
+      let tailer = try IMsgEventTailer(
+        path: path,
+        replayExisting: true,
+        bufferLimit: 1,
+        didStop: { Task { await stopped.record() } }
+      )
+      let stream = tailer.events()
+      await stopped.wait()
+      var iterator = stream.makeAsyncIterator()
+      #expect(try await iterator.next()?.name == "accepted")
+      do {
+        _ = try await iterator.next()
+        Issue.record("expected overflow")
+      } catch is IMsgEventTailerOverflowError {
+        // Accepted events drain before the typed terminal overflow.
+      }
+      let stopCount = await stopped.callCount()
+      #expect(stopCount == 1)
+    }
   }
 
   @Test
-  func tailerSkipsExistingLinesByDefault() async throws {
-    let dir = NSTemporaryDirectory() + "imsg-tailer-test-\(UUID().uuidString)"
-    try FileManager.default.createDirectory(
-      atPath: dir, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(atPath: dir) }
-
-    let path = (dir as NSString).appendingPathComponent("events.jsonl")
-    let oldLine = """
-      {"event":"old-typing","data":{"chatGuid":"iMessage;-;+15551"}}
-      """ + "\n"
-    FileManager.default.createFile(
-      atPath: path,
-      contents: oldLine.data(using: .utf8),
-      attributes: nil
-    )
-
-    let tailer = IMsgEventTailer(path: path)
-    let stream = tailer.events()
-
-    Task.detached {
-      try? await Task.sleep(nanoseconds: 200_000_000)
-      let newLine = """
-        {"event":"started-typing","data":{"chatGuid":"iMessage;-;+15551"}}
-        """ + "\n"
-      let fp = fopen(path, "a")
-      if let fp = fp {
-        newLine.utf8CString.withUnsafeBufferPointer { buf in
-          guard let base = buf.baseAddress else { return }
-          fwrite(base, 1, strlen(base), fp)
-        }
-        fflush(fp)
-        fclose(fp)
+  func rejectsInvalidBufferLimits() {
+    for limit in [0, 4097] {
+      #expect(throws: IMsgEventTailerError.self) {
+        _ = try IMsgEventTailer(path: "/tmp/events", bufferLimit: limit)
       }
     }
+  }
 
-    var first: String?
-    for await event in stream {
-      first = event.name
-      break
+  @Test(.timeLimit(.minutes(1)))
+  func completedTailerReleasesOwner() async throws {
+    weak var releasedTailer: IMsgEventTailer?
+    try await withEventFile { path in
+      let started = CallbackProbe()
+      let stopped = CallbackProbe()
+      var tailer: IMsgEventTailer? = try IMsgEventTailer(
+        path: path,
+        didStart: { Task { await started.record() } },
+        didStop: { Task { await stopped.record() } }
+      )
+      releasedTailer = tailer
+      var stream: AsyncThrowingStream<IMsgEventTailer.Event, Error>? = tailer?.events()
+      await started.wait()
+      tailer?.stop()
+      await stopped.wait()
+      do {
+        var iterator = try #require(stream?.makeAsyncIterator())
+        #expect(try await iterator.next()?.name == nil)
+      }
+      stream = nil
+      tailer = nil
     }
-    tailer.stop()
-
-    #expect(first == "started-typing")
+    #expect(releasedTailer == nil)
   }
 
   @Test
   func eventDecodedPayloadRoundTrip() throws {
     let raw: [String: Any] = ["chatGuid": "iMessage;-;+1", "extra": 42]
-    let data = try JSONSerialization.data(withJSONObject: raw, options: [])
+    let data = try JSONSerialization.data(withJSONObject: raw)
     let event = IMsgEventTailer.Event(timestamp: nil, name: "x", payloadJSON: data)
-    let decoded = event.decodedPayload()
-    #expect(decoded["chatGuid"] as? String == "iMessage;-;+1")
-    #expect(decoded["extra"] as? Int == 42)
+    #expect(event.decodedPayload()["chatGuid"] as? String == "iMessage;-;+1")
+    #expect(event.decodedPayload()["extra"] as? Int == 42)
+  }
+
+  private func withEventFile(
+    existing: [String] = [],
+    operation: (String) async throws -> Void
+  ) async throws {
+    let directory = NSTemporaryDirectory() + "/imsg-tailer-test-\(UUID().uuidString)"
+    try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: directory) }
+    let path = (directory as NSString).appendingPathComponent("events.jsonl")
+    try existing.map(eventLine).joined().write(
+      to: URL(fileURLWithPath: path), atomically: false, encoding: .utf8)
+    try await operation(path)
+  }
+
+  private func appendEvents(_ names: [String], to path: String) throws {
+    let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+    defer { try? handle.close() }
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data(names.map(eventLine).joined().utf8))
+    try handle.synchronize()
+  }
+
+  private func eventLine(_ name: String) -> String {
+    "{\"event\":\"\(name)\",\"data\":{\"sequence\":\"\(name)\"}}\n"
+  }
+
+}
+
+private actor CallbackProbe {
+  private var count = 0
+  private var waiters: [CheckedContinuation<Void, Never>] = []
+
+  func record() {
+    count += 1
+    guard count == 1 else { return }
+    let pendingWaiters = waiters
+    waiters.removeAll()
+    for waiter in pendingWaiters {
+      waiter.resume()
+    }
+  }
+
+  func wait() async {
+    if count > 0 { return }
+    await withCheckedContinuation { continuation in
+      if count > 0 {
+        continuation.resume()
+      } else {
+        waiters.append(continuation)
+      }
+    }
+  }
+
+  func callCount() -> Int {
+    count
   }
 }

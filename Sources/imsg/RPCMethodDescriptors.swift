@@ -17,28 +17,35 @@ enum RPCDatabaseRequirement: Sendable, Equatable {
 
 struct RPCBridgeRequirement: Sendable, Equatable {
   let requiresRegistry: Bool
+  let requiresEventPath: Bool
   let allSelectors: [String]
   let anySelectors: [String]
 
   static let none = RPCBridgeRequirement(
-    requiresRegistry: false, allSelectors: [], anySelectors: [])
+    requiresRegistry: false, requiresEventPath: false, allSelectors: [], anySelectors: [])
+
+  static let eventStream = RPCBridgeRequirement(
+    requiresRegistry: false, requiresEventPath: true, allSelectors: [], anySelectors: [])
 
   static func selector(
     _ name: String,
     requiresRegistry: Bool = true
   ) -> RPCBridgeRequirement {
     RPCBridgeRequirement(
-      requiresRegistry: requiresRegistry, allSelectors: [name], anySelectors: [])
+      requiresRegistry: requiresRegistry, requiresEventPath: false,
+      allSelectors: [name], anySelectors: [])
   }
 
   static func anySelector(_ names: String...) -> RPCBridgeRequirement {
-    RPCBridgeRequirement(requiresRegistry: true, allSelectors: [], anySelectors: names)
+    RPCBridgeRequirement(
+      requiresRegistry: true, requiresEventPath: false, allSelectors: [], anySelectors: names)
   }
 }
 
 enum RPCDispatchRoute: Sendable, Equatable {
   case initialize, status, chatsList, messagesStats, messagesHistory, messagesSearch
-  case messagesAfter, watchSubscribe, watchUnsubscribe, send, sendRich, sendAttachment
+  case messagesAfter, watchSubscribe, bridgeEventsSubscribe, watchUnsubscribe
+  case send, sendRich, sendAttachment
   case sendMultipart, sendSticker, messagesScheduled, pollSend, pollVote, pollUnvote
   case tapback, typing, read, messageEdit, messageUnsend, messageDelete
   case messageNotifyAnyways, messageSendStatus, chatsCreate, chatsDelete, chatsMarkUnread
@@ -115,6 +122,9 @@ let rpcMethodDescriptors: [RPCMethodDescriptor] = [
     database: [.scheduledMessages]),
   RPCMethodDescriptor(
     "watch.subscribe", route: .watchSubscribe, lane: .control, database: [.ready]),
+  RPCMethodDescriptor(
+    "bridge.events.subscribe", route: .bridgeEventsSubscribe, lane: .control,
+    bridge: .eventStream, macOSOnly: true),
   RPCMethodDescriptor(
     "message.send_status", route: .messageSendStatus, lane: .read, database: [.ready]),
   RPCMethodDescriptor("send", route: .send, lane: .mutation, macOSOnly: true),

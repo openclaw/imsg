@@ -7,6 +7,7 @@ struct RPCBridgeSnapshot: Sendable {
   let bridgeVersion: Int?
   let v2Ready: Bool?
   let registryAvailable: Bool?
+  let eventPathUsable: Bool
   let selectors: [String: Bool]
   let error: String?
 
@@ -16,6 +17,7 @@ struct RPCBridgeSnapshot: Sendable {
     bridgeVersion: Int?,
     v2Ready: Bool?,
     registryAvailable: Bool?,
+    eventPathUsable: Bool,
     selectors: [String: Bool],
     error: String?
   ) {
@@ -24,6 +26,7 @@ struct RPCBridgeSnapshot: Sendable {
     self.bridgeVersion = bridgeVersion
     self.v2Ready = v2Ready
     self.registryAvailable = registryAvailable
+    self.eventPathUsable = eventPathUsable
     self.selectors = selectors
     self.error = error
   }
@@ -34,6 +37,7 @@ struct RPCBridgeSnapshot: Sendable {
     bridgeVersion: nil,
     v2Ready: nil,
     registryAvailable: nil,
+    eventPathUsable: false,
     selectors: [:],
     error: "The bridge is not started. Run imsg launch explicitly before using bridge methods."
   )
@@ -44,11 +48,12 @@ struct RPCBridgeSnapshot: Sendable {
     bridgeVersion: nil,
     v2Ready: nil,
     registryAvailable: nil,
+    eventPathUsable: false,
     selectors: [:],
     error: "The existing bridge did not answer a non-launching status probe."
   )
 
-  init(status: [String: Any]) {
+  init(status: [String: Any], eventPathUsable: Bool = false) {
     let version = Self.integer(status["bridge_version"])
     let v2Ready = status["v2_ready"] as? Bool
     let registryAvailable = status["registry_available"] as? Bool
@@ -57,6 +62,7 @@ struct RPCBridgeSnapshot: Sendable {
     self.bridgeVersion = version
     self.v2Ready = v2Ready
     self.registryAvailable = registryAvailable
+    self.eventPathUsable = eventPathUsable
     self.selectors = Self.boolDictionary(status["selectors"])
     self.error =
       self.ready
@@ -79,6 +85,7 @@ struct RPCBridgeSnapshot: Sendable {
     if requirement == .none { return true }
     guard bridgeVersion != nil, v2Ready == true else { return false }
     if requirement.requiresRegistry, registryAvailable != true { return false }
+    if requirement.requiresEventPath, !eventPathUsable { return false }
     guard requirement.allSelectors.allSatisfy({ selectors[$0] == true }) else { return false }
     return requirement.anySelectors.isEmpty
       || requirement.anySelectors.contains { selectors[$0] == true }
@@ -139,7 +146,10 @@ extension RPCServer {
     try Task.checkCancellation()
     guard isBridgeReady() else { return .unavailable }
     do {
-      return RPCBridgeSnapshot(status: try await bridgeInvoker(.status, [:]))
+      return RPCBridgeSnapshot(
+        status: try await bridgeInvoker(.status, [:]),
+        eventPathUsable: bridgeEventPathUsable(bridgeEventsPath)
+      )
     } catch is CancellationError {
       throw CancellationError()
     } catch {

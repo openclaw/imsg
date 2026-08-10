@@ -3,6 +3,7 @@ import SQLite
 import Testing
 
 @testable import IMsgCore
+@testable import imsg
 
 @Test
 func readsMessageDatabaseFromCopiedFile() throws {
@@ -57,6 +58,11 @@ func linuxTypingIndicatorFailsWithPlatformMessage() throws {
   } catch let error as IMsgError {
     #expect(error.description.contains("only supported on macOS"))
   }
+}
+
+@Test
+func linuxDoesNotAdvertiseBridgeEventSubscriptions() {
+  #expect(!kSupportedRPCMethods.contains("bridge.events.subscribe"))
 }
 
 private func makeTemporaryDatabase() throws -> URL {

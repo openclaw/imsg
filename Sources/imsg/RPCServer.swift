@@ -40,6 +40,11 @@ typealias RPCWatchStreamProvider = (
   _ filter: MessageFilter
 ) -> AsyncThrowingStream<Message, Error>
 
+typealias RPCBridgeEventStreamProvider = (
+  _ path: String,
+  _ bufferLimit: Int
+) throws -> AsyncThrowingStream<IMsgEventTailer.Event, Error>
+
 // MessageStore, stdout, and watcher state are serial-queue-owned; subscriptions are actors.
 // Remaining production dependencies are immutable or internally synchronized.
 final class RPCServer: @unchecked Sendable {
@@ -59,6 +64,9 @@ final class RPCServer: @unchecked Sendable {
   let markAsRead: (String) async throws -> Void
   let contactResolver: any ContactResolving
   let watchStreamProvider: RPCWatchStreamProvider
+  let bridgeEventsPath: String
+  let bridgeEventPathUsable: @Sendable (String) -> Bool
+  let bridgeEventStreamProvider: RPCBridgeEventStreamProvider
 
   init(
     store: MessageStore,
@@ -87,6 +95,11 @@ final class RPCServer: @unchecked Sendable {
       try await IMCoreBridge.shared.markAsRead(handle: $0)
     },
     contactResolver: any ContactResolving = NoOpContactResolver(),
+    bridgeEventsPath: String = MessagesLauncher.shared.bridgeEventsFile,
+    bridgeEventPathUsable: @escaping @Sendable (String) -> Bool = rpcBridgeEventPathUsable,
+    bridgeEventStreamProvider: @escaping RPCBridgeEventStreamProvider = { path, bufferLimit in
+      try IMsgEventTailer(path: path, bufferLimit: bufferLimit).events()
+    },
     watchStreamProvider: @escaping RPCWatchStreamProvider = {
       watcher, chatID, sinceRowID, configuration, filter in
       watcher.stream(
@@ -112,6 +125,9 @@ final class RPCServer: @unchecked Sendable {
     self.stopTyping = stopTyping
     self.markAsRead = markAsRead
     self.contactResolver = contactResolver
+    self.bridgeEventsPath = bridgeEventsPath
+    self.bridgeEventPathUsable = bridgeEventPathUsable
+    self.bridgeEventStreamProvider = bridgeEventStreamProvider
     self.watchStreamProvider = watchStreamProvider
   }
 
@@ -139,6 +155,11 @@ final class RPCServer: @unchecked Sendable {
       try await IMCoreBridge.shared.markAsRead(handle: $0)
     },
     contactResolver: any ContactResolving = NoOpContactResolver(),
+    bridgeEventsPath: String = MessagesLauncher.shared.bridgeEventsFile,
+    bridgeEventPathUsable: @escaping @Sendable (String) -> Bool = rpcBridgeEventPathUsable,
+    bridgeEventStreamProvider: @escaping RPCBridgeEventStreamProvider = { path, bufferLimit in
+      try IMsgEventTailer(path: path, bufferLimit: bufferLimit).events()
+    },
     watchStreamProvider: @escaping RPCWatchStreamProvider = {
       watcher, chatID, sinceRowID, configuration, filter in
       watcher.stream(
@@ -164,6 +185,9 @@ final class RPCServer: @unchecked Sendable {
     self.stopTyping = stopTyping
     self.markAsRead = markAsRead
     self.contactResolver = contactResolver
+    self.bridgeEventsPath = bridgeEventsPath
+    self.bridgeEventPathUsable = bridgeEventPathUsable
+    self.bridgeEventStreamProvider = bridgeEventStreamProvider
     self.watchStreamProvider = watchStreamProvider
   }
 
@@ -263,6 +287,8 @@ final class RPCServer: @unchecked Sendable {
         try await handleMessagesAfter(id: id, params: params)
       case .watchSubscribe:
         try await handleWatchSubscribe(id: id, params: params)
+      case .bridgeEventsSubscribe:
+        try await handleBridgeEventsSubscribe(id: id, params: params)
       case .watchUnsubscribe:
         try await handleWatchUnsubscribe(id: id, params: params)
       case .send:

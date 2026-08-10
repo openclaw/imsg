@@ -80,6 +80,70 @@ func watchCommandRunsWithStubStream() async throws {
   }
 }
 
+@Test(.timeLimit(.minutes(1)))
+func watchCommandStopsBridgeStreamWhenDatabaseStreamEnds() async throws {
+  let values = ParsedValues(
+    positional: [],
+    options: ["db": ["/tmp/unused"], "debounce": ["1ms"]],
+    flags: ["bbEvents"]
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let bridge = WatchBridgeSource()
+
+  _ = try await StdoutCapture.capture {
+    try await WatchCommand.run(
+      values: values,
+      runtime: runtime,
+      storeFactory: { _ in store },
+      contactResolverFactory: { NoOpContactResolver() },
+      streamProvider: { _, _, _, _, _ in
+        AsyncThrowingStream { continuation in continuation.finish() }
+      },
+      bridgeStreamProvider: { _ in bridge.makeStream() }
+    )
+  }
+  await bridge.waitForTermination()
+}
+
+private final class WatchBridgeSource: @unchecked Sendable {
+  private let lock = NSLock()
+  private var terminated = false
+  private var waiters: [CheckedContinuation<Void, Never>] = []
+
+  func makeStream() -> AsyncThrowingStream<IMsgEventTailer.Event, Error> {
+    AsyncThrowingStream { continuation in
+      continuation.onTermination = { [weak self] _ in self?.finish() }
+    }
+  }
+
+  func waitForTermination() async {
+    if lock.withLock({ terminated }) { return }
+    await withCheckedContinuation { continuation in
+      lock.lock()
+      if terminated {
+        lock.unlock()
+        continuation.resume()
+      } else {
+        waiters.append(continuation)
+        lock.unlock()
+      }
+    }
+  }
+
+  private func finish() {
+    let ready: [CheckedContinuation<Void, Never>]
+    lock.lock()
+    terminated = true
+    ready = waiters
+    waiters.removeAll()
+    lock.unlock()
+    for continuation in ready {
+      continuation.resume()
+    }
+  }
+}
+
 @Test
 func watchCommandRunsWithJsonOutput() async throws {
   let values = ParsedValues(

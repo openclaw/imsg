@@ -3,6 +3,11 @@ import Foundation
 import IMsgCore
 
 enum WatchCommand {
+  private enum StreamCompletion: Sendable {
+    case database
+    case bridge
+  }
+
   static let spec = CommandSpec(
     name: "watch",
     abstract: "Stream incoming messages",
@@ -72,6 +77,10 @@ enum WatchCommand {
           configuration: config,
           filter: filter
         )
+      },
+    bridgeStreamProvider:
+      @escaping (String) throws -> AsyncThrowingStream<IMsgEventTailer.Event, Error> = { path in
+        IMsgEventTailer(path: path).events()
       }
   ) async throws {
     let dbPath = values.option("db") ?? MessageStore.defaultPath
@@ -103,30 +112,8 @@ enum WatchCommand {
       includeReactions: includeReactions
     )
 
-    let bbEvents = values.flag("bbEvents")
-    if bbEvents {
-      let path = MessagesLauncher.shared.bridgeEventsFile
-      let tailer = IMsgEventTailer(path: path)
-      Task {
-        for await event in tailer.events() {
-          if runtime.jsonOutput {
-            var obj: [String: Any] = [
-              "kind": "bridge-event",
-              "event": event.name,
-            ]
-            if let ts = event.timestamp { obj["ts"] = ts }
-            obj["data"] = event.decodedPayload()
-            try? JSONLines.printObject(obj)
-          } else {
-            let stamp = event.timestamp ?? CLIISO8601.format(Date())
-            StdoutWriter.writeLine("\(stamp) [bridge] \(event.name)")
-          }
-        }
-      }
-    }
-
     let stream = streamProvider(watcher, chatID, sinceRowID, config, filter)
-    for try await message in stream {
+    let emitMessage: @Sendable (Message) throws -> Void = { message in
       if runtime.jsonOutput {
         let payload = try buildMessagePayload(
           store: store,
@@ -137,7 +124,7 @@ enum WatchCommand {
           contactResolver: contacts
         )
         try JSONLines.printObject(payload)
-        continue
+        return
       }
       let direction = message.isFromMe ? "sent" : "recv"
       let timestamp = CLIISO8601.format(message.date)
@@ -150,7 +137,7 @@ enum WatchCommand {
         StdoutWriter.writeLine(
           "\(timestamp) [\(direction)] \(sender) \(action) \(reactionType.emoji) reaction to \(targetGUID)"
         )
-        continue
+        return
       }
       let body = message.poll.map { pollDisplayText(for: $0) } ?? message.text
       StdoutWriter.writeLine("\(timestamp) [\(direction)] \(sender): \(body)")
@@ -166,6 +153,44 @@ enum WatchCommand {
           )
         }
       }
+    }
+
+    guard values.flag("bbEvents") else {
+      for try await message in stream {
+        try emitMessage(message)
+      }
+      return
+    }
+
+    let bridgeStream = try bridgeStreamProvider(MessagesLauncher.shared.bridgeEventsFile)
+    try await withThrowingTaskGroup(of: StreamCompletion.self) { group in
+      group.addTask {
+        for try await message in stream {
+          try emitMessage(message)
+        }
+        return .database
+      }
+      group.addTask {
+        for try await event in bridgeStream {
+          if runtime.jsonOutput {
+            var object: [String: Any] = [
+              "kind": "bridge-event",
+              "event": event.name,
+              "data": event.decodedPayload(),
+            ]
+            if let timestamp = event.timestamp { object["ts"] = timestamp }
+            try JSONLines.printObject(object)
+          } else {
+            let timestamp = event.timestamp ?? CLIISO8601.format(Date())
+            StdoutWriter.writeLine("\(timestamp) [bridge] \(event.name)")
+          }
+        }
+        return .bridge
+      }
+
+      _ = try await group.next()
+      group.cancelAll()
+      while try await group.next() != nil {}
     }
   }
 }

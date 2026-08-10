@@ -101,6 +101,14 @@ struct RPCError: Error, @unchecked Sendable {
     )
   }
 
+  static func bridgeEventsUnavailable(detail: String) -> RPCError {
+    RPCError(
+      code: -32003,
+      message: "Bridge events unavailable",
+      structuredData: ["detail": detail, "retryable": true]
+    )
+  }
+
   static func deliveryFailure(_ failure: DeliveryFailure) -> RPCError {
     let unknown = failure.disposition != .notStarted
     return RPCError(

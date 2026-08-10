@@ -150,6 +150,12 @@ Merge bridge-pushed typing and alias events into the normal watch stream:
 imsg watch --bb-events --json
 ```
 
+This combines two independently ordered best-effort sources on serialized
+stdout. Bridge events begin at the current event-log EOF and are non-resumable;
+there is no ordering guarantee relative to database messages. RPC clients can
+subscribe separately with `bridge.events.subscribe` and cancel its shared
+subscription ID with `watch.unsubscribe`.
+
 ## IPC layout
 
 The bridge uses a UUID-keyed request queue so concurrent CLI invocations cannot overwrite one another:
