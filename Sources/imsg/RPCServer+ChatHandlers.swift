@@ -148,16 +148,24 @@ extension RPCServer {
     preferredServices: [String] = []
   ) async throws -> String {
     let input = try params.chatTarget()
+    if !input.chatGUID.isEmpty { return input.chatGUID }
+
+    let database: RPCDatabaseResources?
+    if input.chatID != nil {
+      database = try await databaseResources.require()
+    } else {
+      database = await databaseResources.available()
+    }
     let resolved = try await ChatTargetResolver.resolveChatTarget(
       input: input,
-      lookupChat: { chatID in try await cache.info(chatID: chatID) },
+      lookupChat: { chatID in try await database?.cache.info(chatID: chatID) },
       unknownChatError: { chatID in RPCError.invalidParams("unknown chat_id \(chatID)") }
     )
     if !resolved.chatGUID.isEmpty {
       return resolved.chatGUID
     }
     if !resolved.chatIdentifier.isEmpty {
-      if let info = try store.chatInfo(
+      if let info = try database?.store.chatInfo(
         matchingTarget: resolved.chatIdentifier,
         preferredServices: preferredServices
       ) {
@@ -172,12 +180,51 @@ extension RPCServer {
   func invokeBridge(
     action: BridgeAction, params: [String: Any]
   ) async throws -> [String: Any] {
+    guard isBridgeReady() else {
+      if action.isMutation {
+        throw DeliveryFailure(
+          disposition: .notStarted,
+          transport: .bridgeV2,
+          operation: action.rawValue,
+          detail: "The bridge ready lock is absent. Run imsg launch explicitly before retrying."
+        )
+      }
+      throw RPCError.bridgeUnavailable()
+    }
     do {
       return try await bridgeInvoker(action, params)
     } catch let failure as DeliveryFailure {
       throw failure
+    } catch let error as RPCError {
+      throw error
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch let error as IMsgBridgeError {
+      guard action.isMutation else {
+        throw RPCError.bridgeUnavailable()
+      }
+      let disposition: DeliveryDisposition
+      if case .bridgeNotReady = error {
+        disposition = .notStarted
+      } else {
+        disposition = .mayHaveCompleted
+      }
+      throw DeliveryFailure(
+        disposition: disposition,
+        transport: .bridgeV2,
+        operation: action.rawValue,
+        detail: error.description
+      )
     } catch {
-      throw RPCError.internalError(String(describing: error))
+      guard action.isMutation else {
+        throw RPCError.bridgeUnavailable()
+      }
+      throw DeliveryFailure(
+        disposition: .mayHaveCompleted,
+        transport: .bridgeV2,
+        operation: action.rawValue,
+        detail: "The bridge mutation failed without an authoritative post-dispatch result."
+      )
     }
   }
 }

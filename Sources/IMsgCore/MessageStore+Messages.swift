@@ -335,7 +335,7 @@ extension MessageStore {
     guard !trimmed.isEmpty else { return nil }
 
     return try withConnection { db in
-      let columns = MessageStore.tableColumns(connection: db, table: "message")
+      let columns = try MessageStore.tableColumns(connection: db, table: "message")
       func column(_ name: String, defaultValue: String) -> String {
         columns.contains(name.lowercased()) ? "m.\(name)" : defaultValue
       }

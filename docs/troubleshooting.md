@@ -25,6 +25,13 @@ sqlite3 ~/Library/Messages/chat.db 'pragma quick_check;'
 
 If `sqlite3` works but `imsg` doesn't, the parent process of `imsg` is still missing the grant. If `sqlite3` also fails, fix Full Disk Access first.
 
+A supervised `imsg rpc` child does not need to be restarted after this fix.
+Send a `status` request to retry the configured path; `database.ready` changes
+to `true` when the open succeeds, and database methods appear in `methods`.
+Until then those methods return `-32002` (`Database unavailable`) while
+`initialize`, `status`, direct send, eligible explicit-GUID bridge methods, and
+`watch.unsubscribe` remain structurally available.
+
 ## Reads succeed but return zero rows
 
 Messages.app isn't signed in, or `chat.db` doesn't exist.
@@ -112,6 +119,13 @@ If you want partial fallback names (initials, or formatted handles), do that in 
 ## Advanced IMCore features fail
 
 See [Advanced IMCore features](advanced-imcore.md). Most likely SIP is enabled (required to be off), library validation is rejecting the helper dylib, or macOS 26's `imagent` entitlement check is blocking the IMCore client. These are macOS-level gates `imsg` cannot work around.
+
+`imsg rpc` only uses a bridge that is already running. A `status` request or an
+explicit bridge RPC never launches or restarts Messages.app. Run `imsg launch`
+outside the supervised child, then call RPC `status` again. Direct AppleScript
+`send` may still activate Messages.app. If the ready lock is absent, bridge
+reads return `-32003`; mutations report a retry-safe `not_started` delivery
+failure.
 
 ## Filing issues
 

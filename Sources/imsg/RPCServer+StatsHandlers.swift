@@ -24,6 +24,7 @@ extension RPCServer {
 
     let timeZone: String?
     timeZone = try params.string("time_zone")
+    let store = try await databaseResources.require().store
 
     do {
       let stats = try store.messageStats(

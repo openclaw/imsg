@@ -80,7 +80,7 @@ extension MessageStore {
 
   private func withConnectionColumns(table: String) -> Set<String> {
     (try? withConnection { db in
-      MessageStore.tableColumns(connection: db, table: table)
+      try MessageStore.tableColumns(connection: db, table: table)
     }) ?? []
   }
 

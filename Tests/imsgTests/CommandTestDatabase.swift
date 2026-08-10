@@ -176,6 +176,21 @@ enum CommandTestDatabase {
     )
   }
 
+  static func makeStoreForRPCFeatures(
+    reactions: Bool,
+    balloonPayloads: Bool
+  ) throws -> MessageStore {
+    let db = try Connection(.inMemory)
+    try createSchema(
+      db,
+      includeChatHandleJoin: true,
+      includeReactionColumns: reactions,
+      includePollColumns: balloonPayloads
+    )
+    try seedRPCChat(db)
+    return try MessageStore(connection: db, path: ":memory:")
+  }
+
   private static func makeStoreForRPCWithPollVoteSnapshot(
     isFromMe: Bool,
     selectedOptionIDs: [String]

@@ -9,19 +9,15 @@ extension MessageStore {
     let reactedToGUID: String?
   }
 
-  static func tableColumns(connection: Connection, table: String) -> Set<String> {
-    do {
-      let rows = try connection.prepareRowIterator("PRAGMA table_info(\(table))")
-      var columns = Set<String>()
-      while let row = try rows.failableNext() {
-        if let name = try row.get(Expression<String?>("name")) {
-          columns.insert(name.lowercased())
-        }
+  static func tableColumns(connection: Connection, table: String) throws -> Set<String> {
+    let rows = try connection.prepareRowIterator("PRAGMA table_info(\(table))")
+    var columns = Set<String>()
+    while let row = try rows.failableNext() {
+      if let name = try row.get(Expression<String?>("name")) {
+        columns.insert(name.lowercased())
       }
-      return columns
-    } catch {
-      return []
     }
+    return columns
   }
 
   static func reactionColumnsPresent(in columns: Set<String>) -> Bool {
@@ -31,28 +27,33 @@ extension MessageStore {
   }
 
   static func detectReactionColumns(connection: Connection) -> Bool {
-    let columns = tableColumns(connection: connection, table: "message")
+    let columns = (try? tableColumns(connection: connection, table: "message")) ?? []
     return reactionColumnsPresent(in: columns)
   }
 
   static func detectThreadOriginatorGUIDColumn(connection: Connection) -> Bool {
-    return tableColumns(connection: connection, table: "message").contains("thread_originator_guid")
+    return (try? tableColumns(connection: connection, table: "message"))?
+      .contains("thread_originator_guid") == true
   }
 
   static func detectAttributedBody(connection: Connection) -> Bool {
-    return tableColumns(connection: connection, table: "message").contains("attributedbody")
+    return (try? tableColumns(connection: connection, table: "message"))?
+      .contains("attributedbody") == true
   }
 
   static func detectDestinationCallerID(connection: Connection) -> Bool {
-    return tableColumns(connection: connection, table: "message").contains("destination_caller_id")
+    return (try? tableColumns(connection: connection, table: "message"))?
+      .contains("destination_caller_id") == true
   }
 
   static func detectAudioMessageColumn(connection: Connection) -> Bool {
-    return tableColumns(connection: connection, table: "message").contains("is_audio_message")
+    return (try? tableColumns(connection: connection, table: "message"))?
+      .contains("is_audio_message") == true
   }
 
   static func detectAttachmentUserInfo(connection: Connection) -> Bool {
-    return tableColumns(connection: connection, table: "attachment").contains("user_info")
+    return (try? tableColumns(connection: connection, table: "attachment"))?
+      .contains("user_info") == true
   }
 
   static func enhance(error: Error, path: String) -> Error {

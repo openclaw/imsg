@@ -10,6 +10,7 @@ extension RPCServer {
     guard !guid.isEmpty else {
       throw RPCError.invalidParams("guid is required")
     }
+    let store = try await databaseResources.require().store
 
     let checkedAt = Date()
     guard let status = try store.messageSendStatus(guid: guid) else {

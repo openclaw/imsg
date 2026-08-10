@@ -72,7 +72,7 @@ extension MessageStore {
 
   private func chatBackgroundColumns(table: String) -> Set<String> {
     (try? withConnection { db in
-      MessageStore.tableColumns(connection: db, table: table)
+      try MessageStore.tableColumns(connection: db, table: table)
     }) ?? []
   }
 

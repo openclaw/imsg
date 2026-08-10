@@ -43,6 +43,9 @@ extension RPCServer {
     let includeAttachments = try params.boolean("attachments") ?? false
     let attachmentOptions = AttachmentQueryOptions(
       convertUnsupported: try params.boolean("convert_attachments") ?? false)
+    let database = try await databaseResources.require()
+    let store = database.store
+    let cache = database.cache
     let page = try store.messagesAfterPage(
       afterRowID: sinceRowID,
       chatID: chatID,

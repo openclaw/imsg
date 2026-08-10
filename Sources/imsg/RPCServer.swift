@@ -40,58 +40,11 @@ typealias RPCWatchStreamProvider = (
   _ filter: MessageFilter
 ) -> AsyncThrowingStream<Message, Error>
 
-/// Methods exposed by `imsg rpc` over JSON-RPC. Advertised to clients via
-/// `imsg status --json` (`rpc_methods` field) so capability-aware consumers can
-/// inspect the exact surface exposed by the installed binary.
-///
-/// Keep in sync with the dispatch switch in `RPCServer.handleLine`.
-let kSupportedRPCMethods: [String] = [
-  "chats.list",
-  "chats.create",
-  "chats.delete",
-  "chats.markUnread",
-  "messages.stats",
-  "messages.history",
-  "messages.after",
-  "watch.subscribe",
-  "watch.unsubscribe",
-  "send",
-  "send.rich",
-  "send.attachment",
-  "send.sticker",
-  "messages.scheduled",
-  "poll.send",
-  "messages.poll.send",
-  "poll.vote",
-  "messages.poll.vote",
-  "poll.unvote",
-  "polls.unvote",
-  "messages.poll.unvote",
-  "tapback",
-  "typing",
-  "read",
-  "message.edit",
-  "message.unsend",
-  "message.delete",
-  "message.notifyAnyways",
-  "message.send_status",
-  "group.rename",
-  "group.setIcon",
-  "group.addParticipant",
-  "group.removeParticipant",
-  "group.leave",
-  "contacts.shouldShareContact",
-  "contacts.shareContactCard",
-  "handles.check",
-]
-
 // MessageStore, stdout, and watcher state are serial-queue-owned; caches and subscriptions are
 // actors. Remaining production dependencies are immutable or internally synchronized.
 final class RPCServer: @unchecked Sendable {
-  let store: MessageStore
-  let watcher: MessageWatcher
+  let databaseResources: RPCDatabaseResourceOwner
   let output: RPCOutput
-  let cache: ChatCache
   let subscriptions: SubscriptionStore
   let verbose: Bool
   let sendMessage: (MessageSendOptions) throws -> Void
@@ -101,8 +54,6 @@ final class RPCServer: @unchecked Sendable {
   let stageSticker: StickerStager
   let prepareRichLink: RichLinkPrepare
   let isBridgeReady: () -> Bool
-  let startTyping: (String) throws -> Void
-  let stopTyping: (String) throws -> Void
   let contactResolver: any ContactResolving
   let watchStreamProvider: RPCWatchStreamProvider
 
@@ -113,7 +64,7 @@ final class RPCServer: @unchecked Sendable {
     sendMessage: @escaping (MessageSendOptions) throws -> Void = { try MessageSender().send($0) },
     resolveSentMessage: @escaping SentMessageResolver = RPCServer.resolveSentMessage,
     invokeBridge: @escaping BridgeInvoker = { action, params in
-      try await IMsgBridgeClient.shared.invoke(action: action, params: params)
+      try await IMsgBridgeClient.shared.invokeWithoutLaunching(action: action, params: params)
     },
     stageAttachment: @escaping AttachmentStager = MessageSender.stageAttachmentForMessagesApp,
     stageSticker: @escaping StickerStager = {
@@ -122,13 +73,7 @@ final class RPCServer: @unchecked Sendable {
     prepareRichLink: @escaping RichLinkPrepare = { rawURL in
       try await RichLinkPreparer.prepare(rawURL)
     },
-    isBridgeReady: @escaping () -> Bool = { IMsgBridgeClient.shared.isReady() },
-    startTyping: @escaping (String) throws -> Void = {
-      try TypingIndicator.startTyping(chatIdentifier: $0)
-    },
-    stopTyping: @escaping (String) throws -> Void = {
-      try TypingIndicator.stopTyping(chatIdentifier: $0)
-    },
+    isBridgeReady: @escaping () -> Bool = { true },
     contactResolver: any ContactResolving = NoOpContactResolver(),
     watchStreamProvider: @escaping RPCWatchStreamProvider = {
       watcher, chatID, sinceRowID, configuration, filter in
@@ -140,9 +85,7 @@ final class RPCServer: @unchecked Sendable {
       )
     }
   ) {
-    self.store = store
-    self.watcher = MessageWatcher(store: store)
-    self.cache = ChatCache(store: store)
+    self.databaseResources = RPCDatabaseResourceOwner(store: store)
     self.subscriptions = SubscriptionStore(limit: 64)
     self.verbose = verbose
     self.output = output
@@ -153,8 +96,46 @@ final class RPCServer: @unchecked Sendable {
     self.stageSticker = stageSticker
     self.prepareRichLink = prepareRichLink
     self.isBridgeReady = isBridgeReady
-    self.startTyping = startTyping
-    self.stopTyping = stopTyping
+    self.contactResolver = contactResolver
+    self.watchStreamProvider = watchStreamProvider
+  }
+
+  init(
+    databasePath: String,
+    verbose: Bool,
+    output: RPCOutput = RPCWriter(),
+    storeFactory: @escaping RPCMessageStoreFactory = { try MessageStore(path: $0) },
+    sendMessage: @escaping (MessageSendOptions) throws -> Void = { try MessageSender().send($0) },
+    resolveSentMessage: @escaping SentMessageResolver = RPCServer.resolveSentMessage,
+    invokeBridge: @escaping BridgeInvoker = { action, params in
+      try await IMsgBridgeClient.shared.invokeWithoutLaunching(action: action, params: params)
+    },
+    stageAttachment: @escaping AttachmentStager = MessageSender.stageAttachmentForMessagesApp,
+    stageSticker: @escaping StickerStager = { try StickerAssetPreparer.prepare(at: $0) },
+    prepareRichLink: @escaping RichLinkPrepare = { try await RichLinkPreparer.prepare($0) },
+    isBridgeReady: @escaping () -> Bool = { IMsgBridgeClient.shared.isReady() },
+    contactResolver: any ContactResolving = NoOpContactResolver(),
+    watchStreamProvider: @escaping RPCWatchStreamProvider = {
+      watcher, chatID, sinceRowID, configuration, filter in
+      watcher.stream(
+        chatID: chatID,
+        sinceRowID: sinceRowID,
+        configuration: configuration,
+        filter: filter
+      )
+    }
+  ) {
+    self.databaseResources = RPCDatabaseResourceOwner(path: databasePath, factory: storeFactory)
+    self.subscriptions = SubscriptionStore(limit: 64)
+    self.verbose = verbose
+    self.output = output
+    self.sendMessage = sendMessage
+    self.resolveSentMessage = resolveSentMessage
+    self.bridgeInvoker = invokeBridge
+    self.stageAttachment = stageAttachment
+    self.stageSticker = stageSticker
+    self.prepareRichLink = prepareRichLink
+    self.isBridgeReady = isBridgeReady
     self.contactResolver = contactResolver
     self.watchStreamProvider = watchStreamProvider
   }
@@ -233,6 +214,10 @@ final class RPCServer: @unchecked Sendable {
 
     do {
       switch method {
+      case "initialize":
+        try await handleInitialize(id: id, params: params)
+      case "status":
+        try await handleStatus(id: id, params: params)
       case "chats.list":
         try await handleChatsList(id: id, params: params)
       case "messages.stats":

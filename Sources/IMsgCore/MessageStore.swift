@@ -36,7 +36,7 @@ public final class MessageStore: @unchecked Sendable {
       let location = Connection.Location.uri(uri, parameters: [.mode(.readOnly)])
       self.connection = try Connection(location, readonly: true)
       self.connection.busyTimeout = 5
-      self.schema = MessageStoreSchema(connection: self.connection)
+      self.schema = try MessageStoreSchema(connection: self.connection)
     } catch {
       throw MessageStore.enhance(error: error, path: normalized)
     }
@@ -66,7 +66,7 @@ public final class MessageStore: @unchecked Sendable {
     self.connection = connection
     self.connection.busyTimeout = 5
     self.schema = MessageStoreSchema(
-      base: MessageStoreSchema(connection: connection),
+      base: try MessageStoreSchema(connection: connection),
       hasAttributedBody: hasAttributedBody,
       hasReactionColumns: hasReactionColumns,
       hasThreadOriginatorGUIDColumn: hasThreadOriginatorGUIDColumn,
@@ -123,6 +123,24 @@ public final class MessageStore: @unchecked Sendable {
     guard !urlBalloonDedupe.isEmpty else { return }
     let cutoff = referenceDate.addingTimeInterval(-MessageStore.urlBalloonDedupeRetention)
     urlBalloonDedupe = urlBalloonDedupe.filter { $0.value.date >= cutoff }
+  }
+}
+
+extension MessageStore {
+  public var supportsReactions: Bool { schema.hasReactionColumns }
+
+  public var supportsReplyContext: Bool {
+    schema.hasReplyToGUIDColumn || schema.hasThreadOriginatorGUIDColumn
+  }
+
+  public var supportsRoutingMetadata: Bool {
+    schema.hasDestinationCallerID || schema.hasChatAccountIDColumn
+      || schema.hasChatAccountLoginColumn || schema.hasChatLastAddressedHandleColumn
+  }
+
+  public var supportsBalloonPayloads: Bool {
+    schema.hasBalloonBundleIDColumn
+      && (schema.hasPayloadDataColumn || schema.hasMessageSummaryInfoColumn)
   }
 }
 

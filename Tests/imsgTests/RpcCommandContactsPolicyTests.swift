@@ -1,6 +1,7 @@
 import Foundation
 import IMsgCore
 import Testing
+
 @testable import imsg
 
 @Suite("RpcCommand Contacts policy")

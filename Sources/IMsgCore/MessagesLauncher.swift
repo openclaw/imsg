@@ -1,4 +1,5 @@
 import Foundation
+
 #if os(macOS)
   /// Manages Messages.app lifecycle for DYLD injection.
   ///

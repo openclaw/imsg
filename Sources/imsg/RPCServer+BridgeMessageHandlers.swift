@@ -51,9 +51,10 @@ extension RPCServer {
     if let queued = data["queued"] as? Bool {
       result["queued"] = queued
     }
+    let database = await databaseResources.available()
     let chatID =
       (try params.int64("chat_id"))
-      ?? (try? store.chatInfo(matchingTarget: chatGUID)?.id)
+      ?? (try? database?.store.chatInfo(matchingTarget: chatGUID)?.id)
     let options = MessageSendOptions(
       recipient: "",
       text: text,
@@ -62,7 +63,8 @@ extension RPCServer {
     )
     if data["queued"] as? Bool == true,
       !text.isEmpty,
-      let sentMessage = try? await resolveSentMessage(store, options, chatID, sentAt),
+      let database,
+      let sentMessage = try? await resolveSentMessage(database.store, options, chatID, sentAt),
       !sentMessage.guid.isEmpty
     {
       result["guid"] = sentMessage.guid
@@ -89,7 +91,8 @@ extension RPCServer {
       throw RPCError.invalidParams("url is required")
     }
 
-    let chatInfo = try await strictRichLinkChatInfo(params)
+    let database = try await databaseResources.require()
+    let chatInfo = try await strictRichLinkChatInfo(params, database: database)
     let chatGUID = chatInfo.guid
     let status = try await invokeBridge(action: .status, params: [:])
     guard bridgeSupportsRichLinks(status) else {
@@ -133,7 +136,8 @@ extension RPCServer {
       chatGUID: chatGUID
     )
     if data["queued"] as? Bool == true,
-      let sentMessage = try? await resolveSentMessage(store, options, chatInfo.id, sentAt),
+      let sentMessage = try? await resolveSentMessage(
+        database.store, options, chatInfo.id, sentAt),
       !sentMessage.guid.isEmpty
     {
       result["guid"] = sentMessage.guid
@@ -147,19 +151,22 @@ extension RPCServer {
     respond(id: id, result: result)
   }
 
-  private func strictRichLinkChatInfo(_ params: RPCParameters) async throws -> ChatInfo {
+  private func strictRichLinkChatInfo(
+    _ params: RPCParameters,
+    database: RPCDatabaseResources
+  ) async throws -> ChatInfo {
     let target = try params.chatTarget()
 
     let info: ChatInfo?
     if let chatID = target.chatID {
-      info = try await cache.info(chatID: chatID)
+      info = try await database.cache.info(chatID: chatID)
     } else if !target.chatIdentifier.isEmpty {
-      info = try store.chatInfo(
+      info = try database.store.chatInfo(
         matchingExactIdentifier: target.chatIdentifier,
         preferredServices: ["iMessage", "iMessageLite"]
       )
     } else {
-      info = try store.chatInfo(matchingExactGUID: target.chatGUID)
+      info = try database.store.chatInfo(matchingExactGUID: target.chatGUID)
     }
 
     guard let info, !info.guid.isEmpty else {
@@ -354,8 +361,9 @@ extension RPCServer {
     }
     // Resolve every selector against decoded options, so callers cannot vote
     // against an arbitrary non-poll GUID or supply caller-trusted option text.
+    let database = try await databaseResources.require()
     let chatGUID = try await resolveChatGUIDParam(params)
-    let pollOptions = try store.pollOptions(guid: pollGUID)
+    let pollOptions = try database.store.pollOptions(guid: pollGUID)
     guard !pollOptions.isEmpty else {
       throw RPCError.invalidParams("poll \(pollGUID) not found or not decodable")
     }
@@ -396,7 +404,7 @@ extension RPCServer {
       bridgeParams["optionText"] = matchedOption.text
     }
     if remove {
-      let selectedOptionIDs = try store.pollSelectedOptionIDs(guid: pollGUID)
+      let selectedOptionIDs = try database.store.pollSelectedOptionIDs(guid: pollGUID)
       guard selectedOptionIDs.contains(optionID) else {
         throw RPCError.invalidParams("option_id \(optionID) is not currently selected")
       }

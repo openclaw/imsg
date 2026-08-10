@@ -957,6 +957,18 @@ static BOOL stickerAssociatedMessageInitializerAvailable(void) {
             @"initIMMessageWithSender:time:text:messageSubject:fileTransferGUIDs:flags:error:guid:subject:balloonBundleID:payloadData:expressiveSendStyleID:associatedMessageGUID:associatedMessageType:associatedMessageRange:messageSummaryInfo:")];
 }
 
+static BOOL plainMessageInitializerAvailable(void) {
+    Class messageClass = NSClassFromString(@"IMMessage");
+    Class itemClass = NSClassFromString(@"IMMessageItem");
+    BOOL itemPath = itemClass && messageClass
+        && [itemClass instancesRespondToSelector:NSSelectorFromString(
+            @"initWithSender:time:body:attributes:fileTransferGUIDs:flags:error:guid:threadIdentifier:")]
+        && [messageClass respondsToSelector:NSSelectorFromString(
+            @"messageFromIMMessageItem:sender:subject:")];
+    return itemPath || stickerAttachmentMessageInitializerAvailable()
+        || [messageClass instancesRespondToSelector:@selector(initWithText:flags:)];
+}
+
 static BOOL stickerTransferSelectorsAvailable(void) {
     Class transferClass = NSClassFromString(@"IMFileTransfer");
     Class centerClass = NSClassFromString(@"IMFileTransferCenter");
@@ -972,11 +984,13 @@ static BOOL stickerTransferSelectorsAvailable(void) {
 
 static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
     Class registryClass = NSClassFromString(@"IMChatRegistry");
-    BOOL hasRegistry = (registryClass != nil);
+    id registry = registryClass && [registryClass respondsToSelector:@selector(sharedInstance)]
+        ? [registryClass performSelector:@selector(sharedInstance)]
+        : nil;
+    BOOL hasRegistry = (registry != nil);
     NSUInteger chatCount = 0;
 
     if (hasRegistry) {
-        id registry = [registryClass performSelector:@selector(sharedInstance)];
         if ([registry respondsToSelector:@selector(allExistingChats)]) {
             NSArray *chats = [registry performSelector:@selector(allExistingChats)];
             chatCount = chats.count;
@@ -986,6 +1000,29 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
     NSDictionary *nicknameSelectors = nicknameSharingSelectorStatus();
     Class stickerTransferClass = NSClassFromString(@"IMFileTransfer");
     Class transferCenterClass = NSClassFromString(@"IMFileTransferCenter");
+    Class chatClass = NSClassFromString(@"IMChat");
+    Class handleRegistrarClass = NSClassFromString(@"IMHandleRegistrar");
+    Class idQueryClass = NSClassFromString(@"IDSIDQueryController");
+    Class accountControllerClass = NSClassFromString(@"IMAccountController");
+    Class accountClass = NSClassFromString(@"IMAccount");
+    Class handleClass = NSClassFromString(@"IMHandle");
+    BOOL handleRegistrar = handleRegistrarClass
+        && [handleRegistrarClass respondsToSelector:@selector(sharedInstance)]
+        && ([handleRegistrarClass instancesRespondToSelector:@selector(IMHandleWithID:)]
+            || [handleRegistrarClass instancesRespondToSelector:@selector(getIMHandlesForID:)]);
+    BOOL activeSenderHandle = accountControllerClass && accountClass && handleClass
+        && [accountControllerClass respondsToSelector:@selector(sharedInstance)]
+        && [accountControllerClass instancesRespondToSelector:@selector(activeIMessageAccount)]
+        && [accountClass instancesRespondToSelector:@selector(loginIMHandle)]
+        && [handleClass instancesRespondToSelector:@selector(ID)];
+    BOOL chatSend = [chatClass instancesRespondToSelector:@selector(sendMessage:)]
+        && plainMessageInitializerAvailable();
+    BOOL reactionSend = [chatClass instancesRespondToSelector:@selector(sendMessage:)]
+        && stickerAssociatedMessageInitializerAvailable();
+    BOOL typingAvailable = hasRegistry
+        && [chatClass instancesRespondToSelector:@selector(setLocalUserIsTyping:)];
+    BOOL readAvailable = hasRegistry
+        && [chatClass instancesRespondToSelector:@selector(markAllMessagesAsRead)];
     BOOL stickerSetIsSticker = [stickerTransferClass instancesRespondToSelector:
         NSSelectorFromString(@"setIsSticker:")];
     BOOL stickerSetUserInfo = [stickerTransferClass instancesRespondToSelector:
@@ -999,6 +1036,26 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
             NSSelectorFromString(@"transferForGUID:")]
         && [transferCenterClass instancesRespondToSelector:
             NSSelectorFromString(@"registerTransferWithDaemon:")];
+    BOOL createChat = handleRegistrar && hasRegistry
+        && ([registryClass instancesRespondToSelector:@selector(chatForIMHandle:)]
+            || [registryClass instancesRespondToSelector:@selector(chatForIMHandles:)]);
+    BOOL addParticipant = handleRegistrar
+        && ([chatClass instancesRespondToSelector:NSSelectorFromString(
+                @"inviteParticipants:reason:")]
+            || [chatClass instancesRespondToSelector:NSSelectorFromString(
+                @"inviteParticipantsToiMessageChat:reason:")]);
+    BOOL removeParticipant = [chatClass instancesRespondToSelector:@selector(participants)]
+        && ([chatClass instancesRespondToSelector:NSSelectorFromString(
+                @"removeParticipants:reason:")]
+            || [chatClass instancesRespondToSelector:NSSelectorFromString(
+                @"removeParticipantsFromiMessageChat:reason:")]);
+    BOOL handleCheck = idQueryClass
+        && ([idQueryClass respondsToSelector:@selector(sharedInstance)]
+            || [idQueryClass respondsToSelector:@selector(sharedController)])
+        && ([idQueryClass instancesRespondToSelector:
+                @selector(_currentIDStatusForDestination:service:listenerID:)]
+            || [idQueryClass instancesRespondToSelector:
+                @selector(currentIDStatusForDestination:service:)]);
     BOOL stickerReplyTo = [NSClassFromString(@"IMMessage")
         instancesRespondToSelector:NSSelectorFromString(@"setReplyToGUID:")];
     BOOL stickerTargetMembership = [NSClassFromString(@"IMChat")
@@ -1016,16 +1073,42 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
             instancesRespondToSelector:NSSelectorFromString(@"messagePartRange")];
     BOOL stickerAttachmentMessage = stickerAttachmentMessageInitializerAvailable();
     BOOL stickerAssociatedMessage = stickerAssociatedMessageInitializerAvailable();
+    BOOL attachmentSend = stickerTransferCenter && stickerAttachmentMessage
+        && [chatClass instancesRespondToSelector:@selector(sendMessage:)];
     BOOL stickerSend = stickerSetIsSticker && stickerSetUserInfo
-        && stickerSetAttribution && stickerTransferCenter && stickerAttachmentMessage;
+        && stickerSetAttribution && attachmentSend;
     NSDictionary *selectors = @{
         @"editMessageItemTranslation": @(gHasEditMessageItemTranslation),
         @"editMessageItem": @(gHasEditMessageItem),
         @"editMessage": @(gHasEditMessage),
         @"retractMessagePart": @(gHasRetractMessagePart),
         @"sendMessageReason": @(gHasSendMessageReason),
-        @"pollPayloadMessage": @(pollPayloadMessageInitializerAvailable()),
-        @"pollVoteMessage": @(pollVoteMessageInitializerAvailable()),
+        @"sendMessage": @(chatSend),
+        @"sendAttachment": @(attachmentSend),
+        @"sendReaction": @(reactionSend),
+        @"pollPayloadMessage": @(
+            [chatClass instancesRespondToSelector:@selector(sendMessage:)]
+                && pollPayloadMessageInitializerAvailable()),
+        @"pollVoteMessage": @(
+            [chatClass instancesRespondToSelector:@selector(sendMessage:)]
+                && pollVoteMessageInitializerAvailable() && activeSenderHandle),
+        @"typing": @(typingAvailable),
+        @"read": @(readAvailable),
+        @"createChat": @(createChat),
+        @"markChatUnread": @(
+            [chatClass instancesRespondToSelector:@selector(markLastMessageAsUnread)]),
+        @"deleteMessage": @(
+            [chatClass instancesRespondToSelector:@selector(deleteChatItems:)]),
+        @"notifyAnyways": @(
+            [chatClass instancesRespondToSelector:@selector(markChatItemAsNotifyRecipient:)]),
+        @"setDisplayName": @(
+            [chatClass instancesRespondToSelector:@selector(_setDisplayName:)]),
+        @"updateGroupPhoto": @(
+            [chatClass instancesRespondToSelector:@selector(sendGroupPhotoUpdate:)]),
+        @"addParticipant": @(addParticipant),
+        @"removeParticipant": @(removeParticipant),
+        @"leaveChat": @([chatClass instancesRespondToSelector:@selector(leaveChat)]),
+        @"checkIMessageAvailability": @(handleCheck),
         @"nicknameLookup": nicknameSelectors[@"nickname_lookup"],
         @"namePhotoShouldOffer": nicknameSelectors[@"should_offer"],
         @"namePhotoShare": nicknameSelectors[@"share"],
@@ -1044,7 +1127,9 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
                 && stickerAssociatedMessage),
         @"urlPreviewMessage": @(urlPreviewMessageInitializerAvailable()),
         @"sendRichLinkAction": @YES,
-        @"pollUpdateMessage": @(pollVoteMessageInitializerAvailable()),
+        @"pollUpdateMessage": @(
+            [chatClass instancesRespondToSelector:@selector(sendMessage:)]
+                && pollVoteMessageInitializerAvailable() && activeSenderHandle),
         @"deleteChat": @(hasRegistry &&
             [registryClass instancesRespondToSelector:NSSelectorFromString(@"deleteChat:")]),
         @"removeChat": @(hasRegistry &&
@@ -1055,8 +1140,8 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"injected": @YES,
         @"registry_available": @(hasRegistry),
         @"chat_count": @(chatCount),
-        @"typing_available": @(hasRegistry),
-        @"read_available": @(hasRegistry),
+        @"typing_available": @(typingAvailable),
+        @"read_available": @(readAvailable),
         @"bridge_version": @2,
         @"v2_ready": @(rpcInboxTimer != nil),
         @"attachment_metadata": @YES,

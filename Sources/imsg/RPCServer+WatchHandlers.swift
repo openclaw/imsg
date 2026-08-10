@@ -39,6 +39,7 @@ extension RPCServer {
       bufferLimit: bufferLimit,
       includeReactions: includeReactions
     )
+    let database = try await databaseResources.require()
     let reservation: SubscriptionStore.Reservation
     switch await subscriptions.reserve() {
     case .reserved(let value):
@@ -49,9 +50,10 @@ extension RPCServer {
       throw RPCError.serverBusy("subscription limit exceeded")
     }
     let subID = reservation.id
-    let localStore = store
-    let localWatcher = watcher
-    let localCache = cache
+    // A live subscription keeps the exact recovered bundle it started with.
+    let localStore = database.store
+    let localWatcher = database.watcher
+    let localCache = database.cache
     let localWriter = output
     let localFilter = filter
     let localChatID = chatID

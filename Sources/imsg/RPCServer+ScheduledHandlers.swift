@@ -15,6 +15,7 @@ extension RPCServer {
     } else {
       limit = 50
     }
+    let store = try await databaseResources.require().store
 
     do {
       let messages = try store.scheduledMessages(limit: limit)

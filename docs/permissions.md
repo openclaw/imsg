@@ -3,9 +3,9 @@ title: Permissions
 description: "Full Disk Access, Automation, Contacts — what imsg needs and why."
 ---
 
-`imsg` is local-only, but Messages.app data sits behind macOS privacy gates. Three permissions cover every feature; only the first is mandatory.
+`imsg` is local-only, but Messages.app data sits behind macOS privacy gates. Three permissions cover every feature. Full Disk Access is required for database-backed reads, but a supervised `imsg rpc` child can start in degraded mode without it.
 
-## Full Disk Access — required
+## Full Disk Access — required for database methods
 
 `imsg` reads `~/Library/Messages/chat.db` directly. macOS denies that path to every process that hasn't been added to **Full Disk Access**.
 
@@ -21,6 +21,12 @@ If `imsg` is launched indirectly — by an editor's task runner, a Node script, 
 After changing entries, quit and relaunch the parent process. macOS only re-reads Full Disk Access on launch.
 
 `imsg` opens `chat.db` read-only. It does not pass SQLite's `immutable=1` flag because immutable handles can miss WAL-backed updates that Messages writes during normal use.
+
+`imsg rpc` does not treat a missing grant as a process-startup failure.
+`initialize` / `status`, direct sends, explicit GUID bridge methods, and watch
+unsubscribe remain available according to their other prerequisites. The same
+child retries the database on each status or database-backed request and
+recovers once the grant/path becomes readable.
 
 ## Automation — required for sends and tapbacks
 
@@ -54,7 +60,7 @@ macOS treats each gate as a separate consent decision:
 | Automation | One app driving another via Apple Events | `imsg send`, `react`, `read`, `typing`. |
 | Contacts | Address Book entries | Name resolution in any read or send command. |
 
-Only Full Disk Access is mandatory. Skip Automation if you don't send. Skip Contacts if you don't need name resolution. The CLI degrades cleanly — it tells you which gate is missing instead of silently failing.
+Full Disk Access is mandatory for history, chats, watch subscriptions, send-status inspection, and other database-backed methods. Skip Automation if you don't send. Skip Contacts if you don't need name resolution. The CLI and RPC status snapshots identify the missing gate instead of silently failing.
 
 ## Stale grants after updates
 

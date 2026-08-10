@@ -15,8 +15,9 @@ description: "Long-running JSON-RPC 2.0 over stdio for chats, history, watch, an
 - Notifications omit `id`. They never receive a response, including when the
   method is unknown or its params are invalid.
 - Stderr is reserved for human-readable diagnostics.
-- Startup failures such as missing Full Disk Access are returned as JSON-RPC
-  errors on the first request instead of human-readable stdout banners.
+- The child starts even when the configured Messages database is absent or
+  unreadable. `initialize` and `status` remain available, and stdout stays
+  JSON-only. Database-backed requests return a typed, retryable error.
 
 Each method accepts only the keys documented for it. Unknown keys are rejected
 with `-32602` instead of being ignored. Values are type-strict: strings are not
@@ -46,8 +47,11 @@ Other spellings, including `chatId`, are not aliases and are rejected.
 Protocol/framing failures use the JSON-RPC codes `-32700` (parse error),
 `-32600` (invalid request), and `-32601` (unknown method). Caller-caused value,
 selector, date, or supported-operation errors use `-32602` (invalid params).
-Runtime database, bridge, permission, and delivery failures use `-32603`
-(internal error). Delivery failures add two server codes: `-32001` means the
+Other runtime and permission failures use `-32603` (internal error).
+`-32002` means the configured database is currently unavailable and can be
+retried after the path or Full Disk Access is fixed. `-32003` means a read-only
+bridge operation was requested while no already-running bridge was usable.
+Delivery failures add two server codes: `-32001` means the
 operation may have completed or remains in flight, and `-32004` means the
 mutation lane is blocked by an earlier in-flight operation. Their `data` is an
 object rather than the ordinary string and contains `retry_safe`,
@@ -66,6 +70,20 @@ same time.
 - The child stays alive across many requests and one-or-more watch subscriptions.
 - No TCP port. No launch agent. No `imsg` daemon to install.
 
+The configured database is an optional, retryable RPC resource. Startup does
+not open it. `initialize`, `status`, and every database-required request retry
+after an earlier open failure; the first successful open is cached for the
+life of the child. A watch subscription keeps the exact database/watcher/cache
+bundle it started with. Recovery affects new requests and does not swap a live
+subscription underneath its stream.
+
+`initialize`, `status`, and explicit bridge operations never launch, kill, or
+relaunch Messages.app. Bridge probes first check the existing ready lock and
+use the already-running v2 inbox directly. Run `imsg launch` separately when
+bridge features are desired. Direct AppleScript `send` remains independent of
+the bridge and may activate Messages.app. Bridge-oriented CLI commands retain
+their documented launch behavior.
+
 The pattern intentionally mirrors language servers and the way `imsg`'s parent gateway (Clawdis) supervises subprocesses — a single signal-style child that exits cleanly when stdin closes.
 
 Request execution uses three independent lanes:
@@ -74,10 +92,10 @@ Request execution uses three independent lanes:
   run through one FIFO worker. A mutation includes validation, staging, bridge
   work, its response, and any post-send verification before the next mutation
   starts.
-- Read-only history, chat, statistics, cursor, scheduled-message, send-status,
+- Read-only status, history, chat, statistics, cursor, scheduled-message, send-status,
   handle-check, and contact-sharing inspection requests run with up to four in
   flight. Their responses may complete out of input order.
-- Parse errors, unknown methods, and watch subscribe/unsubscribe control are
+- Initialize, parse errors, unknown methods, and watch subscribe/unsubscribe control are
   independent of both work lanes, so unsubscribe does not wait for a send or a
   saturated read lane.
 
@@ -109,6 +127,62 @@ admission receives `-32000` (`Server busy`) with `server is shutting down`; it
 never receives a successful subscription ID for a stream that cannot activate.
 
 ## Methods
+
+### `initialize`
+
+Returns the same readiness snapshot as `status`. It is optional, idempotent,
+and may be called at any time; it does not establish session state.
+
+Params:
+
+- `protocol_version` (int, optional) — when supplied, must be `1`.
+
+Unknown params and unsupported versions return invalid params.
+
+### `status`
+
+Accepts no params (an explicit empty object is allowed). It retries the
+database open, probes only an already-running bridge, and returns no setup
+prose or message content:
+
+```json
+{
+  "version": "0.x.y",
+  "protocol_version": 1,
+  "database": {
+    "path": "/Users/me/Library/Messages/chat.db",
+    "ready": true,
+    "features": {
+      "unread_state": true,
+      "scheduled_messages": true,
+      "reactions": true,
+      "reply_context": true,
+      "routing_metadata": true,
+      "balloon_payloads": true
+    }
+  },
+  "bridge": {
+    "ready": false,
+    "error": "The bridge is not started. Run imsg launch explicitly before using bridge methods."
+  },
+  "contacts": { "available": true },
+  "methods": ["initialize", "status", "watch.unsubscribe", "chats.list", "send"],
+  "supported_methods": ["initialize", "status", "watch.unsubscribe", "..."]
+}
+```
+
+`methods` is the structurally usable surface at that instant. Database reads
+appear only while the database is ready; `messages.scheduled` also requires
+detected scheduling columns. Bridge methods require a successful non-launching
+v2 status probe and are conservatively gated by the selectors the bridge
+reports (for example stickers, polls, editing, unsend, chat deletion, and Name
+& Photo). Aliases appear together. `supported_methods` is the compiled union
+for protocol negotiation and does not claim current readiness.
+
+When the database is ready, `database.features` exposes feature-level booleans,
+not raw SQLite column names. When it is down, `database.error` is redacted and
+actionable. A successful bridge probe additionally reports `bridge_version`,
+`v2_ready`, `registry_available`, and `selectors` supplied by the helper.
 
 ### `chats.list`
 
@@ -347,6 +421,12 @@ Result:
 
 `id` and `guid` are best-effort. `send` returns them when the inserted row can be observed in `chat.db` after Messages accepts the send. Attachment-only sends, delayed database writes, or ambiguous direct sends may return only `{"ok": true}`.
 
+Direct `to` sends and explicit `chat_identifier` / `chat_guid` targets remain
+usable while the database is down. In that state `send` skips history-based
+service inference, direct-chat lookup, and post-send row verification, then
+returns only fields observable from the chosen transport. A `chat_id` target
+always requires the database and returns `-32002` while it is unavailable.
+
 For chat-target sends, `send` also performs the [Tahoe ghost-row check](send.md#tahoe-ghost-row-protection): if Messages writes an empty unjoined SMS row instead of delivering, the call returns an error rather than `{"ok": true}`.
 
 ### `message.send_status`
@@ -385,9 +465,15 @@ Missing rows return `pending` with `status_fields: null`.
 
 ### Bridge Message Actions
 
-These methods require the IMCore bridge and target an existing chat with
+These methods require an already-running IMCore bridge and target an existing chat with
 exactly one of `chat_id`, `chat_identifier`, or `chat_guid`. Supplying multiple
 selectors is invalid and no bridge operation is attempted.
+
+An explicit `chat_guid` or `chat_identifier` does not require `chat.db` merely
+to reach the bridge. `chat_id` always does. Operations that validate local
+membership or payload state—poll vote/unvote and stickers—still require the
+database even with an explicit GUID. Rich-link mode also requires a stored
+existing iMessage chat; ordinary `send.rich` text does not.
 
 - `send.rich` sends text with optional `effect`, `subject`, `reply_to`, `part_index`, `dd_scan`, and `text_formatting`. Alternatively, pass only one chat target plus an HTTP(S) `url` to send an Apple URL-preview balloon. URL mode is iMessage-only and rejects text/send modifiers; metadata or image lookup failure falls back to a metadata-only card, never a plain-message send.
 - `send.attachment` sends `file` or `path`, with optional `audio` / `is_audio` / `as_voice`. Pass `reply_to` (or `replyTo`, `reply_to_guid`, or `message_guid`) to reply to an existing message. An optional non-negative integer `part_index` / `partIndex` selects that message's part and is invalid without a reply target.
@@ -463,6 +549,10 @@ Response:
 
 `poll.vote` casts a native vote after validating the poll and option against local history.
 `poll.unvote`, `polls.unvote`, and `messages.poll.unvote` remove a selection with the same poll/option parameters. Pass exactly one option selector: `option_id` (stable option ID), `option_index` (one-based option position), or `option` (case-insensitive option text). The camelCase aliases `optionId` / `optionIdentifier` and `optionIndex` are also accepted. Every selector is resolved against the decoded poll options; `option_text` remains response metadata and is not trusted as a resolved input selector.
+
+Dynamic status advertises vote only when the database exposes readable balloon
+payload columns. Unvote additionally requires reaction-linkage columns because
+it must reconstruct the caller's currently selected options.
 
 ```json
 {"jsonrpc":"2.0","id":"vote","method":"poll.vote","params":{"chat_id":42,"poll_guid":"POLL-GUID","option_id":"OPTION-UUID"}}

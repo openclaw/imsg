@@ -81,6 +81,26 @@ struct RPCError: Error, @unchecked Sendable {
     RPCError(code: -32000, message: "Server busy", data: message)
   }
 
+  static func databaseUnavailable(path: String, detail: String) -> RPCError {
+    RPCError(
+      code: -32002,
+      message: "Database unavailable",
+      structuredData: ["path": path, "detail": detail, "retryable": true]
+    )
+  }
+
+  static func bridgeUnavailable() -> RPCError {
+    RPCError(
+      code: -32003,
+      message: "Bridge unavailable",
+      structuredData: [
+        "detail":
+          "The bridge is not started. Run imsg launch explicitly before using bridge methods.",
+        "retryable": true,
+      ]
+    )
+  }
+
   static func deliveryFailure(_ failure: DeliveryFailure) -> RPCError {
     let unknown = failure.disposition != .notStarted
     return RPCError(
@@ -321,7 +341,7 @@ extension RPCServer {
       if requiresMetadata {
         let status: [String: Any]
         do {
-          status = try await bridgeInvoker(.status, [:])
+          status = try await invokeBridge(action: .status, params: [:])
         } catch {
           throw DeliveryFailure(
             disposition: .notStarted,
@@ -360,7 +380,7 @@ extension RPCServer {
       if let textFormatting {
         params["textFormatting"] = textFormatting
       }
-      return try await invokeBridgeMutation(.sendAttachment, params: params)
+      return try await invokeBridge(action: .sendAttachment, params: params)
     }
     var params: [String: Any] = ["chatGuid": chatGUID, "message": text]
     if let selectedMessageGuid {
@@ -369,37 +389,6 @@ extension RPCServer {
     if let textFormatting {
       params["textFormatting"] = textFormatting
     }
-    return try await invokeBridgeMutation(.sendMessage, params: params)
-  }
-
-  private func invokeBridgeMutation(
-    _ action: BridgeAction,
-    params: [String: Any]
-  ) async throws -> [String: Any] {
-    do {
-      return try await bridgeInvoker(action, params)
-    } catch let failure as DeliveryFailure {
-      throw failure
-    } catch let error as IMsgBridgeError {
-      let disposition: DeliveryDisposition
-      if case .bridgeNotReady = error {
-        disposition = .notStarted
-      } else {
-        disposition = .mayHaveCompleted
-      }
-      throw DeliveryFailure(
-        disposition: disposition,
-        transport: .bridgeV2,
-        operation: action.rawValue,
-        detail: error.description
-      )
-    } catch {
-      throw DeliveryFailure(
-        disposition: .mayHaveCompleted,
-        transport: .bridgeV2,
-        operation: action.rawValue,
-        detail: "The bridge mutation failed without an authoritative post-dispatch result."
-      )
-    }
+    return try await invokeBridge(action: .sendMessage, params: params)
   }
 }

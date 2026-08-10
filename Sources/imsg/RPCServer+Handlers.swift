@@ -24,6 +24,9 @@ extension RPCServer {
     )
     let limit = try params.integer("limit") ?? 20
     let unreadOnly = try params.boolean("unread_only", aliases: ["unreadOnly"]) ?? false
+    let database = try await databaseResources.require()
+    let store = database.store
+    let cache = database.cache
     guard !unreadOnly || store.supportsUnreadState else {
       throw RPCError.invalidParams(
         "unread_only is unavailable because this Messages database has no read-state column")
@@ -81,6 +84,9 @@ extension RPCServer {
     let includeAttachments = try params.boolean("attachments") ?? false
     let attachmentOptions = AttachmentQueryOptions(
       convertUnsupported: try params.boolean("convert_attachments") ?? false)
+    let database = try await databaseResources.require()
+    let store = database.store
+    let cache = database.cache
     let filter = try MessageFilter.fromISO(
       participants: participants,
       startISO: startISO,
@@ -157,9 +163,16 @@ extension RPCServer {
       throw RPCError.invalidParams("text or file is required")
     }
 
+    let database: RPCDatabaseResources?
+    if input.chatID != nil {
+      database = try await databaseResources.require()
+    } else {
+      database = await databaseResources.available()
+    }
+
     let resolvedTarget = try await ChatTargetResolver.resolveChatTarget(
       input: input,
-      lookupChat: { chatID in try await cache.info(chatID: chatID) },
+      lookupChat: { chatID in try await database?.cache.info(chatID: chatID) },
       unknownChatError: { chatID in
         RPCError.invalidParams("unknown chat_id \(chatID)")
       }
@@ -169,7 +182,9 @@ extension RPCServer {
     }
     var effectiveService = service
     if service == .auto && !input.hasChatTarget && !input.recipient.isEmpty {
-      switch (try? store.preferredService(forHandle: input.recipient, region: region)) ?? .unknown {
+      switch (try? database?.store.preferredService(forHandle: input.recipient, region: region))
+        ?? .unknown
+      {
       case .imessage, .unknown:
         effectiveService = .auto
       case .sms:
@@ -180,12 +195,14 @@ extension RPCServer {
     let directChatInfo =
       input.hasChatTarget
       ? nil
-      : try ChatTargetResolver.existingDirectChat(
-        store: store,
-        recipient: input.recipient,
-        service: effectiveService,
-        includeAnyForSMS: service == .auto && effectiveService == .sms
-      )
+      : try database.map {
+        try ChatTargetResolver.existingDirectChat(
+          store: $0.store,
+          recipient: input.recipient,
+          service: effectiveService,
+          includeAnyForSMS: service == .auto && effectiveService == .sms
+        )
+      } ?? nil
 
     let allowSMSFallback =
       service == .auto
@@ -253,14 +270,16 @@ extension RPCServer {
 
     try sendMessage(options)
 
+    let sentMessage: Message?
     let verificationChatID =
       input.chatID
-      ?? resolvedTarget.preferredIdentifier.flatMap { try? store.chatInfo(matchingTarget: $0)?.id }
+      ?? resolvedTarget.preferredIdentifier.flatMap {
+        try? database?.store.chatInfo(matchingTarget: $0)?.id
+      }
       ?? directChatInfo?.id
-    let sentMessage: Message?
-    if input.hasChatTarget || !text.isEmpty {
+    if let database, input.hasChatTarget || !text.isEmpty {
       sentMessage = try await SentMessageVerifier.verifyAppleScriptSend(
-        store: store,
+        store: database.store,
         options: options,
         chatID: verificationChatID,
         sentAt: sentAt,
@@ -278,11 +297,11 @@ extension RPCServer {
       }
     }
     var responseChatInfo: ChatInfo?
-    if let sentMessage {
-      responseChatInfo = try? await cache.info(chatID: sentMessage.chatID)
+    if let sentMessage, let database {
+      responseChatInfo = try? await database.cache.info(chatID: sentMessage.chatID)
     }
-    if responseChatInfo == nil, let verificationChatID {
-      responseChatInfo = try? await cache.info(chatID: verificationChatID)
+    if responseChatInfo == nil, let verificationChatID, let database {
+      responseChatInfo = try? await database.cache.info(chatID: verificationChatID)
     }
     if responseChatInfo == nil {
       responseChatInfo = directChatInfo
@@ -320,9 +339,15 @@ extension RPCServer {
     let isTyping = try params.boolean("typing") ?? true
     let serviceRaw = try params.string("service") ?? "imessage"
     let input = try params.recipientOrChatTarget()
+    let database: RPCDatabaseResources?
+    if input.chatID != nil {
+      database = try await databaseResources.require()
+    } else {
+      database = await databaseResources.available()
+    }
     let resolvedTarget = try await ChatTargetResolver.resolveChatTarget(
       input: input,
-      lookupChat: { chatID in try await cache.info(chatID: chatID) },
+      lookupChat: { chatID in try await database?.cache.info(chatID: chatID) },
       unknownChatError: { chatID in
         RPCError.invalidParams("unknown chat_id \(chatID)")
       }
@@ -337,8 +362,9 @@ extension RPCServer {
         guard let service = MessageService(rawValue: serviceRaw.lowercased()) else {
           throw RPCError.invalidParams(serviceRaw)
         }
-        if let info = try ChatTargetResolver.existingDirectChat(
-          store: store, recipient: input.recipient, service: service),
+        if let database,
+          let info = try ChatTargetResolver.existingDirectChat(
+            store: database.store, recipient: input.recipient, service: service),
           let preferred = bridgeChatGUID(resolvedTarget: nil, directChatInfo: info)
         {
           identifier = preferred
@@ -353,11 +379,10 @@ extension RPCServer {
         throw err
       }
     }
-    if isTyping {
-      try startTyping(identifier)
-    } else {
-      try stopTyping(identifier)
-    }
+    _ = try await invokeBridge(
+      action: .typing,
+      params: ["handle": identifier, "typing": isTyping]
+    )
     respond(id: id, result: ["ok": true])
   }
 
@@ -367,9 +392,15 @@ extension RPCServer {
     let supportedKeys = RPCParameterKeys.combining(RPCParameterKeys.chatTarget, ["to"])
     let params = try RPCParameters(params, method: "read", supportedKeys: supportedKeys)
     let input = try params.recipientOrChatTarget()
+    let database: RPCDatabaseResources?
+    if input.chatID != nil {
+      database = try await databaseResources.require()
+    } else {
+      database = await databaseResources.available()
+    }
     let resolvedTarget = try await ChatTargetResolver.resolveChatTarget(
       input: input,
-      lookupChat: { chatID in try await cache.info(chatID: chatID) },
+      lookupChat: { chatID in try await database?.cache.info(chatID: chatID) },
       unknownChatError: { chatID in
         RPCError.invalidParams("unknown chat_id \(chatID)")
       }
@@ -382,7 +413,7 @@ extension RPCServer {
     } else {
       handle = input.recipient
     }
-    try await IMCoreBridge.shared.markAsRead(handle: handle)
+    _ = try await invokeBridge(action: .read, params: ["handle": handle])
     respond(id: id, result: ["ok": true])
   }
 

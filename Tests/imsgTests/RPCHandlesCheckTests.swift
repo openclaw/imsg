@@ -119,5 +119,5 @@ func rpcHandlesCheckRequiresReadyBridge() async throws {
 
   #expect(bridgeInvoked == false)
   let error = output.errors.first?["error"] as? [String: Any]
-  #expect(handlesCheckInt64Value(error?["code"]) == -32603)
+  #expect(handlesCheckInt64Value(error?["code"]) == -32003)
 }

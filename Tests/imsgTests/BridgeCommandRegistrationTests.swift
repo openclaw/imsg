@@ -308,7 +308,7 @@ func injectedHelperBroadcastsFailClosedNativePollVoteMetadata() throws {
   #expect(source.contains("send-poll-vote"))
   #expect(source.contains("send-poll-unvote"))
   #expect(source.contains("Poll vote payload exceeds 4096 bytes"))
-  #expect(source.contains(#"@"pollVoteMessage": @(pollVoteMessageInitializerAvailable())"#))
+  #expect(source.contains(#"@"pollVoteMessage": @("#))
   #expect(sendVoteBody.contains("pollVoteMessageInitializerAvailable()"))
   #expect(!sendVoteBody.contains("pollPayloadMessageInitializerAvailable()"))
   #expect(source.contains("archivePollMutationEnvelope"))

@@ -21,14 +21,15 @@ struct MessageStoreSchema: Sendable {
   let hasIsReadColumn: Bool
   let hasDateReadColumn: Bool
 
-  init(connection: Connection) {
-    let messageColumns = MessageStore.tableColumns(connection: connection, table: "message")
-    let attachmentColumns = MessageStore.tableColumns(connection: connection, table: "attachment")
-    let chatMessageJoinColumns = MessageStore.tableColumns(
+  init(connection: Connection) throws {
+    let messageColumns = try MessageStore.tableColumns(connection: connection, table: "message")
+    let attachmentColumns = try MessageStore.tableColumns(
+      connection: connection, table: "attachment")
+    let chatMessageJoinColumns = try MessageStore.tableColumns(
       connection: connection,
       table: "chat_message_join"
     )
-    let chatColumns = MessageStore.tableColumns(connection: connection, table: "chat")
+    let chatColumns = try MessageStore.tableColumns(connection: connection, table: "chat")
 
     self.hasAttributedBody = messageColumns.contains("attributedbody")
     self.hasReactionColumns = MessageStore.reactionColumnsPresent(in: messageColumns)

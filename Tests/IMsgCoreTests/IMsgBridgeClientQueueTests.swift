@@ -244,6 +244,34 @@ struct IMsgBridgeClientQueueTests {
   }
 
   @Test
+  func nonLaunchingReadCancellationPropagatesAfterReclaim() async throws {
+    let harness = try BridgeClientHarness()
+    defer { harness.remove() }
+    let (publications, continuation) = AsyncStream<Void>.makeStream()
+    let client = harness.client(
+      pollInterval: .seconds(30),
+      publicationObserver: { _ in continuation.yield(()) }
+    )
+    let task = Task { () -> Bool in
+      do {
+        _ = try await client.invokeWithoutLaunching(action: .status)
+        Issue.record("expected cancellation")
+        return false
+      } catch is CancellationError {
+        return true
+      } catch {
+        Issue.record("expected CancellationError, got \(error)")
+        return false
+      }
+    }
+    for await _ in publications { break }
+    task.cancel()
+
+    #expect(await task.value)
+    #expect(!FileManager.default.fileExists(atPath: harness.requestPath))
+  }
+
+  @Test
   func legacyMutationTimeoutRemainsInFlight() async throws {
     let harness = try BridgeClientHarness()
     defer { harness.remove() }
@@ -302,7 +330,6 @@ struct IMsgBridgeClientQueueTests {
     #expect(try await second.value != nil)
     #expect(state.attemptCount == 1)
   }
-
 }
 
 private enum BridgeClientTestError: Error {

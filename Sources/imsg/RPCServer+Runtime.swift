@@ -20,28 +20,6 @@ enum RPCLineSource {
   }
 }
 
-private enum RPCRequestLane: Sendable, Equatable {
-  case mutation
-  case read
-  case control
-}
-
-private let rpcReadMethods: Set<String> = [
-  "chats.list",
-  "messages.history",
-  "messages.stats",
-  "messages.after",
-  "messages.scheduled",
-  "message.send_status",
-  "handles.check",
-  "contacts.shouldShareContact",
-]
-
-private let rpcControlMethods: Set<String> = [
-  "watch.subscribe",
-  "watch.unsubscribe",
-]
-
 actor RPCScheduler {
   private let server: RPCServer
   private let outstandingLimit: Int
@@ -123,14 +101,7 @@ actor RPCScheduler {
     guard case .success(let request) = RPCRequestParser.parse(line) else {
       return .control
     }
-    if rpcReadMethods.contains(request.method) {
-      return .read
-    }
-    if rpcControlMethods.contains(request.method) || !kSupportedRPCMethods.contains(request.method)
-    {
-      return .control
-    }
-    return .mutation
+    return rpcRequestLane(for: request.method)
   }
 
   private func startMutationWorkerIfNeeded() {

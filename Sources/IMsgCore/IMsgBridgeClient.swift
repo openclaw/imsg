@@ -109,6 +109,30 @@ public final class IMsgBridgeClient: @unchecked Sendable {
     }
     return try await invokeV2(action: action, params: params, timeout: timeout)
   }
+
+  /// Invoke the already-running v2 bridge without entering any Messages.app launch path.
+  /// Long-lived supervised RPC processes use this for probes and bridge methods so a client
+  /// capability check can never kill or relaunch Messages.app.
+  public func invokeWithoutLaunching(
+    action: BridgeAction,
+    params: [String: Any] = [:]
+  ) async throws -> [String: Any] {
+    try Task.checkCancellation()
+    guard !useLegacyIPC else {
+      throw IMsgBridgeError.bridgeNotReady(
+        "non-launching RPC access requires the v2 bridge inbox")
+    }
+    guard launcher.hasReadyLockFile() else {
+      throw IMsgBridgeError.bridgeNotReady(
+        "the existing bridge ready lock is absent; run imsg launch explicitly")
+    }
+    return try await invokeV2(
+      action: action,
+      params: params,
+      timeout: IMsgBridgeProtocol.defaultResponseTimeout(for: action)
+    )
+  }
+
 }
 
 extension IMsgBridgeClient {
@@ -162,6 +186,13 @@ extension IMsgBridgeClient {
       do {
         try await clock.sleep(until: nextPoll < deadline ? nextPoll : deadline)
       } catch {
+        if !action.isMutation, error is CancellationError {
+          _ = try? resolveInterruptedRequest(
+            publication,
+            reason: "The caller cancelled while awaiting the bridge response."
+          )
+          throw CancellationError()
+        }
         return try resolveInterruptedRequest(
           publication,
           reason: "The caller cancelled while awaiting the bridge response."
@@ -419,6 +450,7 @@ extension IMsgBridgeClient {
     transport: DeliveryTransport,
     error: Error
   ) -> Error {
+    if !action.isMutation, error is CancellationError { return CancellationError() }
     guard action.isMutation else {
       return IMsgBridgeError.bridgeNotReady(String(describing: error))
     }

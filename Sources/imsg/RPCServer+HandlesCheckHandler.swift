@@ -25,15 +25,9 @@ extension RPCServer {
       throw RPCError.invalidParams("handles.check only supports service iMessage")
     }
 
-    if !isBridgeReady() {
-      throw RPCError.internalError(
-        "handles.check requires bridge transport (Messages.app must be injected)"
-      )
-    }
-
-    let data = try await bridgeInvoker(
-      .checkImessageAvailability,
-      [
+    let data = try await invokeBridge(
+      action: .checkImessageAvailability,
+      params: [
         "address": address,
         "aliasType": aliasType,
       ])

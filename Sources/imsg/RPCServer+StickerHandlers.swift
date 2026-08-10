@@ -21,6 +21,7 @@ extension RPCServer {
     } catch let error as StickerSendValidationError {
       throw RPCError.invalidParams(error.description)
     }
+    let store = try await databaseResources.require().store
     let requestedChatGUID = try await resolveChatGUIDParam(
       params,
       preferredServices: ["iMessage", "iMessageLite"]
