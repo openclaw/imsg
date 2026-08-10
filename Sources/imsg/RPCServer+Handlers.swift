@@ -379,10 +379,11 @@ extension RPCServer {
         throw err
       }
     }
-    _ = try await invokeBridge(
-      action: .typing,
-      params: ["handle": identifier, "typing": isTyping]
-    )
+    if isTyping {
+      try startTyping(identifier)
+    } else {
+      try stopTyping(identifier)
+    }
     respond(id: id, result: ["ok": true])
   }
 
@@ -413,7 +414,7 @@ extension RPCServer {
     } else {
       handle = input.recipient
     }
-    _ = try await invokeBridge(action: .read, params: ["handle": handle])
+    try await markAsRead(handle)
     respond(id: id, result: ["ok": true])
   }
 

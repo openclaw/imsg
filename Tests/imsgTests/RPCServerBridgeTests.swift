@@ -418,12 +418,8 @@ func rpcTypingResolvesExistingAnyPrefixChat() async throws {
     store: store,
     verbose: false,
     output: output,
-    invokeBridge: { action, params in
-      #expect(action == .typing)
-      startedIdentifier = params["handle"] as? String
-      return [:]
-    },
-    isBridgeReady: { true }
+    isBridgeReady: { false },
+    startTyping: { startedIdentifier = $0 }
   )
 
   let line = #"{"jsonrpc":"2.0","id":"3typing","method":"typing","params":{"to":"+123"}}"#

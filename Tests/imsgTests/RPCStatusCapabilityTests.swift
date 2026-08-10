@@ -52,6 +52,8 @@ func rpcStatusCalculatesDynamicMethodsAcrossResourceStates() async throws {
     #"{"jsonrpc":"2.0","id":"database-only","method":"status"}"#)
   let databaseOnlyMethods = rpcStatusMethods(try rpcStatusResult(databaseOnlyOutput))
   #expect(databaseOnlyMethods.contains("chats.list"))
+  #expect(databaseOnlyMethods.contains("typing"))
+  #expect(databaseOnlyMethods.contains("read"))
   #expect(!databaseOnlyMethods.contains("group.rename"))
   #expect(databaseOnlyInvocations.value == 0)
 

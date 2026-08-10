@@ -23,14 +23,20 @@ After changing entries, quit and relaunch the parent process. macOS only re-read
 `imsg` opens `chat.db` read-only. It does not pass SQLite's `immutable=1` flag because immutable handles can miss WAL-backed updates that Messages writes during normal use.
 
 `imsg rpc` does not treat a missing grant as a process-startup failure.
-`initialize` / `status`, direct sends, explicit GUID bridge methods, and watch
-unsubscribe remain available according to their other prerequisites. The same
-child retries the database on each status or database-backed request and
-recovers once the grant/path becomes readable.
+`initialize` / `status`, direct sends, `typing` / `read` requests using `to`,
+`chat_identifier`, or `chat_guid`, eligible explicit-GUID bridge-only methods,
+and watch unsubscribe remain available according to their other prerequisites.
+The same child retries the database on each status or database-backed request
+and recovers once the grant/path becomes readable. A `chat_id` target still
+requires the database.
 
-## Automation — required for sends and tapbacks
+## Automation — required for AppleScript sends and tapbacks
 
-`imsg send`, `imsg react`, `imsg typing`, and `imsg read` drive Messages.app via AppleScript. macOS gates that under **Automation**.
+Direct `imsg send` and `imsg react` operations drive Messages.app via
+AppleScript. macOS gates that under **Automation**. Typing indicators and read
+receipts use the advanced IMCore paths instead; they do not use AppleScript,
+but their shipped bridge fallback/activation behavior may activate
+Messages.app.
 
 The first time you run a send, macOS prompts:
 
@@ -57,7 +63,7 @@ macOS treats each gate as a separate consent decision:
 | Gate | What it protects | Triggered by |
 |------|------------------|--------------|
 | Full Disk Access | `~/Library/Messages/`, Mail, Safari history, … | `imsg chats`, `history`, `watch`, `group`, anything that opens `chat.db`. |
-| Automation | One app driving another via Apple Events | `imsg send`, `react`, `read`, `typing`. |
+| Automation | One app driving another via Apple Events | Direct `imsg send` and `react`. |
 | Contacts | Address Book entries | Name resolution in any read or send command. |
 
 Full Disk Access is mandatory for history, chats, watch subscriptions, send-status inspection, and other database-backed methods. Skip Automation if you don't send. Skip Contacts if you don't need name resolution. The CLI and RPC status snapshots identify the missing gate instead of silently failing.

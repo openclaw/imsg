@@ -77,12 +77,14 @@ life of the child. A watch subscription keeps the exact database/watcher/cache
 bundle it started with. Recovery affects new requests and does not swap a live
 subscription underneath its stream.
 
-`initialize`, `status`, and explicit bridge operations never launch, kill, or
-relaunch Messages.app. Bridge probes first check the existing ready lock and
-use the already-running v2 inbox directly. Run `imsg launch` separately when
-bridge features are desired. Direct AppleScript `send` remains independent of
-the bridge and may activate Messages.app. Bridge-oriented CLI commands retain
-their documented launch behavior.
+`initialize`, `status`, and bridge capability probes never launch, kill, or
+relaunch Messages.app. Bridge-only RPC methods first check the existing ready
+lock and use the already-running v2 inbox directly; run `imsg launch`
+separately before using them. The shipped `typing` and `read` methods are
+exceptions: typing retains its bridge-first, delivery-safe direct-IMCore
+fallback, while read retains IMCore bridge activation. Either may activate
+Messages.app. Direct AppleScript `send` may activate it too. Bridge-oriented
+CLI commands retain their documented launch behavior.
 
 The pattern intentionally mirrors language servers and the way `imsg`'s parent gateway (Clawdis) supervises subprocesses — a single signal-style child that exits cleanly when stdin closes.
 
@@ -166,18 +168,20 @@ prose or message content:
     "error": "The bridge is not started. Run imsg launch explicitly before using bridge methods."
   },
   "contacts": { "available": true },
-  "methods": ["initialize", "status", "watch.unsubscribe", "chats.list", "send"],
+  "methods": ["initialize", "status", "watch.unsubscribe", "chats.list", "send", "typing", "read"],
   "supported_methods": ["initialize", "status", "watch.unsubscribe", "..."]
 }
 ```
 
 `methods` is the structurally usable surface at that instant. Database reads
 appear only while the database is ready; `messages.scheduled` also requires
-detected scheduling columns. Bridge methods require a successful non-launching
-v2 status probe and are conservatively gated by the selectors the bridge
-reports (for example stickers, polls, editing, unsend, chat deletion, and Name
-& Photo). Aliases appear together. `supported_methods` is the compiled union
-for protocol negotiation and does not claim current readiness.
+detected scheduling columns. On macOS, `typing` and `read` remain usable
+independently of bridge readiness because they retain their shipped
+fallback/activation behavior. Bridge-only methods require a successful
+non-launching v2 status probe and are conservatively gated by the selectors the
+bridge reports (for example stickers, polls, editing, unsend, chat deletion,
+and Name & Photo). Aliases appear together. `supported_methods` is the compiled
+union for protocol negotiation and does not claim current readiness.
 
 When the database is ready, `database.features` exposes feature-level booleans,
 not raw SQLite column names. When it is down, `database.error` is redacted and

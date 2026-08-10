@@ -120,12 +120,15 @@ If you want partial fallback names (initials, or formatted handles), do that in 
 
 See [Advanced IMCore features](advanced-imcore.md). Most likely SIP is enabled (required to be off), library validation is rejecting the helper dylib, or macOS 26's `imagent` entitlement check is blocking the IMCore client. These are macOS-level gates `imsg` cannot work around.
 
-`imsg rpc` only uses a bridge that is already running. A `status` request or an
-explicit bridge RPC never launches or restarts Messages.app. Run `imsg launch`
-outside the supervised child, then call RPC `status` again. Direct AppleScript
-`send` may still activate Messages.app. If the ready lock is absent, bridge
-reads return `-32003`; mutations report a retry-safe `not_started` delivery
-failure.
+RPC `initialize`, `status`, and bridge capability probes never launch or
+restart Messages.app. Bridge-only RPC methods use only an already-running
+bridge: run `imsg launch` outside the supervised child, then call RPC `status`
+again. The shipped RPC `typing` and `read` methods are exceptions. Typing keeps
+its bridge-first, delivery-safe direct-IMCore fallback, and read keeps IMCore
+bridge activation, so either may activate Messages.app. Direct AppleScript
+`send` may activate it too. If the ready lock is absent, bridge-only reads
+return `-32003`; bridge-only mutations report a retry-safe `not_started`
+delivery failure.
 
 ## Filing issues
 

@@ -51,7 +51,10 @@ func rpcStatusWorksWithDatabaseAndBridgeDown() async throws {
   #expect(bridge["ready"] as? Bool == false)
   #expect(invocations.value == 0)
   let methods = rpcStatusMethods(result)
-  #expect(methods.isSuperset(of: ["initialize", "status", "watch.unsubscribe", "send"]))
+  #expect(
+    methods.isSuperset(of: [
+      "initialize", "status", "watch.unsubscribe", "send", "typing", "read",
+    ]))
   #expect(!methods.contains("chats.list"))
   #expect(!methods.contains("group.rename"))
 }
@@ -170,6 +173,77 @@ func rpcDatabaseUnavailableIsTypedWhileDirectSendStillWorks() async throws {
   #expect(sendResult["id"] == nil)
   #expect(output.errors.count == 2)
   #expect((output.errors[1]["error"] as? [String: Any])?["code"] as? Int == -32002)
+}
+
+@Test
+func rpcTypingAndReadDispatchWithoutAReadyBridgeOrDatabase() async throws {
+  let output = TestRPCOutput()
+  let bridgeInvocations = RPCStatusInvocationCounter()
+  var typingEvents: [String] = []
+  var readHandles: [String] = []
+  let server = RPCServer(
+    databasePath: "/tmp/imsg-rpc-status-missing-\(UUID().uuidString)/chat.db",
+    verbose: false,
+    output: output,
+    storeFactory: { _ in throw NSError(domain: "RPCStatusTests", code: 1) },
+    invokeBridge: { _, _ in
+      bridgeInvocations.increment()
+      return [:]
+    },
+    isBridgeReady: { false },
+    startTyping: { typingEvents.append("start:\($0)") },
+    stopTyping: { typingEvents.append("stop:\($0)") },
+    markAsRead: { readHandles.append($0) }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"typing-to","method":"typing","params":{"to":"+123"}}"#)
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"typing-guid","method":"typing","params":{"chat_guid":"iMessage;+;group","typing":false}}"#
+  )
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"read-to","method":"read","params":{"to":"+456"}}"#)
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"read-guid","method":"read","params":{"chat_guid":"iMessage;+;group"}}"#
+  )
+
+  #expect(typingEvents == ["start:iMessage;-;+123", "stop:iMessage;+;group"])
+  #expect(readHandles == ["+456", "iMessage;+;group"])
+  #expect(bridgeInvocations.value == 0)
+  #expect(output.responses.count == 4)
+  #expect(output.errors.isEmpty)
+}
+
+@Test
+func rpcTypingAndReadChatIDRemainDatabaseRequired() async throws {
+  let output = TestRPCOutput()
+  var typingDispatched = false
+  var readDispatched = false
+  let server = RPCServer(
+    databasePath: "/tmp/imsg-rpc-status-missing-\(UUID().uuidString)/chat.db",
+    verbose: false,
+    output: output,
+    storeFactory: { _ in throw NSError(domain: "RPCStatusTests", code: 1) },
+    isBridgeReady: { false },
+    startTyping: { _ in typingDispatched = true },
+    stopTyping: { _ in typingDispatched = true },
+    markAsRead: { _ in readDispatched = true }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"typing","method":"typing","params":{"chat_id":1}}"#)
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"read","method":"read","params":{"chat_id":1}}"#)
+
+  #expect(typingDispatched == false)
+  #expect(readDispatched == false)
+  #expect(output.responses.isEmpty)
+  #expect(output.errors.count == 2)
+  for envelope in output.errors {
+    let error = try #require(envelope["error"] as? [String: Any])
+    #expect(error["code"] as? Int == -32002)
+    #expect(error["message"] as? String == "Database unavailable")
+  }
 }
 
 @Test

@@ -125,9 +125,8 @@ let rpcMethodDescriptors: [RPCMethodDescriptor] = [
     bridge: .selector("pollVoteMessage"), macOSOnly: true),
   RPCMethodDescriptor(
     "tapback", lane: .mutation, bridge: .selector("sendReaction"), macOSOnly: true),
-  RPCMethodDescriptor(
-    "typing", lane: .mutation, bridge: .selector("typing"), macOSOnly: true),
-  RPCMethodDescriptor("read", lane: .mutation, bridge: .selector("read"), macOSOnly: true),
+  RPCMethodDescriptor("typing", lane: .mutation, macOSOnly: true),
+  RPCMethodDescriptor("read", lane: .mutation, macOSOnly: true),
   RPCMethodDescriptor(
     "message.edit", lane: .mutation,
     bridge: .anySelector("editMessageItemTranslation", "editMessageItem", "editMessage"),

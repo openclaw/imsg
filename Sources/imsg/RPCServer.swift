@@ -54,6 +54,9 @@ final class RPCServer: @unchecked Sendable {
   let stageSticker: StickerStager
   let prepareRichLink: RichLinkPrepare
   let isBridgeReady: () -> Bool
+  let startTyping: (String) throws -> Void
+  let stopTyping: (String) throws -> Void
+  let markAsRead: (String) async throws -> Void
   let contactResolver: any ContactResolving
   let watchStreamProvider: RPCWatchStreamProvider
 
@@ -74,6 +77,15 @@ final class RPCServer: @unchecked Sendable {
       try await RichLinkPreparer.prepare(rawURL)
     },
     isBridgeReady: @escaping () -> Bool = { true },
+    startTyping: @escaping (String) throws -> Void = {
+      try TypingIndicator.startTyping(chatIdentifier: $0)
+    },
+    stopTyping: @escaping (String) throws -> Void = {
+      try TypingIndicator.stopTyping(chatIdentifier: $0)
+    },
+    markAsRead: @escaping (String) async throws -> Void = {
+      try await IMCoreBridge.shared.markAsRead(handle: $0)
+    },
     contactResolver: any ContactResolving = NoOpContactResolver(),
     watchStreamProvider: @escaping RPCWatchStreamProvider = {
       watcher, chatID, sinceRowID, configuration, filter in
@@ -96,6 +108,9 @@ final class RPCServer: @unchecked Sendable {
     self.stageSticker = stageSticker
     self.prepareRichLink = prepareRichLink
     self.isBridgeReady = isBridgeReady
+    self.startTyping = startTyping
+    self.stopTyping = stopTyping
+    self.markAsRead = markAsRead
     self.contactResolver = contactResolver
     self.watchStreamProvider = watchStreamProvider
   }
@@ -114,6 +129,15 @@ final class RPCServer: @unchecked Sendable {
     stageSticker: @escaping StickerStager = { try StickerAssetPreparer.prepare(at: $0) },
     prepareRichLink: @escaping RichLinkPrepare = { try await RichLinkPreparer.prepare($0) },
     isBridgeReady: @escaping () -> Bool = { IMsgBridgeClient.shared.isReady() },
+    startTyping: @escaping (String) throws -> Void = {
+      try TypingIndicator.startTyping(chatIdentifier: $0)
+    },
+    stopTyping: @escaping (String) throws -> Void = {
+      try TypingIndicator.stopTyping(chatIdentifier: $0)
+    },
+    markAsRead: @escaping (String) async throws -> Void = {
+      try await IMCoreBridge.shared.markAsRead(handle: $0)
+    },
     contactResolver: any ContactResolving = NoOpContactResolver(),
     watchStreamProvider: @escaping RPCWatchStreamProvider = {
       watcher, chatID, sinceRowID, configuration, filter in
@@ -136,6 +160,9 @@ final class RPCServer: @unchecked Sendable {
     self.stageSticker = stageSticker
     self.prepareRichLink = prepareRichLink
     self.isBridgeReady = isBridgeReady
+    self.startTyping = startTyping
+    self.stopTyping = stopTyping
+    self.markAsRead = markAsRead
     self.contactResolver = contactResolver
     self.watchStreamProvider = watchStreamProvider
   }
