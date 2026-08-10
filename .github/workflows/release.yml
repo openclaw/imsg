@@ -18,7 +18,8 @@ jobs:
       contents: write
       pull-requests: write
       statuses: read
-    uses: openclaw/release-workflows/.github/workflows/release-swift-cli.yml@v1
+    # Pin the immutable Swift Linux Bash-shell fix until the v1 compatibility tag includes it.
+    uses: openclaw/release-workflows/.github/workflows/release-swift-cli.yml@61a1fc61b482dc1befdaa0fc172e5506958b8608
     with:
       version: ${{ inputs.version }}
       repository-type: personal
