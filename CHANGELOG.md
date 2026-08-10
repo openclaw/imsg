@@ -6,6 +6,9 @@
 - docs: rewrite the README as a concise front door to installation, core workflows, and the full documentation site.
 - docs: explain the benign Contacts framework stderr message seen with some CardDAV accounts (#207, thanks @prashantkamani).
 
+### Reliability
+- fix: prevent bridge, AppleScript, SMS fallback, and later RPC mutations from duplicating deliveries after an uncertain send outcome (#216).
+
 ### JSON-RPC
 - fix: match CLI poll option resolution and preserve reply part indexes for attachment sends.
 - feat: add bounded `messages.after` pagination with authoritative database-instance-scoped ROWID cursors, cross-chat catchup, and optional standalone reaction events (#200, #201, thanks @vincentkoc).
