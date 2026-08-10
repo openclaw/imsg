@@ -1,36 +1,41 @@
 # Changelog
 
-## 0.14.0 - Unreleased
+## 0.14.0 - 2026-08-10
 
-### Documentation
-- docs: rewrite the README as a concise front door to installation, core workflows, and the full documentation site.
-- docs: explain the benign Contacts framework stderr message seen with some CardDAV accounts (#207, thanks @prashantkamani).
+### Highlights
+- JSON-RPC now has a bounded, recoverable long-lived runtime with protocol-v1 capability reporting, authoritative delivery outcomes, live database/contact refresh, and independently owned database and bridge-event subscriptions.
+- RPC now matches the CLI for message search, ROWID pagination, multipart and rich-attachment sends, poll selectors, attachment reply parts, canonical chat payloads, and SMS fallback control.
 
 ### JSON-RPC
-- fix: match CLI poll option resolution and preserve reply part indexes for attachment sends.
+- fix: match CLI poll option resolution and preserve reply part indexes for attachment sends (#213).
+- fix: reject malformed JSON-RPC framing, unknown parameters, conflicting aliases, and coerced values before side effects (#214).
+- fix: bound admitted work, serialize mutations, cap concurrent reads and subscriptions, drain accepted work on EOF, and terminate overflowing watch streams with resumable cursors (#215).
+- fix: report typed delivery dispositions, prevent retries after uncertain bridge or AppleScript sends, verify AppleScript routing, and block only the mutation lane after an in-flight outcome (#216).
+- feat: add protocol-v1 `initialize` and `status`, dynamic capability reporting, non-launching bridge probes, degraded database startup, and same-child recovery (#217).
+- fix: refresh Contacts and mutable chat metadata throughout long-lived sessions, honor each send request's region, and remove process-lifetime routing caches (#218).
+- feat: add `messages.search`, `send.multipart`, rich-file sends, canonical `chats.list` payloads, explicit SMS fallback control, strict semantic validation, and GUID-plus-row-baseline delivery verification (#219).
+- feat: add bounded non-resumable `bridge.events.subscribe` streams with rotation-safe tailing, shared subscription limits, typed terminal errors, and best-effort CLI bridge events (#220).
+- fix: isolate URL-preview replay deduplication per call or watcher and rotate new RPC requests across replaced database generations without swapping active subscriptions (#221).
 - feat: add bounded `messages.after` pagination with authoritative database-instance-scoped ROWID cursors, cross-chat catchup, and optional standalone reaction events (#200, #201, thanks @vincentkoc).
-
-### Advanced IMCore
-- fix: open trusted sticker staging roots directly so sandboxed Messages can send staged stickers (#211, thanks @clawcrab).
-
-### Dependencies
-- chore: update the documentation workflow to `actions/setup-node` 7.0.0.
-
-## 0.13.5 - 2026-08-01
-
-### JSON-RPC
 - fix: let non-interactive RPC startup proceed without a Contacts prompt while rejecting ambiguous name targets when Contacts is unavailable (#186, #187, thanks @SebTardif).
 - fix: fail vanished bridge queue requests immediately without treating an unobserved claim as safe to retry, avoiding long stalls and duplicate sends (#199, thanks @omarshahine).
 
 ### Reliability
 - fix: bound osascript send, reaction, and helper-process waits with process-tree cleanup so stalled subprocesses cannot hang CLI or RPC work (#197, thanks @SebTardif).
-- test: synchronize process-tree timeout regression proof with deterministic child readiness so scheduler delays cannot race its deadline.
+- test: replace scheduler-sensitive timing assumptions with deterministic process, launch, refresh, subscription, and file-source readiness gates.
+- ci: run required macOS validation on GitHub-hosted macOS 26 alongside the Linux read-core lane.
 
-### Native Polls
+### Advanced IMCore
+- fix: open trusted sticker staging roots directly so sandboxed Messages can send staged stickers (#211, #212, thanks @clawcrab).
 - fix: render complete native poll selection snapshots in human-readable history and watch output while preserving the existing poll-vote prefix (#198, thanks @clawSean).
 
-### Dependencies
-- chore: update PhoneNumberKit, SwiftLint, the Linux Swift toolchain, and pinned GitHub Actions to current releases.
+### Documentation
+- docs: rewrite the README as a concise front door to installation, core workflows, and the full documentation site (#206).
+- docs: explain the benign Contacts framework stderr message seen with some CardDAV accounts (#207, #210, thanks @prashantkamani).
+
+### Packaging and Dependencies
+- build: adopt the shared signed, notarized, independently verified Swift CLI release workflow with automatic Homebrew handoff (#205).
+- chore: update PhoneNumberKit, SwiftLint, the Linux Swift toolchain, `actions/setup-node`, and pinned GitHub Actions to current releases (#202, #210).
 
 ## 0.13.4 - 2026-07-27
 
