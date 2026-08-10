@@ -95,7 +95,7 @@ public final class IMsgBridgeClient: @unchecked Sendable {
     }
     if useLegacyIPC {
       do {
-        try launcher.ensureRunning()
+        try await launcher.ensureRunning()
       } catch {
         throw prepublicationError(action: action, transport: .bridgeLegacy, error: error)
       }
@@ -103,7 +103,7 @@ public final class IMsgBridgeClient: @unchecked Sendable {
     }
 
     do {
-      try launcher.ensureLaunched()
+      try await launcher.ensureLaunched()
     } catch {
       throw prepublicationError(action: action, transport: .bridgeV2, error: error)
     }

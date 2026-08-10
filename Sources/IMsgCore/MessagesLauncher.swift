@@ -1,5 +1,4 @@
 import Foundation
-
 #if os(macOS)
   /// Manages Messages.app lifecycle for DYLD injection.
   ///
@@ -106,8 +105,7 @@ import Foundation
 
     /// Ensure Messages.app is running with our dylib injected.
     public func ensureRunning() throws {
-      if isInjectedAndReady() { return }
-      try launchCoordinator.run(
+      try launchCoordinator.runSynchronously(
         readinessCheck: isInjectedAndReady,
         operation: performLaunchInjectedMessages
       )
@@ -115,8 +113,7 @@ import Foundation
 
     /// Ensure Messages.app is launched with the helper without touching legacy IPC.
     public func ensureLaunched() throws {
-      if hasReadyLockFile() { return }
-      try launchCoordinator.run(
+      try launchCoordinator.runSynchronously(
         readinessCheck: hasReadyLockFile,
         operation: performLaunchInjectedMessages
       )
@@ -224,7 +221,7 @@ import Foundation
     public func sendCommand(
       action: String, params: [String: Any], timeout: TimeInterval
     ) async throws -> [String: Any] {
-      try ensureRunning()
+      try await ensureRunning()
       // Serialize params to JSON data to cross the Sendable boundary safely
       let paramsData = try JSONSerialization.data(withJSONObject: params, options: [])
       return try await withCheckedThrowingContinuation {
@@ -380,6 +377,22 @@ import Foundation
       throw MessagesLauncherError.commandTimeout(action)
     }
   }
+
+  extension MessagesLauncher {
+    public func ensureRunning() async throws {
+      try await launchCoordinator.run(
+        readinessCheck: isInjectedAndReady,
+        operation: performLaunchInjectedMessages
+      )
+    }
+
+    public func ensureLaunched() async throws {
+      try await launchCoordinator.run(
+        readinessCheck: hasReadyLockFile,
+        operation: performLaunchInjectedMessages
+      )
+    }
+  }
 #else
   /// Non-macOS stub. Linux can read copied Messages databases, but there is no
   /// Messages.app process, SIP state, or DYLD injection bridge to launch.
@@ -400,7 +413,15 @@ import Foundation
       throw MessagesLauncherError.launchFailed("Messages.app is only available on macOS.")
     }
 
+    public func ensureRunning() async throws {
+      throw MessagesLauncherError.launchFailed("Messages.app is only available on macOS.")
+    }
+
     public func ensureLaunched() throws {
+      throw MessagesLauncherError.launchFailed("Messages.app is only available on macOS.")
+    }
+
+    public func ensureLaunched() async throws {
       throw MessagesLauncherError.launchFailed("Messages.app is only available on macOS.")
     }
 

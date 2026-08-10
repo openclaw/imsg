@@ -1,55 +1,100 @@
 import Foundation
 
-/// Process-local single-flight owner for Messages.app launch/readiness.
+/// Process-local serial owner for Messages.app launch/readiness.
 final class BridgeLaunchCoordinator: @unchecked Sendable {
-  private let condition = NSCondition()
-  private var launchInProgress = false
-  private var generation: UInt64 = 0
-  private var lastError: Error?
-  private var lastSucceeded = false
+  private let queue = DispatchQueue(label: "imsg.bridge-launch-coordinator")
 
   func run(
-    readinessCheck: () -> Bool,
-    operation: () throws -> Void
-  ) throws {
-    condition.lock()
-    if readinessCheck() {
-      condition.unlock()
-      return
-    }
-
-    if launchInProgress {
-      let observedGeneration = generation
-      while launchInProgress, generation == observedGeneration {
-        condition.wait()
+    readinessCheck: @escaping @Sendable () -> Bool,
+    operation: @escaping @Sendable () throws -> Void
+  ) async throws {
+    let request = AsyncLaunchRequest()
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
+        request.install(continuation)
+        queue.async {
+          guard request.isPending else { return }
+          let result = Result {
+            if !readinessCheck() {
+              try operation()
+            }
+          }
+          request.resume(with: result)
+        }
       }
-      let succeeded = lastSucceeded
-      let error = lastError
-      condition.unlock()
-      if succeeded { return }
-      if let error { throw error }
-      throw MessagesLauncherError.launchFailed("concurrent launch did not complete")
+    } onCancel: {
+      request.cancel()
     }
+  }
 
-    launchInProgress = true
-    let attemptGeneration = generation + 1
-    condition.unlock()
-
-    let result = Result { try operation() }
-
-    condition.lock()
-    generation = attemptGeneration
-    launchInProgress = false
-    switch result {
-    case .success:
-      lastSucceeded = true
-      lastError = nil
-    case .failure(let error):
-      lastSucceeded = false
-      lastError = error
+  func runSynchronously(
+    readinessCheck: @Sendable () -> Bool,
+    operation: @Sendable () throws -> Void
+  ) throws {
+    try queue.sync {
+      if !readinessCheck() {
+        try operation()
+      }
     }
-    condition.broadcast()
-    condition.unlock()
-    try result.get()
+  }
+}
+
+private final class AsyncLaunchRequest: @unchecked Sendable {
+  private enum State {
+    case waiting
+    case installed(CheckedContinuation<Void, Error>)
+    case completed
+  }
+
+  private let lock = NSLock()
+  private var state = State.waiting
+
+  var isPending: Bool {
+    lock.withLock {
+      if case .installed = state { return true }
+      return false
+    }
+  }
+
+  func install(_ continuation: CheckedContinuation<Void, Error>) {
+    let cancelled = lock.withLock { () -> Bool in
+      switch state {
+      case .waiting:
+        state = .installed(continuation)
+        return false
+      case .completed:
+        return true
+      case .installed:
+        preconditionFailure("continuation installed more than once")
+      }
+    }
+    if cancelled {
+      continuation.resume(throwing: CancellationError())
+    }
+  }
+
+  func cancel() {
+    let continuation = lock.withLock { () -> CheckedContinuation<Void, Error>? in
+      switch state {
+      case .waiting:
+        state = .completed
+        return nil
+      case .installed(let continuation):
+        state = .completed
+        return continuation
+      case .completed:
+        return nil
+      }
+    }
+    continuation?.resume(throwing: CancellationError())
+  }
+
+  func resume(with result: Result<Void, Error>) {
+    let continuation = lock.withLock { () -> CheckedContinuation<Void, Error>? in
+      guard case .installed(let continuation) = state else { return nil }
+      state = .completed
+      return continuation
+    }
+    continuation?.resume(with: result)
   }
 }

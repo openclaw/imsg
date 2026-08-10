@@ -291,10 +291,11 @@ struct IMsgBridgeClientQueueTests {
     }
     await state.launchStarted.wait()
     let second = Task.detached {
+      state.secondTaskScheduled.signal()
       let result = try await client.invoke(action: .sendMessage, timeout: 1)
       return result["messageGuid"] as? String
     }
-    await state.concurrentReadyCheck.wait()
+    await state.secondTaskScheduled.wait()
     state.allowLaunch()
 
     #expect(try await first.value != nil)
@@ -364,11 +365,10 @@ private final class BridgeClientHarness: @unchecked Sendable {
 
 private final class LaunchAttemptState: @unchecked Sendable {
   let launchStarted = AsyncTestSignal()
-  let concurrentReadyCheck = AsyncTestSignal()
+  let secondTaskScheduled = AsyncTestSignal()
   private let launchGate = DispatchSemaphore(value: 0)
   private let lock = NSLock()
   private var ready = false
-  private var readyChecks = 0
   private var attempts = 0
   private var nextRequestID = 0
 
@@ -380,13 +380,8 @@ private final class LaunchAttemptState: @unchecked Sendable {
 
   func checkReady() -> Bool {
     lock.lock()
-    readyChecks += 1
-    let currentChecks = readyChecks
     let result = ready
     lock.unlock()
-    // The first caller checks twice (fast path + coordinated path). The third
-    // check proves a second caller reached readiness while launch is blocked.
-    if currentChecks == 3 { concurrentReadyCheck.signal() }
     return result
   }
 

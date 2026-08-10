@@ -23,5 +23,6 @@ func subscriptionStoreRejectsLimitsAndClosureWithoutConsumingIDs() async {
   await store.cancelAll()
   #expect(await store.count == 0)
   #expect(await store.reserve() == .closed)
+  #expect(await store.reserve() == .closed)
   #expect(await store.nextIDForTesting == 2)
 }

@@ -107,7 +107,8 @@ enum LaunchCommand {
     }
 
     do {
-      try launcher.ensureRunning()
+      let ensureRunning: () throws -> Void = launcher.ensureRunning
+      try ensureRunning()
       if runtime.jsonOutput {
         try JSONLines.print([
           "status": "launched",
