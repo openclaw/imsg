@@ -3,11 +3,6 @@ import Foundation
 import IMsgCore
 
 enum WatchCommand {
-  private enum StreamCompletion: Sendable {
-    case database
-    case bridge
-  }
-
   static let spec = CommandSpec(
     name: "watch",
     abstract: "Stream incoming messages",
@@ -155,42 +150,45 @@ enum WatchCommand {
       }
     }
 
-    guard values.flag("bbEvents") else {
+    func watchDatabase() async throws {
       for try await message in stream {
+        try Task.checkCancellation()
         try emitMessage(message)
       }
+    }
+
+    guard values.flag("bbEvents") else {
+      try await watchDatabase()
       return
     }
 
-    let bridgeStream = try bridgeStreamProvider(MessagesLauncher.shared.bridgeEventsFile)
-    try await withThrowingTaskGroup(of: StreamCompletion.self) { group in
-      group.addTask {
-        for try await message in stream {
-          try emitMessage(message)
+    let bridgeStream = try? bridgeStreamProvider(MessagesLauncher.shared.bridgeEventsFile)
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      defer { group.cancelAll() }
+      if let bridgeStream {
+        group.addTask {
+          do {
+            for try await event in bridgeStream {
+              try Task.checkCancellation()
+              if runtime.jsonOutput {
+                var object: [String: Any] = [
+                  "kind": "bridge-event",
+                  "event": event.name,
+                  "data": event.decodedPayload(),
+                ]
+                if let timestamp = event.timestamp { object["ts"] = timestamp }
+                try JSONLines.printObject(object)
+              } else {
+                let timestamp = event.timestamp ?? CLIISO8601.format(Date())
+                StdoutWriter.writeLine("\(timestamp) [bridge] \(event.name)")
+              }
+            }
+          } catch {}
         }
-        return .database
-      }
-      group.addTask {
-        for try await event in bridgeStream {
-          if runtime.jsonOutput {
-            var object: [String: Any] = [
-              "kind": "bridge-event",
-              "event": event.name,
-              "data": event.decodedPayload(),
-            ]
-            if let timestamp = event.timestamp { object["ts"] = timestamp }
-            try JSONLines.printObject(object)
-          } else {
-            let timestamp = event.timestamp ?? CLIISO8601.format(Date())
-            StdoutWriter.writeLine("\(timestamp) [bridge] \(event.name)")
-          }
-        }
-        return .bridge
       }
 
-      _ = try await group.next()
-      group.cancelAll()
-      while try await group.next() != nil {}
+      try await watchDatabase()
+      try Task.checkCancellation()
     }
   }
 }

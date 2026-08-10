@@ -157,5 +157,7 @@ Database messages and bridge events are two independently ordered,
 best-effort streams sharing serialized stdout. Each source preserves its own
 order, but their relative output order has no meaning. Database messages remain
 resumable with `--since-rowid`; bridge events start at the event log's current
-EOF, have no replay cursor, and are not resumable. When either source ends or
-fails, `watch` cancels and awaits the other before exiting.
+EOF, have no replay cursor, and are not resumable. If the bridge event log is
+missing, cannot be opened, overflows, fails while reading, or ends, database
+watching continues normally. When the database stream ends or fails, `watch`
+cancels and awaits the bridge stream before exiting.
