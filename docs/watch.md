@@ -147,7 +147,7 @@ Lines are flushed immediately when stdout is buffered (e.g. piped through `jq -c
 ## Bridge events
 
 On macOS, `--bb-events` adds typing and alias-removal events written by an
-already-running injected bridge:
+injected bridge:
 
 ```bash
 imsg watch --bb-events --json
@@ -157,7 +157,10 @@ Database messages and bridge events are two independently ordered,
 best-effort streams sharing serialized stdout. Each source preserves its own
 order, but their relative output order has no meaning. Database messages remain
 resumable with `--since-rowid`; bridge events start at the event log's current
-EOF, have no replay cursor, and are not resumable. If the bridge event log is
-missing, cannot be opened, overflows, fails while reading, or ends, database
-watching continues normally. When the database stream ends or fails, `watch`
-cancels and awaits the bridge stream before exiting.
+EOF, have no replay cursor, and are not resumable. The CLI securely provisions
+a private empty event log when needed, so it can start before bridge injection
+and receive later events. If the log cannot be created or opened, overflows,
+fails while reading, or ends, database watching continues normally. RPC
+subscriptions never provision this path and remain gated on an active bridge
+with an existing readable regular event log. When the database stream ends or
+fails, `watch` cancels and awaits the bridge stream before exiting.

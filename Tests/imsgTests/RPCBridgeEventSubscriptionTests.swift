@@ -96,11 +96,16 @@ func rpcEOFStopsBridgeEventSource() async throws {
 
 @Test
 func rpcBridgeEventInactiveBridgeFailsTypedWithoutOpeningSource() async throws {
+  let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let eventPath = directory.appendingPathComponent("events.jsonl").path
   let output = TestRPCOutput()
   let source = ControlledBridgeEventSource()
   let server = try makeBridgeEventServer(
     output: output,
     bridgeReady: false,
+    bridgeEventsPath: eventPath,
     streamProvider: source.makeStream
   )
 
@@ -109,6 +114,8 @@ func rpcBridgeEventInactiveBridgeFailsTypedWithoutOpeningSource() async throws {
   #expect(error["code"] as? Int == -32003)
   #expect(error["message"] as? String == "Bridge events unavailable")
   #expect(await server.subscriptions.count == 0)
+  #expect(source.streamCount == 0)
+  #expect(!FileManager.default.fileExists(atPath: eventPath))
 }
 
 @Test
@@ -233,6 +240,7 @@ private func makeBridgeEventServer(
   output: TestRPCOutput,
   bridgeReady: Bool = true,
   eventPathUsable: Bool = true,
+  bridgeEventsPath: String = "/tmp/imsg-events.jsonl",
   watchSource: ControlledWatchSource? = nil,
   streamProvider: @escaping RPCBridgeEventStreamProvider = { _, _ in
     AsyncThrowingStream { _ in }
@@ -246,7 +254,7 @@ private func makeBridgeEventServer(
       action == .status ? rpcStatusBridgeSnapshot() : [:]
     },
     isBridgeReady: { bridgeReady },
-    bridgeEventsPath: "/tmp/imsg-events.jsonl",
+    bridgeEventsPath: bridgeEventsPath,
     bridgeEventPathUsable: { _ in eventPathUsable },
     bridgeEventStreamProvider: streamProvider,
     watchStreamProvider: { _, _, _, _, _ in
@@ -287,6 +295,10 @@ private final class ControlledBridgeEventSource: @unchecked Sendable {
   private var streamWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
   private var terminationCount = 0
   private var terminationWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+
+  var streamCount: Int {
+    lock.withLock { continuations.count }
+  }
 
   func makeStream(
     _ path: String,

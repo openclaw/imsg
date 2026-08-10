@@ -47,6 +47,39 @@ private actor GatedWatchMessageSequence {
   }
 }
 
+private actor WatchCommandTailerRelay {
+  private let delivered: WatchCommandBridgeGate
+  private var pending: IMsgEventTailer.Event?
+  private var waiter: CheckedContinuation<IMsgEventTailer.Event?, Never>?
+  private var emitted = false
+
+  init(delivered: WatchCommandBridgeGate) {
+    self.delivered = delivered
+  }
+
+  func offer(_ event: IMsgEventTailer.Event) {
+    if let waiter {
+      self.waiter = nil
+      waiter.resume(returning: event)
+    } else {
+      pending = event
+    }
+  }
+
+  func next() async -> IMsgEventTailer.Event? {
+    guard !emitted else {
+      await delivered.release()
+      return nil
+    }
+    emitted = true
+    if let pending {
+      self.pending = nil
+      return pending
+    }
+    return await withCheckedContinuation { waiter = $0 }
+  }
+}
+
 private final class WatchCommandStreamSource<Element: Sendable>: @unchecked Sendable {
   private let lock = NSLock()
   private var started = false
@@ -200,6 +233,60 @@ func watchCommandKeepsDatabaseStreamRunningAfterBridgeError() async throws {
 
   #expect(output.contains(messages[0].text))
   #expect(output.contains(messages[1].text))
+}
+
+@Test
+func watchCommandCreatesMissingBridgeLogAndReceivesLateEvent() async throws {
+  let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let path = directory.appendingPathComponent("events.jsonl").path
+  let values = bridgeWatchValues()
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let started = WatchCommandBridgeGate()
+  let delivered = WatchCommandBridgeGate()
+  let database = GatedWatchMessageSequence(
+    gate: delivered,
+    messages: [watchCommandBridgeMessage(rowID: 1, text: "database-stayed-active")]
+  )
+
+  let (output, _) = try await StdoutCapture.capture {
+    let run = Task {
+      try await WatchCommand.run(
+        values: values,
+        runtime: RuntimeOptions(parsedValues: values),
+        storeFactory: { _ in store },
+        contactResolverFactory: { NoOpContactResolver() },
+        streamProvider: { _, _, _, _, _ in
+          AsyncThrowingStream(unfolding: { await database.next() })
+        },
+        bridgeStreamProvider: { _ in
+          let tailer = try IMsgEventTailer(
+            path: path,
+            createIfMissing: true,
+            didStart: { Task { await started.release() } },
+            didStop: {})
+          let relay = WatchCommandTailerRelay(delivered: delivered)
+          Task {
+            for try await event in tailer.events() {
+              await relay.offer(event)
+              break
+            }
+          }
+          return AsyncThrowingStream(unfolding: { await relay.next() })
+        }
+      )
+    }
+
+    await started.wait()
+    let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+    try handle.write(contentsOf: Data("{\"event\":\"late-cli-event\",\"data\":{}}\n".utf8))
+    try handle.close()
+    try await run.value
+  }
+
+  #expect(output.contains("late-cli-event"))
+  #expect(output.contains("database-stayed-active"))
 }
 
 @Test(.timeLimit(.minutes(1)))

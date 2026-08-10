@@ -54,6 +54,31 @@ struct IMsgEventTailerTests {
     }
   }
 
+  @Test
+  func missingPathCanBeCreatedPrivatelyAndReceiveLaterAppend() async throws {
+    let directory = NSTemporaryDirectory() + "/imsg-tailer-create-\(UUID().uuidString)"
+    try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: directory) }
+    let path = (directory as NSString).appendingPathComponent("events.jsonl")
+    let started = CallbackProbe()
+    let tailer = try IMsgEventTailer(
+      path: path,
+      createIfMissing: true,
+      didStart: { Task { await started.record() } },
+      didStop: {})
+    let stream = tailer.events()
+    await started.wait()
+
+    let attributes = try FileManager.default.attributesOfItem(atPath: path)
+    #expect((attributes[.type] as? FileAttributeType) == .typeRegular)
+    #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+
+    try appendEvents(["late-append"], to: path)
+    var iterator = stream.makeAsyncIterator()
+    #expect(try await iterator.next()?.name == "late-append")
+    tailer.stop()
+  }
+
   @Test(.timeLimit(.minutes(1)))
   func missingPathFinishesWithOpenFailure() async throws {
     let path = NSTemporaryDirectory() + "/missing-event-log-\(UUID().uuidString)"
@@ -75,6 +100,31 @@ struct IMsgEventTailerTests {
     }
     let startCount = await started.callCount()
     #expect(startCount == 0)
+  }
+
+  @Test
+  func createIfMissingRejectsSymlinkWithoutMutatingTarget() async throws {
+    let directory = NSTemporaryDirectory() + "/imsg-tailer-symlink-\(UUID().uuidString)"
+    try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: directory) }
+    let target = (directory as NSString).appendingPathComponent("target")
+    let path = (directory as NSString).appendingPathComponent("events.jsonl")
+    try Data("unchanged".utf8).write(to: URL(fileURLWithPath: target))
+    try FileManager.default.createSymbolicLink(atPath: path, withDestinationPath: target)
+
+    let tailer = IMsgEventTailer(path: path, createIfMissing: true)
+    var iterator = tailer.events().makeAsyncIterator()
+    do {
+      _ = try await iterator.next()
+      Issue.record("expected symlink open failure")
+    } catch let error as IMsgEventTailerError {
+      guard case .openFailed(let failedPath, _) = error else {
+        Issue.record("unexpected error: \(error)")
+        return
+      }
+      #expect(failedPath == path)
+    }
+    #expect(try Data(contentsOf: URL(fileURLWithPath: target)) == Data("unchanged".utf8))
   }
 
   @Test(.timeLimit(.minutes(1)))

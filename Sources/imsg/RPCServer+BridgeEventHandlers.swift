@@ -133,6 +133,8 @@ extension RPCServer {
 private func bridgeEventTerminalError(_ error: Error) -> [String: Any] {
   let code: String
   switch error {
+  case IMsgEventTailerError.createFailed:
+    code = "event_log_create_failed"
   case IMsgEventTailerError.openFailed:
     code = "event_log_open_failed"
   case IMsgEventTailerError.readFailed:

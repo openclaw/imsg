@@ -75,7 +75,7 @@ enum WatchCommand {
       },
     bridgeStreamProvider:
       @escaping (String) throws -> AsyncThrowingStream<IMsgEventTailer.Event, Error> = { path in
-        IMsgEventTailer(path: path).events()
+        IMsgEventTailer(path: path, createIfMissing: true).events()
       }
   ) async throws {
     let dbPath = values.option("db") ?? MessageStore.defaultPath

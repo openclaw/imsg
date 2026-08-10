@@ -9,6 +9,7 @@ public struct IMsgEventTailerOverflowError: Error, Sendable, Equatable {}
 public enum IMsgEventTailerError: Error, Sendable, Equatable, LocalizedError {
   case invalidBufferLimit(Int)
   case alreadyStarted
+  case createFailed(path: String, errno: Int32)
   case openFailed(path: String, errno: Int32)
   case readFailed(path: String, errno: Int32)
   case unsupportedPlatform
@@ -19,6 +20,8 @@ public enum IMsgEventTailerError: Error, Sendable, Equatable, LocalizedError {
       return "Event buffer limit \(limit) is outside the supported range 1...4096."
     case .alreadyStarted:
       return "This bridge event tailer has already started."
+    case .createFailed(let path, let code):
+      return "Could not create private bridge event log at \(path) (errno \(code))."
     case .openFailed(let path, let code):
       return "Could not open bridge event log at \(path) (errno \(code))."
     case .readFailed(let path, let code):
@@ -56,6 +59,7 @@ public final class IMsgEventTailer: @unchecked Sendable {
 
   private let path: String
   private let replayExisting: Bool
+  private let createIfMissing: Bool
   private let bufferLimit: Int
   private let didStart: (@Sendable () -> Void)?
   private let didStop: @Sendable () -> Void
@@ -82,9 +86,18 @@ public final class IMsgEventTailer: @unchecked Sendable {
   #endif
 
   public convenience init(path: String, replayExisting: Bool = false) {
+    self.init(path: path, replayExisting: replayExisting, createIfMissing: true)
+  }
+
+  public convenience init(
+    path: String,
+    replayExisting: Bool = false,
+    createIfMissing: Bool
+  ) {
     self.init(
       uncheckedPath: path,
       replayExisting: replayExisting,
+      createIfMissing: createIfMissing,
       bufferLimit: 256,
       didStart: nil,
       didStop: {}
@@ -94,7 +107,8 @@ public final class IMsgEventTailer: @unchecked Sendable {
   public convenience init(
     path: String,
     replayExisting: Bool = false,
-    bufferLimit: Int
+    bufferLimit: Int,
+    createIfMissing: Bool = false
   ) throws {
     guard (1...4096).contains(bufferLimit) else {
       throw IMsgEventTailerError.invalidBufferLimit(bufferLimit)
@@ -102,6 +116,7 @@ public final class IMsgEventTailer: @unchecked Sendable {
     self.init(
       uncheckedPath: path,
       replayExisting: replayExisting,
+      createIfMissing: createIfMissing,
       bufferLimit: bufferLimit,
       didStart: nil,
       didStop: {})
@@ -110,12 +125,14 @@ public final class IMsgEventTailer: @unchecked Sendable {
   private init(
     uncheckedPath path: String,
     replayExisting: Bool,
+    createIfMissing: Bool,
     bufferLimit: Int,
     didStart: (@Sendable () -> Void)?,
     didStop: @escaping @Sendable () -> Void
   ) {
     self.path = path
     self.replayExisting = replayExisting
+    self.createIfMissing = createIfMissing
     self.bufferLimit = bufferLimit
     self.didStart = didStart
     self.didStop = didStop
@@ -176,6 +193,7 @@ public final class IMsgEventTailer: @unchecked Sendable {
   #if os(macOS)
     private func startMacOS() {
       do {
+        try createInitialFileIfNeeded()
         try installDirectorySource()
         try openInitialFile()
         guard !stopped else { return }
@@ -183,27 +201,6 @@ public final class IMsgEventTailer: @unchecked Sendable {
       } catch {
         finish(throwing: error)
       }
-    }
-
-    private func installDirectorySource() throws {
-      let directory = URL(fileURLWithPath: path).deletingLastPathComponent().path
-      let fd = open(directory, O_EVTONLY | O_CLOEXEC)
-      guard fd >= 0 else {
-        throw IMsgEventTailerError.openFailed(path: directory, errno: errno)
-      }
-      let source = DispatchSource.makeFileSystemObjectSource(
-        fileDescriptor: fd,
-        eventMask: [.write, .rename, .delete],
-        queue: queue
-      )
-      source.setEventHandler { [weak self] in
-        self?.reconcileCurrentPath()
-      }
-      source.setCancelHandler {
-        close(fd)
-      }
-      source.resume()
-      directorySource = source
     }
 
     private func openInitialFile() throws {
@@ -354,11 +351,64 @@ public final class IMsgEventTailer: @unchecked Sendable {
   #endif
 }
 
+#if os(macOS)
+  extension IMsgEventTailer {
+    fileprivate func createInitialFileIfNeeded() throws {
+      guard createIfMissing else { return }
+      let fd = open(
+        path,
+        O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+        0o600
+      )
+      guard fd >= 0 else {
+        // The helper may have won the creation race. The normal secure open
+        // below validates whatever now owns the path.
+        if errno == EEXIST { return }
+        throw IMsgEventTailerError.createFailed(path: path, errno: errno)
+      }
+      defer { close(fd) }
+
+      var info = stat()
+      guard fstat(fd, &info) == 0 else {
+        throw IMsgEventTailerError.createFailed(path: path, errno: errno)
+      }
+      guard (info.st_mode & S_IFMT) == S_IFREG else {
+        throw IMsgEventTailerError.createFailed(path: path, errno: EINVAL)
+      }
+      guard fchmod(fd, 0o600) == 0 else {
+        throw IMsgEventTailerError.createFailed(path: path, errno: errno)
+      }
+    }
+
+    fileprivate func installDirectorySource() throws {
+      let directory = URL(fileURLWithPath: path).deletingLastPathComponent().path
+      let fd = open(directory, O_EVTONLY | O_CLOEXEC)
+      guard fd >= 0 else {
+        throw IMsgEventTailerError.openFailed(path: directory, errno: errno)
+      }
+      let source = DispatchSource.makeFileSystemObjectSource(
+        fileDescriptor: fd,
+        eventMask: [.write, .rename, .delete],
+        queue: queue
+      )
+      source.setEventHandler { [weak self] in
+        self?.reconcileCurrentPath()
+      }
+      source.setCancelHandler {
+        close(fd)
+      }
+      source.resume()
+      directorySource = source
+    }
+  }
+#endif
+
 extension IMsgEventTailer {
   convenience init(
     path: String,
     replayExisting: Bool = false,
     bufferLimit: Int = 256,
+    createIfMissing: Bool = false,
     didStart: (@Sendable () -> Void)? = nil,
     didStop: @escaping @Sendable () -> Void
   ) throws {
@@ -368,6 +418,7 @@ extension IMsgEventTailer {
     self.init(
       uncheckedPath: path,
       replayExisting: replayExisting,
+      createIfMissing: createIfMissing,
       bufferLimit: bufferLimit,
       didStart: didStart,
       didStop: didStop
