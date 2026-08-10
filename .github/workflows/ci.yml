@@ -7,11 +7,13 @@ on:
 
 jobs:
   macos:
-    runs-on: macos-15
+    runs-on: macos-26
     env:
       SWIFTLINT_VERSION: 0.65.0
     steps:
       - uses: actions/checkout@v7
+      - name: macOS version
+        run: sw_vers
       - name: Swift version
         run: swift --version
       - name: Install SwiftLint
