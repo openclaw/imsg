@@ -53,7 +53,6 @@ extension RPCServer {
     // A live subscription keeps the exact recovered bundle it started with.
     let localStore = database.store
     let localWatcher = database.watcher
-    let localCache = database.cache
     let localWriter = output
     let localFilter = filter
     let localChatID = chatID
@@ -81,9 +80,8 @@ extension RPCServer {
           localFilter
         ) {
           try Task.checkCancellation()
-          let payload = try await buildMessagePayload(
+          let payload = try buildMessagePayload(
             store: localStore,
-            cache: localCache,
             message: message,
             includeAttachments: localIncludeAttachments,
             includeReactions: localIncludeReactions,

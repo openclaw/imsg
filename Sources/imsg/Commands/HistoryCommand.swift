@@ -66,16 +66,14 @@ enum HistoryCommand {
     let contacts = await contactResolverFactory()
 
     if runtime.jsonOutput {
-      let cache = ChatCache(store: store)
       let attachmentsByMessageID = try store.attachments(
         for: filtered.map(\.rowID),
         options: attachmentOptions
       )
       let reactionsByMessageID = try store.reactions(for: filtered)
       for message in filtered {
-        let payload = try await buildMessagePayload(
+        let payload = try buildMessagePayload(
           store: store,
-          cache: cache,
           message: message,
           includeAttachments: true,
           includeReactions: true,

@@ -47,11 +47,9 @@ enum SearchCommand {
     let contacts = await contactResolverFactory()
 
     if runtime.jsonOutput {
-      let cache = ChatCache(store: store)
       for message in messages {
-        let payload = try await buildMessagePayload(
+        let payload = try buildMessagePayload(
           store: store,
-          cache: cache,
           message: message,
           includeAttachments: false,
           includeReactions: false,

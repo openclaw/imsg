@@ -62,4 +62,218 @@ func noOpContactResolverCanRepresentUnavailableContacts() {
     #expect(resolver.contactsUnavailable == true)
     #expect(await spy.count() == 1)
   }
+
+  private final class ContactTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: TimeInterval = 0
+
+    func now() -> TimeInterval {
+      lock.withLock { value }
+    }
+
+    func advance(by interval: TimeInterval) {
+      lock.withLock { value += interval }
+    }
+  }
+
+  private final class ContactSourceHarness: @unchecked Sendable {
+    struct LoadFailure: Error {}
+
+    private let lock = NSLock()
+    private var authorizationValue: ContactCatalogAuthorization
+    private var recordsValue: [ContactCatalogRecord]
+    private var shouldFail = false
+    private var observer: (@Sendable () -> Void)?
+    private var loads = 0
+    private var loadStarted: DispatchSemaphore?
+    private var loadRelease: DispatchSemaphore?
+
+    init(
+      authorization: ContactCatalogAuthorization = .authorized,
+      records: [ContactCatalogRecord] = []
+    ) {
+      self.authorizationValue = authorization
+      self.recordsValue = records
+    }
+
+    var source: ContactCatalogSource {
+      ContactCatalogSource(
+        authorization: { [self] in authorization() },
+        load: { [self] in try load() },
+        observeChanges: { [self] observer in
+          lock.withLock { self.observer = observer }
+          return {}
+        }
+      )
+    }
+
+    var loadCount: Int { lock.withLock { loads } }
+
+    func setAuthorization(_ authorization: ContactCatalogAuthorization) {
+      lock.withLock { authorizationValue = authorization }
+    }
+
+    func setRecords(_ records: [ContactCatalogRecord]) {
+      lock.withLock { recordsValue = records }
+    }
+
+    func setFailure(_ value: Bool) {
+      lock.withLock { shouldFail = value }
+    }
+
+    func blockNextLoad(started: DispatchSemaphore, release: DispatchSemaphore) {
+      lock.withLock {
+        loadStarted = started
+        loadRelease = release
+      }
+    }
+
+    func notify() {
+      let callback = lock.withLock { observer }
+      callback?()
+    }
+
+    private func authorization() -> ContactCatalogAuthorization {
+      lock.withLock { authorizationValue }
+    }
+
+    private func load() throws -> [ContactCatalogRecord] {
+      let state = lock.withLock {
+        () -> (Bool, [ContactCatalogRecord], DispatchSemaphore?, DispatchSemaphore?) in
+        loads += 1
+        let state = (shouldFail, recordsValue, loadStarted, loadRelease)
+        loadStarted = nil
+        loadRelease = nil
+        return state
+      }
+      state.2?.signal()
+      state.3?.wait()
+      if state.0 { throw LoadFailure() }
+      return state.1
+    }
+  }
+
+  private func contactRecord(
+    name: String,
+    phone: String = "+15551234567"
+  ) -> ContactCatalogRecord {
+    ContactCatalogRecord(name: name, phones: [phone], emails: [])
+  }
+
+  @Test
+  func contactCatalogRefreshesAfterChangeNotification() {
+    let source = ContactSourceHarness(records: [contactRecord(name: "Alice")])
+    let resolver = ContactResolver(region: "US", source: source.source, refreshInterval: 60)
+
+    #expect(resolver.displayName(for: "+15551234567") == "Alice")
+    source.setRecords([contactRecord(name: "Bob")])
+    #expect(resolver.displayName(for: "+15551234567") == "Alice")
+
+    source.notify()
+    #expect(resolver.displayName(for: "+15551234567") == "Bob")
+    #expect(source.loadCount == 2)
+  }
+
+  @Test
+  func contactCatalogTTLRefreshesMissedChanges() {
+    let clock = ContactTestClock()
+    let source = ContactSourceHarness(records: [contactRecord(name: "Alice")])
+    let resolver = ContactResolver(
+      region: "US",
+      source: source.source,
+      refreshInterval: 10,
+      now: clock.now
+    )
+
+    #expect(resolver.displayName(for: "+15551234567") == "Alice")
+    source.setRecords([contactRecord(name: "Bob")])
+    clock.advance(by: 9)
+    #expect(resolver.displayName(for: "+15551234567") == "Alice")
+    clock.advance(by: 2)
+    #expect(resolver.displayName(for: "+15551234567") == "Bob")
+  }
+
+  @Test
+  func contactCatalogTracksAuthorizationAndClearsRevokedData() {
+    let clock = ContactTestClock()
+    let source = ContactSourceHarness(
+      authorization: .notDetermined,
+      records: [contactRecord(name: "Alice")]
+    )
+    let resolver = ContactResolver(
+      region: "US",
+      source: source.source,
+      refreshInterval: 10,
+      now: clock.now
+    )
+
+    #expect(resolver.contactsUnavailable)
+    source.setAuthorization(.authorized)
+    clock.advance(by: 11)
+    #expect(resolver.contactsUnavailable == false)
+    #expect(resolver.displayName(for: "+15551234567") == "Alice")
+
+    source.setAuthorization(.unavailable)
+    clock.advance(by: 11)
+    #expect(resolver.contactsUnavailable)
+    source.setAuthorization(.authorized)
+    source.setFailure(true)
+    clock.advance(by: 11)
+    #expect(resolver.displayName(for: "+15551234567") == nil)
+    #expect(resolver.contactsUnavailable)
+  }
+
+  @Test
+  func contactCatalogRetainsLastGoodDataOnTransientLoadFailure() {
+    let source = ContactSourceHarness(records: [contactRecord(name: "Alice")])
+    let resolver = ContactResolver(region: "US", source: source.source, refreshInterval: 60)
+
+    #expect(resolver.displayName(for: "+15551234567") == "Alice")
+    source.setFailure(true)
+    source.notify()
+    #expect(resolver.displayName(for: "+15551234567") == "Alice")
+    #expect(resolver.contactsUnavailable == false)
+  }
+
+  @Test
+  func contactCatalogCoalescesConcurrentRefreshes() {
+    let source = ContactSourceHarness(records: [contactRecord(name: "Alice")])
+    let started = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    source.blockNextLoad(started: started, release: release)
+    let resolver = ContactResolver(region: "US", source: source.source, refreshInterval: 60)
+    let group = DispatchGroup()
+    let queue = DispatchQueue(label: "contact-refresh-test", attributes: .concurrent)
+
+    for _ in 0..<8 {
+      group.enter()
+      queue.async {
+        _ = resolver.displayName(for: "+15551234567")
+        group.leave()
+      }
+    }
+
+    #expect(started.wait(timeout: .now() + 1) == .success)
+    #expect(source.loadCount == 1)
+    release.signal()
+    #expect(group.wait(timeout: .now() + 1) == .success)
+    #expect(source.loadCount == 1)
+  }
+
+  @Test
+  func contactCatalogBoundsNormalizedRegionSnapshots() {
+    let source = ContactSourceHarness(records: [contactRecord(name: "Alice", phone: "07700900000")])
+    let resolver = ContactResolver(
+      region: "US",
+      source: source.source,
+      maximumRegionSnapshots: 2
+    )
+
+    _ = resolver.searchByName("Alice")
+    _ = resolver.resolver(region: "GB").searchByName("Alice")
+    _ = resolver.resolver(region: "FR").searchByName("Alice")
+
+    #expect(resolver.cachedRegionCount == 2)
+    #expect(source.loadCount == 1)
+  }
 #endif

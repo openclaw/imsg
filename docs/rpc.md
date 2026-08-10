@@ -73,9 +73,11 @@ same time.
 The configured database is an optional, retryable RPC resource. Startup does
 not open it. `initialize`, `status`, and every database-required request retry
 after an earlier open failure; the first successful open is cached for the
-life of the child. A watch subscription keeps the exact database/watcher/cache
+life of the child. A watch subscription keeps the exact database and watcher
 bundle it started with. Recovery affects new requests and does not swap a live
-subscription underneath its stream.
+subscription underneath its stream. Chat metadata and participants are read
+from the live SQLite connection for each request or watch emission, so Messages
+sync and other writers do not leave a long-running child with stale routing.
 
 `initialize`, `status`, and bridge capability probes never launch, kill, or
 relaunch Messages.app. Bridge-only RPC methods first check the existing ready
@@ -185,8 +187,12 @@ union for protocol negotiation and does not claim current readiness.
 
 When the database is ready, `database.features` exposes feature-level booleans,
 not raw SQLite column names. When it is down, `database.error` is redacted and
-actionable. A successful bridge probe additionally reports `bridge_version`,
-`v2_ready`, `registry_available`, and `selectors` supplied by the helper.
+actionable. `contacts.available` is refreshed during the child lifetime; a
+permission grant can become usable without restarting, while revocation clears
+cached contact data. Contact-backed sends normalize phone numbers using that
+request's `region`. A successful bridge probe additionally reports
+`bridge_version`, `v2_ready`, `registry_available`, and `selectors` supplied by
+the helper.
 
 ### `chats.list`
 

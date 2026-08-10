@@ -26,7 +26,6 @@ extension RPCServer {
     let unreadOnly = try params.boolean("unread_only", aliases: ["unreadOnly"]) ?? false
     let database = try await databaseResources.require()
     let store = database.store
-    let cache = database.cache
     guard !unreadOnly || store.supportsUnreadState else {
       throw RPCError.invalidParams(
         "unread_only is unavailable because this Messages database has no read-state column")
@@ -36,8 +35,8 @@ extension RPCServer {
     payloads.reserveCapacity(chats.count)
 
     for chat in chats {
-      let info = try await cache.info(chatID: chat.id)
-      let participants = try await cache.participants(chatID: chat.id)
+      let info = try store.chatInfo(chatID: chat.id)
+      let participants = try store.participants(chatID: chat.id)
       let identifier = info?.identifier ?? chat.identifier
       let guid = info?.guid ?? ""
       let name = (info?.name.isEmpty == false ? info?.name : nil) ?? chat.name
@@ -86,7 +85,6 @@ extension RPCServer {
       convertUnsupported: try params.boolean("convert_attachments") ?? false)
     let database = try await databaseResources.require()
     let store = database.store
-    let cache = database.cache
     let filter = try MessageFilter.fromISO(
       participants: participants,
       startISO: startISO,
@@ -98,9 +96,8 @@ extension RPCServer {
     var payloads: [[String: Any]] = []
     payloads.reserveCapacity(filtered.count)
     for message in filtered {
-      let payload = try await buildMessagePayload(
+      let payload = try buildMessagePayload(
         store: store,
-        cache: cache,
         message: message,
         includeAttachments: includeAttachments,
         includeReactions: true,
@@ -138,6 +135,8 @@ extension RPCServer {
     }
     let transport = try RPCSendTransport.parse(try params.string("transport"))
     let region = try params.string("region") ?? "US"
+    let requestContacts =
+      (contactResolver as? ContactResolver)?.resolver(region: region) ?? contactResolver
     let selectedMessageGuid = try params.string(
       "reply_to", aliases: ["replyTo", "reply_to_guid", "message_guid"]
     ).flatMap { $0.isEmpty ? nil : $0 }
@@ -148,7 +147,7 @@ extension RPCServer {
       recipient =
         rawInput.hasChatTarget || rawRecipient.isEmpty
         ? rawRecipient
-        : try ChatTargetResolver.resolveRecipientName(rawRecipient, contacts: contactResolver)
+        : try ChatTargetResolver.resolveRecipientName(rawRecipient, contacts: requestContacts)
     } catch {
       throw RPCError.invalidParams(error.localizedDescription)
     }
@@ -172,7 +171,7 @@ extension RPCServer {
 
     let resolvedTarget = try await ChatTargetResolver.resolveChatTarget(
       input: input,
-      lookupChat: { chatID in try await database?.cache.info(chatID: chatID) },
+      lookupChat: { chatID in try database?.store.chatInfo(chatID: chatID) },
       unknownChatError: { chatID in
         RPCError.invalidParams("unknown chat_id \(chatID)")
       }
@@ -298,10 +297,10 @@ extension RPCServer {
     }
     var responseChatInfo: ChatInfo?
     if let sentMessage, let database {
-      responseChatInfo = try? await database.cache.info(chatID: sentMessage.chatID)
+      responseChatInfo = try? database.store.chatInfo(chatID: sentMessage.chatID)
     }
     if responseChatInfo == nil, let verificationChatID, let database {
-      responseChatInfo = try? await database.cache.info(chatID: verificationChatID)
+      responseChatInfo = try? database.store.chatInfo(chatID: verificationChatID)
     }
     if responseChatInfo == nil {
       responseChatInfo = directChatInfo
@@ -347,7 +346,7 @@ extension RPCServer {
     }
     let resolvedTarget = try await ChatTargetResolver.resolveChatTarget(
       input: input,
-      lookupChat: { chatID in try await database?.cache.info(chatID: chatID) },
+      lookupChat: { chatID in try database?.store.chatInfo(chatID: chatID) },
       unknownChatError: { chatID in
         RPCError.invalidParams("unknown chat_id \(chatID)")
       }
@@ -401,7 +400,7 @@ extension RPCServer {
     }
     let resolvedTarget = try await ChatTargetResolver.resolveChatTarget(
       input: input,
-      lookupChat: { chatID in try await database?.cache.info(chatID: chatID) },
+      lookupChat: { chatID in try database?.store.chatInfo(chatID: chatID) },
       unknownChatError: { chatID in
         RPCError.invalidParams("unknown chat_id \(chatID)")
       }
@@ -433,7 +432,6 @@ extension RPCServer {
 
 func buildMessagePayload(
   store: MessageStore,
-  cache: ChatCache,
   message: Message,
   includeAttachments: Bool,
   includeReactions: Bool,
@@ -441,9 +439,9 @@ func buildMessagePayload(
   prefetchedReactions: [Reaction]? = nil,
   attachmentOptions: AttachmentQueryOptions = .default,
   contactResolver: any ContactResolving = NoOpContactResolver()
-) async throws -> [String: Any] {
-  let chatInfo = try await cache.info(chatID: message.chatID)
-  let participants = try await cache.participants(chatID: message.chatID)
+) throws -> [String: Any] {
+  let chatInfo = try store.chatInfo(chatID: message.chatID)
+  let participants = try store.participants(chatID: message.chatID)
   let attachments: [AttachmentMeta]
   if includeAttachments {
     attachments =

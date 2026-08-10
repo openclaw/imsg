@@ -159,7 +159,7 @@ extension RPCServer {
 
     let info: ChatInfo?
     if let chatID = target.chatID {
-      info = try await database.cache.info(chatID: chatID)
+      info = try database.store.chatInfo(chatID: chatID)
     } else if !target.chatIdentifier.isEmpty {
       info = try database.store.chatInfo(
         matchingExactIdentifier: target.chatIdentifier,

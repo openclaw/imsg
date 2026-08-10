@@ -39,30 +39,49 @@ public enum ContactsAccessPolicy: Sendable {
   case skipIfNotDetermined
 }
 
+/// A process-owned Contacts catalog. Reads stay synchronous for existing callers, while the
+/// owner refreshes on Contacts notifications and a bounded TTL fallback.
 public final class ContactResolver: ContactResolving, @unchecked Sendable {
   #if os(macOS)
-    private let phoneToName: [String: String]
-    private let emailToName: [String: String]
-    private let contacts: [ContactRecord]
-    private let normalizer = PhoneNumberNormalizer()
-    private let region: String
+    let source: ContactCatalogSource
+    let refreshInterval: TimeInterval
+    let maximumRegionSnapshots: Int
+    let now: () -> TimeInterval
+    let normalizer = PhoneNumberNormalizer()
+    let condition = NSCondition()
+    let defaultRegion: String
 
-    public let contactsUnavailable: Bool
+    var records: [ContactCatalogRecord] = []
+    var snapshots: [String: ContactCatalogSnapshot] = [:]
+    var regionRecency: [String] = []
+    var nextRefreshAt: TimeInterval = -.infinity
+    var invalidated = true
+    var refreshing = false
+    var authorizationWasAvailable = false
+    var hasLastGoodCatalog = false
+    var unavailable = true
+    var cancelObservation: (() -> Void)?
 
-    private init(
-      phoneToName: [String: String],
-      emailToName: [String: String],
-      contacts: [ContactRecord],
-      region: String
+    init(
+      region: String,
+      source: ContactCatalogSource,
+      refreshInterval: TimeInterval = 30,
+      maximumRegionSnapshots: Int = 8,
+      now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
-      self.phoneToName = phoneToName
-      self.emailToName = emailToName
-      self.contacts = contacts
-      self.region = region
-      self.contactsUnavailable = false
+      self.defaultRegion = Self.normalizedRegion(region)
+      self.source = source
+      self.refreshInterval = max(0, refreshInterval)
+      self.maximumRegionSnapshots = max(1, maximumRegionSnapshots)
+      self.now = now
+      self.cancelObservation = source.observeChanges { [weak self] in
+        self?.invalidate()
+      }
     }
-  #else
-    public let contactsUnavailable = true
+
+    deinit {
+      cancelObservation?()
+    }
   #endif
 
   public static func create(
@@ -71,13 +90,11 @@ public final class ContactResolver: ContactResolving, @unchecked Sendable {
   ) async -> any ContactResolving {
     #if os(macOS)
       let store = CNContactStore()
-      return await create(
-        region: region,
-        accessPolicy: accessPolicy,
-        store: store,
-        authorizationStatus: CNContactStore.authorizationStatus(for: .contacts),
-        requestAccess: requestAccess(store:)
-      )
+      let initialStatus = CNContactStore.authorizationStatus(for: .contacts)
+      if initialStatus == .notDetermined, accessPolicy == .requestIfNeeded {
+        _ = await requestAccess(store: store)
+      }
+      return ContactResolver(region: region, source: contactSource(store: store))
     #else
       _ = region
       _ = accessPolicy
@@ -93,31 +110,43 @@ public final class ContactResolver: ContactResolving, @unchecked Sendable {
       authorizationStatus: CNAuthorizationStatus,
       requestAccess: @escaping (CNContactStore) async -> Bool
     ) async -> any ContactResolving {
-      switch authorizationStatus {
-      case .authorized:
-        return load(store: store, region: region)
-      case .notDetermined:
-        guard accessPolicy == .requestIfNeeded else {
-          return NoOpContactResolver(contactsUnavailable: true)
-        }
-        let granted = await requestAccess(store)
-        return granted
-          ? load(store: store, region: region) : NoOpContactResolver(contactsUnavailable: true)
-      case .denied, .restricted:
-        return NoOpContactResolver(contactsUnavailable: true)
-      @unknown default:
-        return NoOpContactResolver(contactsUnavailable: true)
+      let resolvedStatus: CNAuthorizationStatus
+      if authorizationStatus == .notDetermined, accessPolicy == .requestIfNeeded {
+        resolvedStatus = await requestAccess(store) ? .authorized : .denied
+      } else {
+        resolvedStatus = authorizationStatus
       }
+      let source = ContactCatalogSource(
+        authorization: { catalogAuthorization(resolvedStatus) },
+        load: { try loadRecords(store: store) },
+        observeChanges: { _ in {} }
+      )
+      return ContactResolver(region: region, source: source)
     }
   #endif
 
+  public var contactsUnavailable: Bool {
+    #if os(macOS)
+      return snapshot(region: defaultRegion).unavailable
+    #else
+      return true
+    #endif
+  }
+
+  public func resolver(region: String) -> any ContactResolving {
+    #if os(macOS)
+      let region = Self.normalizedRegion(region)
+      if region == defaultRegion { return self }
+      return ContactRegionResolver(owner: self, region: region)
+    #else
+      _ = region
+      return self
+    #endif
+  }
+
   public func displayName(for handle: String) -> String? {
     #if os(macOS)
-      let lookup = normalizedLookupHandle(handle)
-      if lookup.contains("@") {
-        return emailToName[lookup.lowercased()]
-      }
-      return phoneToName[normalizer.normalize(lookup, region: region)]
+      return displayName(for: handle, region: defaultRegion)
     #else
       _ = handle
       return nil
@@ -126,13 +155,7 @@ public final class ContactResolver: ContactResolving, @unchecked Sendable {
 
   public func displayNames(for handles: [String]) -> [String: String] {
     #if os(macOS)
-      var resolved: [String: String] = [:]
-      for handle in handles {
-        if let name = displayName(for: handle) {
-          resolved[handle] = name
-        }
-      }
-      return resolved
+      return displayNames(for: handles, region: defaultRegion)
     #else
       _ = handles
       return [:]
@@ -141,105 +164,10 @@ public final class ContactResolver: ContactResolving, @unchecked Sendable {
 
   public func searchByName(_ query: String) -> [ContactMatch] {
     #if os(macOS)
-      let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-      guard !normalizedQuery.isEmpty else { return [] }
-
-      var matches: [ContactMatch] = []
-      for contact in contacts where contact.name.lowercased().contains(normalizedQuery) {
-        if let phone = contact.phones.first {
-          matches.append(ContactMatch(name: contact.name, handle: phone))
-        } else if let email = contact.emails.first {
-          matches.append(ContactMatch(name: contact.name, handle: email))
-        }
-      }
-      return matches
+      return searchByName(query, region: defaultRegion)
     #else
       _ = query
       return []
     #endif
   }
-
-  #if os(macOS)
-    private static func requestAccess(store: CNContactStore) async -> Bool {
-      await withCheckedContinuation { continuation in
-        store.requestAccess(for: .contacts) { granted, _ in
-          continuation.resume(returning: granted)
-        }
-      }
-    }
-
-    private static func load(store: CNContactStore, region: String) -> any ContactResolving {
-      let keysToFetch: [CNKeyDescriptor] = [
-        CNContactGivenNameKey as CNKeyDescriptor,
-        CNContactFamilyNameKey as CNKeyDescriptor,
-        CNContactNicknameKey as CNKeyDescriptor,
-        CNContactPhoneNumbersKey as CNKeyDescriptor,
-        CNContactEmailAddressesKey as CNKeyDescriptor,
-      ]
-      let request = CNContactFetchRequest(keysToFetch: keysToFetch)
-      let normalizer = PhoneNumberNormalizer()
-      var phoneToName: [String: String] = [:]
-      var emailToName: [String: String] = [:]
-      var contacts: [ContactRecord] = []
-
-      do {
-        try store.enumerateContacts(with: request) { contact, _ in
-          guard let name = displayName(for: contact) else { return }
-          var phones: [String] = []
-          var emails: [String] = []
-
-          for number in contact.phoneNumbers {
-            let normalized = normalizer.normalize(number.value.stringValue, region: region)
-            phones.append(normalized)
-            phoneToName[normalized] = phoneToName[normalized] ?? name
-          }
-          for email in contact.emailAddresses {
-            let normalized = String(email.value).lowercased()
-            emails.append(normalized)
-            emailToName[normalized] = emailToName[normalized] ?? name
-          }
-
-          if !phones.isEmpty || !emails.isEmpty {
-            contacts.append(ContactRecord(name: name, phones: phones, emails: emails))
-          }
-        }
-      } catch {
-        return NoOpContactResolver(contactsUnavailable: true)
-      }
-
-      return ContactResolver(
-        phoneToName: phoneToName,
-        emailToName: emailToName,
-        contacts: contacts,
-        region: region
-      )
-    }
-
-    private static func displayName(for contact: CNContact) -> String? {
-      if !contact.nickname.isEmpty {
-        return contact.nickname
-      }
-      let name = [contact.givenName, contact.familyName]
-        .filter { !$0.isEmpty }
-        .joined(separator: " ")
-      return name.isEmpty ? nil : name
-    }
-
-    private func normalizedLookupHandle(_ handle: String) -> String {
-      let trimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines)
-      for prefix in ["iMessage;-;", "iMessage;+;", "SMS;-;", "SMS;+;", "any;-;", "any;+;"]
-      where trimmed.hasPrefix(prefix) {
-        return String(trimmed.dropFirst(prefix.count))
-      }
-      return trimmed
-    }
-  #endif
 }
-
-#if os(macOS)
-  private struct ContactRecord: Sendable {
-    let name: String
-    let phones: [String]
-    let emails: [String]
-  }
-#endif

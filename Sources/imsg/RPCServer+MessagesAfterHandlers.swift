@@ -45,7 +45,6 @@ extension RPCServer {
       convertUnsupported: try params.boolean("convert_attachments") ?? false)
     let database = try await databaseResources.require()
     let store = database.store
-    let cache = database.cache
     let page = try store.messagesAfterPage(
       afterRowID: sinceRowID,
       chatID: chatID,
@@ -57,9 +56,8 @@ extension RPCServer {
     payloads.reserveCapacity(page.messages.count)
     for message in page.messages {
       payloads.append(
-        try await buildMessagePayload(
+        try buildMessagePayload(
           store: store,
-          cache: cache,
           message: message,
           includeAttachments: includeAttachments,
           includeReactions: true,

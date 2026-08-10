@@ -158,7 +158,7 @@ extension RPCServer {
     }
     let resolved = try await ChatTargetResolver.resolveChatTarget(
       input: input,
-      lookupChat: { chatID in try await database?.cache.info(chatID: chatID) },
+      lookupChat: { chatID in try database?.store.chatInfo(chatID: chatID) },
       unknownChatError: { chatID in RPCError.invalidParams("unknown chat_id \(chatID)") }
     )
     if !resolved.chatGUID.isEmpty {

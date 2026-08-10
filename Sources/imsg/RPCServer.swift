@@ -40,8 +40,8 @@ typealias RPCWatchStreamProvider = (
   _ filter: MessageFilter
 ) -> AsyncThrowingStream<Message, Error>
 
-// MessageStore, stdout, and watcher state are serial-queue-owned; caches and subscriptions are
-// actors. Remaining production dependencies are immutable or internally synchronized.
+// MessageStore, stdout, and watcher state are serial-queue-owned; subscriptions are actors.
+// Remaining production dependencies are immutable or internally synchronized.
 final class RPCServer: @unchecked Sendable {
   let databaseResources: RPCDatabaseResourceOwner
   let output: RPCOutput

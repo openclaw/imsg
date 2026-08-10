@@ -6,12 +6,10 @@ typealias RPCMessageStoreFactory = @Sendable (String) throws -> MessageStore
 struct RPCDatabaseResources: Sendable {
   let store: MessageStore
   let watcher: MessageWatcher
-  let cache: ChatCache
 
   init(store: MessageStore) {
     self.store = store
     self.watcher = MessageWatcher(store: store)
-    self.cache = ChatCache(store: store)
   }
 }
 

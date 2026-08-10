@@ -96,7 +96,6 @@ enum WatchCommand {
 
     let store = try storeFactory(dbPath)
     let watcher = MessageWatcher(store: store)
-    let cache = ChatCache(store: store)
     let contacts = await contactResolverFactory()
     let config = MessageWatcherConfiguration(
       debounceInterval: debounceInterval,
@@ -129,9 +128,8 @@ enum WatchCommand {
     let stream = streamProvider(watcher, chatID, sinceRowID, config, filter)
     for try await message in stream {
       if runtime.jsonOutput {
-        let payload = try await buildMessagePayload(
+        let payload = try buildMessagePayload(
           store: store,
-          cache: cache,
           message: message,
           includeAttachments: true,
           includeReactions: true,
