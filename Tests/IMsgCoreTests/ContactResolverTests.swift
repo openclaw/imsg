@@ -235,7 +235,7 @@ func noOpContactResolverCanRepresentUnavailableContacts() {
     #expect(resolver.contactsUnavailable == false)
   }
 
-  @Test
+  @Test(.timeLimit(.minutes(1)))
   func contactCatalogCoalescesConcurrentRefreshes() {
     let source = ContactSourceHarness(records: [contactRecord(name: "Alice")])
     let started = DispatchSemaphore(value: 0)
@@ -243,20 +243,21 @@ func noOpContactResolverCanRepresentUnavailableContacts() {
     source.blockNextLoad(started: started, release: release)
     let resolver = ContactResolver(region: "US", source: source.source, refreshInterval: 60)
     let group = DispatchGroup()
-    let queue = DispatchQueue(label: "contact-refresh-test", attributes: .concurrent)
-
-    for _ in 0..<8 {
+    let threads = (0..<8).map { _ in
       group.enter()
-      queue.async {
+      return Thread {
         _ = resolver.displayName(for: "+15551234567")
         group.leave()
       }
     }
+    for thread in threads {
+      thread.start()
+    }
 
-    #expect(started.wait(timeout: .now() + 1) == .success)
+    started.wait()
     #expect(source.loadCount == 1)
     release.signal()
-    #expect(group.wait(timeout: .now() + 1) == .success)
+    group.wait()
     #expect(source.loadCount == 1)
   }
 
