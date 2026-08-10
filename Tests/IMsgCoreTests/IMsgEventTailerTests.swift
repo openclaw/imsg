@@ -155,7 +155,7 @@ struct IMsgEventTailerTests {
   }
 
   @Test(.timeLimit(.minutes(1)))
-  func unreadableSourceFinishesWithReadFailure() async throws {
+  func directorySourceFinishesWithOpenFailure() async throws {
     let directory = NSTemporaryDirectory() + "/imsg-event-directory-\(UUID().uuidString)"
     try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(atPath: directory) }
@@ -168,13 +168,14 @@ struct IMsgEventTailerTests {
     var iterator = tailer.events().makeAsyncIterator()
     do {
       _ = try await iterator.next()
-      Issue.record("expected read failure")
+      Issue.record("expected nonregular source rejection")
     } catch let error as IMsgEventTailerError {
-      guard case .readFailed(let failedPath, _) = error else {
+      guard case .openFailed(let failedPath, let code) = error else {
         Issue.record("unexpected error: \(error)")
         return
       }
       #expect(failedPath == directory)
+      #expect(code == EINVAL)
     }
     let startCount = await started.callCount()
     #expect(startCount == 0)
