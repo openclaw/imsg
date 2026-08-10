@@ -151,7 +151,7 @@ func messagesAfterReturnsMessages() throws {
 }
 
 @Test
-func messagesAfterDeduplicatesURLBalloonsAcrossPolls() throws {
+func messagesAfterCallsHaveIndependentURLBalloonDedupeState() throws {
   let db = try makeInMemoryMessageDB(includeBalloonBundleID: true)
   let now = Date()
   try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
@@ -184,8 +184,11 @@ func messagesAfterDeduplicatesURLBalloonsAcrossPolls() throws {
   )
   try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 2)")
 
-  let secondPoll = try store.messagesAfter(afterRowID: 1, chatID: 1, limit: 10)
-  #expect(secondPoll.isEmpty)
+  let repeatedFirstPoll = try store.messagesAfter(afterRowID: 0, chatID: 1, limit: 10)
+  #expect(repeatedFirstPoll.map(\.rowID) == [1])
+
+  let secondCall = try store.messagesAfter(afterRowID: 1, chatID: 1, limit: 10)
+  #expect(secondCall.map(\.rowID) == [2])
 
   try db.run(
     """
@@ -199,9 +202,48 @@ func messagesAfterDeduplicatesURLBalloonsAcrossPolls() throws {
   )
   try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 3)")
 
-  let thirdPoll = try store.messagesAfter(afterRowID: 1, chatID: 1, limit: 10)
-  #expect(thirdPoll.map(\.rowID) == [3])
-  #expect(thirdPoll.first?.balloonBundleID == "com.apple.messages.URLBalloonProvider")
+  let combinedCall = try store.messagesAfter(afterRowID: 1, chatID: 1, limit: 10)
+  #expect(combinedCall.map(\.rowID) == [2, 3])
+  #expect(combinedCall.last?.balloonBundleID == "com.apple.messages.URLBalloonProvider")
+}
+
+@Test
+func urlBalloonDedupeStatePreservesWindowAndRetention() {
+  let now = Date(timeIntervalSince1970: 1_700_000_000)
+  func balloon(rowID: Int64, date: Date) -> Message {
+    Message(
+      rowID: rowID,
+      chatID: 1,
+      sender: "+123",
+      text: "https://example.com",
+      date: date,
+      isFromMe: false,
+      service: "iMessage",
+      handleID: 1,
+      attachmentsCount: 0,
+      balloonBundleID: MessageStore.urlPreviewBalloonBundleID
+    )
+  }
+
+  var windowState = URLBalloonDedupeState()
+  let firstInWindow = windowState.shouldSkip(balloon(rowID: 1, date: now))
+  let duplicateInWindow = windowState.shouldSkip(
+    balloon(rowID: 2, date: now.addingTimeInterval(30)))
+  let outsideWindow = windowState.shouldSkip(
+    balloon(rowID: 3, date: now.addingTimeInterval(5 * 60)))
+  #expect(!firstInWindow)
+  #expect(duplicateInWindow)
+  #expect(!outsideWindow)
+
+  var retentionState = URLBalloonDedupeState()
+  let firstRetained = retentionState.shouldSkip(balloon(rowID: 1, date: now))
+  let replayWhileRetained = retentionState.shouldSkip(
+    balloon(rowID: 1, date: now.addingTimeInterval(9 * 60)))
+  let replayAfterRetention = retentionState.shouldSkip(
+    balloon(rowID: 1, date: now.addingTimeInterval(20 * 60)))
+  #expect(!firstRetained)
+  #expect(replayWhileRetained)
+  #expect(!replayAfterRetention)
 }
 
 @Test

@@ -4,14 +4,14 @@ import Testing
 
 @testable import IMsgCore
 
-private struct WatcherTestStore {
+struct WatcherTestStore {
   let store: MessageStore
   let insertMessage: (Int64, String) throws -> Void
   let insertUnjoinedMessage: (Int64, String) throws -> Void
   let joinMessage: (Int64, Int64) throws -> Void
 }
 
-private enum WatcherTestDatabase {
+enum WatcherTestDatabase {
   static func appleEpoch(_ date: Date) -> Int64 {
     let seconds = date.timeIntervalSince1970 - MessageStore.appleEpochOffset
     return Int64(seconds * 1_000_000_000)
@@ -113,7 +113,7 @@ private enum WatcherTestDatabase {
   }
 }
 
-private actor WatcherPollSignal {
+actor WatcherPollSignal {
   private var didPoll = false
   private var waiters: [CheckedContinuation<Void, Never>] = []
 
@@ -135,7 +135,7 @@ private actor WatcherPollSignal {
   }
 }
 
-private final class WatcherPollController: @unchecked Sendable {
+final class WatcherPollController: @unchecked Sendable {
   private let condition = NSCondition()
   private var pollCount = 0
   private var pauseTargets = Set<Int>()
@@ -244,7 +244,7 @@ private func nextMessage(
   }
 }
 
-private func drainWatcher(
+func drainWatcher(
   _ stream: AsyncThrowingStream<Message, Error>
 ) async -> (messages: [Message], error: Error?) {
   var messages: [Message] = []
@@ -286,7 +286,7 @@ func messageWatcherDrainsBufferedMessagesBeforeOverflow() async throws {
     Task { await pollSignal.signal() }
   }
   let stream = watcher.stream(
-    sinceRowID: -1,
+    sinceRowID: 0,
     configuration: MessageWatcherConfiguration(
       debounceInterval: 0,
       fallbackPollInterval: nil,
@@ -319,7 +319,7 @@ func messageWatcherFiltersBeforeBufferAdmission() async throws {
     Task { await pollSignal.signal() }
   }
   let stream = watcher.stream(
-    sinceRowID: -1,
+    sinceRowID: 0,
     configuration: MessageWatcherConfiguration(
       debounceInterval: 0,
       fallbackPollInterval: nil,
@@ -343,7 +343,7 @@ func messageWatcherYieldsExistingMessages() async throws {
   let watcher = MessageWatcher(store: store)
   let stream = watcher.stream(
     chatID: nil,
-    sinceRowID: -1,
+    sinceRowID: 0,
     configuration: MessageWatcherConfiguration(debounceInterval: 0.01, batchLimit: 10)
   )
 

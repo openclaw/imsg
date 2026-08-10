@@ -43,6 +43,28 @@ func watchCommandRejectsInvalidDebounce() async {
   }
 }
 
+@Test(arguments: ["-1", "not-a-number"])
+func watchCommandRejectsInvalidSinceRowID(_ value: String) async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let values = ParsedValues(
+    positional: [],
+    options: ["db": ["/tmp/unused"], "sinceRowID": [value]],
+    flags: []
+  )
+
+  await #expect(throws: ParsedValuesError.self) {
+    try await WatchCommand.run(
+      values: values,
+      runtime: RuntimeOptions(parsedValues: values),
+      storeFactory: { _ in store },
+      contactResolverFactory: { NoOpContactResolver() },
+      streamProvider: { _, _, _, _, _ in
+        AsyncThrowingStream { continuation in continuation.finish() }
+      }
+    )
+  }
+}
+
 @Test
 func watchCommandRunsWithStubStream() async throws {
   let values = ParsedValues(

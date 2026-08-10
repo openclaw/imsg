@@ -94,8 +94,12 @@ func rpcDatabaseRecoversInSameServerAndCachesSuccess() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let factory = RetryStoreFactory(store: store, failures: 1)
   let output = TestRPCOutput()
+  let path = FileManager.default.temporaryDirectory
+    .appendingPathComponent("recovering-chat-\(UUID().uuidString).db").path
+  _ = FileManager.default.createFile(atPath: path, contents: Data())
+  defer { try? FileManager.default.removeItem(atPath: path) }
   let server = RPCServer(
-    databasePath: "/tmp/recovering-chat.db",
+    databasePath: path,
     verbose: false,
     output: output,
     storeFactory: factory.open,

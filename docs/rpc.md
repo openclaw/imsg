@@ -75,12 +75,17 @@ same time.
 
 The configured database is an optional, retryable RPC resource. Startup does
 not open it. `initialize`, `status`, and every database-required request retry
-after an earlier open failure; the first successful open is cached for the
-life of the child. A watch subscription keeps the exact database and watcher
-bundle it started with. Recovery affects new requests and does not swap a live
-subscription underneath its stream. Chat metadata and participants are read
-from the live SQLite connection for each request or watch emission, so Messages
-sync and other writers do not leave a long-running child with stale routing.
+after an earlier open failure. A successful open is cached only while the
+configured path still identifies the same database file. Replacing or restoring
+that path rotates new requests and status snapshots to a new database/watcher
+generation; removing it makes new database-backed requests fail with `-32002`
+until a readable replacement appears. A watch subscription keeps the exact
+database and watcher bundle it started with, so rotation never swaps a live
+subscription underneath its stream. Cursors from that subscription still belong
+to its starting generation and must be discarded before reading from the
+replacement. Chat metadata and participants are read from the subscription's
+SQLite connection for each emission, while new requests use the current
+generation.
 
 `initialize`, `status`, and bridge capability probes never launch, kill, or
 relaunch Messages.app. Bridge-only RPC methods first check the existing ready
@@ -351,7 +356,8 @@ Older Messages database schemas without scheduling columns return an invalid-par
 Params:
 
 - `chat_id` (int, optional) — omit for all-chat stream.
-- `since_rowid` (int, optional) — exclusive cursor.
+- `since_rowid` (non-negative int, optional) — exclusive cursor. Explicit `0`
+  replays from the beginning; omission starts at the current maximum rowid.
 - `participants` (array, optional)
 - `start` / `end` (ISO 8601, optional)
 - `attachments` (bool, default `false`)

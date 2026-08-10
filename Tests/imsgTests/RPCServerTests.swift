@@ -471,7 +471,7 @@ func rpcWatchSubscribeEmitsNotificationAndUnsubscribe() async throws {
   let server = RPCServer(store: store, verbose: false, output: output)
 
   let subscribe =
-    #"{"jsonrpc":"2.0","id":10,"method":"watch.subscribe","params":{"chat_id":1,"since_rowid":-1}}"#
+    #"{"jsonrpc":"2.0","id":10,"method":"watch.subscribe","params":{"chat_id":1,"since_rowid":0}}"#
   await server.handleLineForTesting(subscribe)
 
   let result = output.responses.first?["result"] as? [String: Any]
@@ -502,7 +502,7 @@ func rpcWatchIncludeReactionsDoesNotRequireAttachments() async throws {
 
   let subscribe =
     #"{"jsonrpc":"2.0","id":13,"method":"watch.subscribe","params":{"chat_id":1,"#
-    + #""since_rowid":-1,"include_reactions":true,"attachments":false}}"#
+    + #""since_rowid":0,"include_reactions":true,"attachments":false}}"#
   await server.handleLineForTesting(subscribe)
 
   for _ in 0..<20 {

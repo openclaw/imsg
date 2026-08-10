@@ -16,16 +16,6 @@ public final class MessageStore: @unchecked Sendable {
   private let queueKey = DispatchSpecificKey<Void>()
   let schema: MessageStoreSchema
 
-  private struct URLBalloonDedupeEntry: Sendable {
-    let rowID: Int64
-    let date: Date
-  }
-
-  private static let urlBalloonDedupeWindow: TimeInterval = 90
-  private static let urlBalloonDedupeRetention: TimeInterval = 10 * 60
-
-  private var urlBalloonDedupe: [String: URLBalloonDedupeEntry] = [:]
-
   public init(path: String = MessageStore.defaultPath) throws {
     let normalized = NSString(string: path).expandingTildeInPath
     self.path = normalized
@@ -92,37 +82,43 @@ public final class MessageStore: @unchecked Sendable {
       try block(connection)
     }
   }
+}
 
-  func shouldSkipURLBalloonDuplicate(
-    chatID: Int64,
-    sender: String,
-    text: String,
-    isFromMe: Bool,
-    date: Date,
-    rowID: Int64
-  ) -> Bool {
-    guard !text.isEmpty else { return false }
+struct URLBalloonDedupeState: Sendable {
+  private struct Entry: Sendable {
+    let rowID: Int64
+    let date: Date
+  }
 
-    pruneURLBalloonDedupe(referenceDate: date)
+  private static let duplicateWindow: TimeInterval = 90
+  private static let retention: TimeInterval = 10 * 60
 
-    let key = "\(chatID)|\(isFromMe ? 1 : 0)|\(sender)|\(text)"
-    let current = URLBalloonDedupeEntry(rowID: rowID, date: date)
-    guard let previous = urlBalloonDedupe[key] else {
-      urlBalloonDedupe[key] = current
+  private var entries: [String: Entry] = [:]
+
+  mutating func shouldSkip(_ message: Message) -> Bool {
+    guard !message.text.isEmpty else { return false }
+
+    prune(referenceDate: message.date)
+
+    let key =
+      "\(message.chatID)|\(message.isFromMe ? 1 : 0)|\(message.sender)|\(message.text)"
+    let current = Entry(rowID: message.rowID, date: message.date)
+    guard let previous = entries[key] else {
+      entries[key] = current
       return false
     }
 
-    urlBalloonDedupe[key] = current
-    if rowID <= previous.rowID {
+    entries[key] = current
+    if message.rowID <= previous.rowID {
       return true
     }
-    return date.timeIntervalSince(previous.date) <= MessageStore.urlBalloonDedupeWindow
+    return message.date.timeIntervalSince(previous.date) <= Self.duplicateWindow
   }
 
-  private func pruneURLBalloonDedupe(referenceDate: Date) {
-    guard !urlBalloonDedupe.isEmpty else { return }
-    let cutoff = referenceDate.addingTimeInterval(-MessageStore.urlBalloonDedupeRetention)
-    urlBalloonDedupe = urlBalloonDedupe.filter { $0.value.date >= cutoff }
+  private mutating func prune(referenceDate: Date) {
+    guard !entries.isEmpty else { return }
+    let cutoff = referenceDate.addingTimeInterval(-Self.retention)
+    entries = entries.filter { $0.value.date >= cutoff }
   }
 }
 

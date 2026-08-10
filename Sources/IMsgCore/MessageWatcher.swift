@@ -101,6 +101,8 @@ private final class WatchState: @unchecked Sendable {
 
   private var cursor: Int64
   private var resumeAfterRowID: Int64
+  private let startsAtCurrentRowID: Bool
+  private var urlBalloonDedupe = URLBalloonDedupeState()
   #if os(macOS)
     private struct FileWatchIdentity: Equatable {
       let device: UInt64
@@ -136,12 +138,13 @@ private final class WatchState: @unchecked Sendable {
     self.continuation = continuation
     self.cursor = sinceRowID ?? 0
     self.resumeAfterRowID = sinceRowID ?? 0
+    self.startsAtCurrentRowID = sinceRowID == nil
   }
 
   func start() {
     queue.async {
       do {
-        if self.cursor == 0 {
+        if self.startsAtCurrentRowID {
           self.cursor = try self.store.maxRowID()
           self.resumeAfterRowID = self.cursor
         }
@@ -272,7 +275,8 @@ private final class WatchState: @unchecked Sendable {
         afterRowID: cursor,
         chatID: chatID,
         limit: configuration.batchLimit,
-        includeReactions: configuration.includeReactions
+        includeReactions: configuration.includeReactions,
+        dedupeState: &urlBalloonDedupe
       )
       for message in batch.messages {
         switch yieldDecision(for: message) {

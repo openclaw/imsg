@@ -84,7 +84,15 @@ enum WatchCommand {
     guard let debounceInterval = DurationParser.parse(debounceString) else {
       throw ParsedValuesError.invalidOption("debounce")
     }
-    let sinceRowID = values.optionInt64("sinceRowID")
+    let sinceRowID: Int64?
+    if values.option("sinceRowID") != nil {
+      guard let parsed = values.optionInt64("sinceRowID"), parsed >= 0 else {
+        throw ParsedValuesError.invalidOption("since-rowid")
+      }
+      sinceRowID = parsed
+    } else {
+      sinceRowID = nil
+    }
     let showAttachments = values.flag("attachments")
     let attachmentOptions = AttachmentQueryOptions(
       convertUnsupported: values.flag("convertAttachments"))

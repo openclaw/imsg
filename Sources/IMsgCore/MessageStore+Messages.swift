@@ -104,12 +104,14 @@ extension MessageStore {
   ) throws -> [Message] {
     guard limit > 0 else { return [] }
     var cursor = afterRowID
+    var dedupeState = URLBalloonDedupeState()
     while true {
       let batch = try messagesAfterBatch(
         afterRowID: cursor,
         chatID: chatID,
         limit: limit,
-        includeReactions: includeReactions
+        includeReactions: includeReactions,
+        dedupeState: &dedupeState
       )
       if !batch.messages.isEmpty {
         return batch.messages
@@ -200,7 +202,8 @@ extension MessageStore {
     afterRowID: Int64,
     chatID: Int64?,
     limit: Int,
-    includeReactions: Bool
+    includeReactions: Bool,
+    dedupeState: inout URLBalloonDedupeState
   ) throws -> MessagesAfterBatch {
     guard limit > 0 else {
       return MessagesAfterBatch(messages: [], maxScannedRowID: afterRowID)
@@ -249,14 +252,7 @@ extension MessageStore {
       )
       let visibleMessages = coalesced.filter { message in
         guard isURLPreviewBalloon(message) else { return true }
-        return !shouldSkipURLBalloonDuplicate(
-          chatID: message.chatID,
-          sender: message.sender,
-          text: message.text,
-          isFromMe: message.isFromMe,
-          date: message.date,
-          rowID: message.rowID
-        )
+        return !dedupeState.shouldSkip(message)
       }
       return MessagesAfterBatch(messages: visibleMessages, maxScannedRowID: maxScannedRowID)
     }
