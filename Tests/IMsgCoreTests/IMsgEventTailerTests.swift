@@ -3,6 +3,10 @@ import Testing
 
 @testable import IMsgCore
 
+#if os(macOS)
+  import Darwin
+#endif
+
 @Suite("IMsgEventTailer")
 struct IMsgEventTailerTests {
   @Test(.timeLimit(.minutes(1)))
@@ -125,6 +129,29 @@ struct IMsgEventTailerTests {
       #expect(failedPath == path)
     }
     #expect(try Data(contentsOf: URL(fileURLWithPath: target)) == Data("unchanged".utf8))
+  }
+
+  @Test(.timeLimit(.minutes(1)))
+  func fifoPathIsRejectedWithoutBlocking() async throws {
+    let directory = NSTemporaryDirectory() + "/imsg-tailer-fifo-\(UUID().uuidString)"
+    try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: directory) }
+    let path = (directory as NSString).appendingPathComponent("events.jsonl")
+    #expect(mkfifo(path, 0o600) == 0)
+
+    let tailer = IMsgEventTailer(path: path, createIfMissing: false)
+    var iterator = tailer.events().makeAsyncIterator()
+    do {
+      _ = try await iterator.next()
+      Issue.record("expected FIFO rejection")
+    } catch let error as IMsgEventTailerError {
+      guard case .openFailed(let failedPath, let code) = error else {
+        Issue.record("unexpected error: \(error)")
+        return
+      }
+      #expect(failedPath == path)
+      #expect(code == EINVAL)
+    }
   }
 
   @Test(.timeLimit(.minutes(1)))

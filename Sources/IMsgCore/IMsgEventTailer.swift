@@ -216,7 +216,7 @@ public final class IMsgEventTailer: @unchecked Sendable {
     }
 
     private func makeFileRegistration() throws -> FileRegistration {
-      let fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+      let fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC | O_NOFOLLOW)
       guard fd >= 0 else {
         throw IMsgEventTailerError.openFailed(path: path, errno: errno)
       }
@@ -225,6 +225,10 @@ public final class IMsgEventTailer: @unchecked Sendable {
         let code = errno
         close(fd)
         throw IMsgEventTailerError.openFailed(path: path, errno: code)
+      }
+      guard (info.st_mode & S_IFMT) == S_IFREG else {
+        close(fd)
+        throw IMsgEventTailerError.openFailed(path: path, errno: EINVAL)
       }
       let identity = FileIdentity(device: UInt64(info.st_dev), inode: UInt64(info.st_ino))
       let source = DispatchSource.makeFileSystemObjectSource(
