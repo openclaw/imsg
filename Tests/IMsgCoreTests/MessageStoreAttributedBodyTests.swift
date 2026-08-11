@@ -246,3 +246,112 @@ func messagesAfterUsesAttributedBodyFallback() throws {
   #expect(messages.count == 1)
   #expect(messages.first?.text == "new text")
 }
+
+@Test
+func searchMessagesMatchesPlainAndAttributedBodies() throws {
+  let db = try makeAttributedBodySearchDatabase()
+  let now = Date()
+  try insertSearchMessage(
+    db,
+    rowID: 1,
+    text: "plain searchable body",
+    attributedText: nil,
+    date: now
+  )
+  try insertSearchMessage(
+    db,
+    rowID: 2,
+    text: nil,
+    attributedText: "attributed searchable body",
+    date: now.addingTimeInterval(1)
+  )
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let messages = try store.searchMessages(query: "searchable", match: "contains", limit: 10)
+
+  #expect(messages.map(\.rowID) == [2, 1])
+  #expect(messages.map(\.text) == ["attributed searchable body", "plain searchable body"])
+}
+
+@Test
+func searchMessagesExactlyMatchesPlainAndAttributedBodiesCaseInsensitively() throws {
+  let db = try makeAttributedBodySearchDatabase()
+  let now = Date()
+  try insertSearchMessage(
+    db,
+    rowID: 1,
+    text: "Exact Search Body",
+    attributedText: nil,
+    date: now
+  )
+  try insertSearchMessage(
+    db,
+    rowID: 2,
+    text: nil,
+    attributedText: "Exact Search Body",
+    date: now.addingTimeInterval(1)
+  )
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let messages = try store.searchMessages(query: "exact search body", match: "exact", limit: 10)
+
+  #expect(messages.map(\.rowID) == [2, 1])
+}
+
+@Test
+func searchMessagesFillsLimitPastNonmatchingAttributedBodies() throws {
+  let db = try makeAttributedBodySearchDatabase()
+  let now = Date()
+  try insertSearchMessage(
+    db,
+    rowID: 1,
+    text: nil,
+    attributedText: "matching attributed body",
+    date: now
+  )
+  try insertSearchMessage(
+    db,
+    rowID: 2,
+    text: nil,
+    attributedText: "newer unrelated body",
+    date: now.addingTimeInterval(1)
+  )
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let messages = try store.searchMessages(query: "matching", match: "contains", limit: 1)
+
+  #expect(messages.map(\.rowID) == [1])
+}
+
+private func makeAttributedBodySearchDatabase() throws -> Connection {
+  let db = try Connection(.inMemory)
+  try MessageDatabaseFixture.createSchema(
+    db,
+    options: .init(includeAttributedBody: true)
+  )
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
+  return db
+}
+
+private func insertSearchMessage(
+  _ db: Connection,
+  rowID: Int64,
+  text: String?,
+  attributedText: String?,
+  date: Date
+) throws {
+  let body: Blob? = attributedText.map {
+    Blob(bytes: [0x01, 0x2b] + Array($0.utf8) + [0x86, 0x84])
+  }
+  try db.run(
+    """
+    INSERT INTO message(ROWID, handle_id, text, attributedBody, date, is_from_me, service)
+    VALUES (?, 1, ?, ?, ?, 0, 'iMessage')
+    """,
+    rowID,
+    text,
+    body,
+    TestDatabase.appleEpoch(date)
+  )
+  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, ?)", rowID)
+}

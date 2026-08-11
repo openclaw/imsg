@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Read Commands
+- fix: search decoded attributed message bodies when the plain text column is empty (#223, thanks @lincicomb).
+
 ## 0.14.0 - 2026-08-10
 
 ### Highlights

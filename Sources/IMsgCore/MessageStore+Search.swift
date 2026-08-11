@@ -13,10 +13,15 @@ private struct SearchMessagesQuery {
       store.schema.hasReactionColumns
       ? " AND (m.associated_message_type IS NULL OR m.associated_message_type < 2000 OR m.associated_message_type > 3006)"
       : ""
-    let predicate =
+    let textPredicate =
       exact
       ? "IFNULL(m.text, '') = ? COLLATE NOCASE"
       : "IFNULL(m.text, '') LIKE ? ESCAPE '\\' COLLATE NOCASE"
+    let attributedBodyCandidate =
+      store.schema.hasAttributedBody
+      ? " OR (IFNULL(m.text, '') = '' AND m.attributedBody IS NOT NULL)"
+      : ""
+    let predicate = "(\(textPredicate)\(attributedBodyCandidate))"
     let textBinding = exact ? text : SearchMessagesQuery.likePattern(for: text)
     self.sql = """
       SELECT \(selection.selectList)
@@ -59,15 +64,18 @@ extension MessageStore {
           limit: physicalLimit
         )
         var messages: [Message] = []
+        var candidateCount = 0
         var parentCache: ReplyParentCache = [:]
         var pollOptionCache = PollOptionTextCache()
         let rows = try db.prepareRowIterator(query.sql, bindings: query.bindings)
         while let row = try rows.failableNext() {
+          candidateCount += 1
           let decoded = try decodeMessageRow(
             row,
             columns: query.selection.columns,
             fallbackChatID: query.fallbackChatID
           )
+          guard searchText(decoded.text, matches: trimmed, exact: exact) else { continue }
           messages.append(
             try message(
               from: decoded,
@@ -86,7 +94,7 @@ extension MessageStore {
             guard let previous = try self.precedingTextMessageForURLPreview(preview, db: db) else {
               return nil
             }
-            guard self.searchMessage(previous, matches: trimmed, exact: exact) else {
+            guard self.searchText(previous.text, matches: trimmed, exact: exact) else {
               return nil
             }
             return .replace(previous)
@@ -96,7 +104,8 @@ extension MessageStore {
           }
         ).sorted(by: searchMessagesNewestFirst)
 
-        if messages.count < physicalLimit || (coalesced.count >= limit && !usedFallbackReplacement)
+        if candidateCount < physicalLimit
+          || (coalesced.count >= limit && !usedFallbackReplacement)
         {
           return Array(coalesced.prefix(limit))
         }
@@ -108,11 +117,11 @@ extension MessageStore {
     }
   }
 
-  private func searchMessage(_ message: Message, matches text: String, exact: Bool) -> Bool {
+  private func searchText(_ candidate: String, matches text: String, exact: Bool) -> Bool {
     if exact {
-      return message.text.caseInsensitiveCompare(text) == .orderedSame
+      return candidate.caseInsensitiveCompare(text) == .orderedSame
     }
-    return message.text.range(of: text, options: [.caseInsensitive]) != nil
+    return candidate.range(of: text, options: [.caseInsensitive]) != nil
   }
 
   private func nextSearchPhysicalLimit(after current: Int) -> Int? {
