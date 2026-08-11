@@ -159,6 +159,33 @@ func injectedHelperHardensRichLinkImageTransfer() throws {
 }
 
 @Test
+func injectedHelperPreservesCallerOwnedMessageGuid() throws {
+  let testFile = URL(fileURLWithPath: #filePath)
+  let repoRoot =
+    testFile
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
+  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
+  let statusBody = try #require(functionBody(named: "handleStatus", in: source))
+  let sendBody = try #require(functionBody(named: "handleSendMessage", in: source))
+  let itemBody = try #require(functionBody(named: "constructIMMessageViaItem", in: source))
+  let buildBody = try #require(functionBody(named: "buildIMMessage", in: source))
+
+  #expect(statusBody.contains(#"@"clientMessageGuid""#))
+  #expect(statusBody.contains(#"@"client_message_guid""#))
+  #expect(sendBody.contains(#"params[@"clientMessageGuid"]"#))
+  #expect(sendBody.contains("initWithUUIDString:clientMessageGuidValue"))
+  #expect(sendBody.contains("clientUUID.UUIDString.lowercaseString"))
+  #expect(sendBody.contains("clientMessageGuid.length"))
+  #expect(itemBody.contains("clientMessageGuid.length"))
+  #expect(itemBody.contains("[iinv setArgument:&guid atIndex:9]"))
+  #expect(buildBody.components(separatedBy: "[inv setArgument:&messageGuid atIndex:9]").count >= 3)
+  #expect(buildBody.contains("hasAttachment || clientMessageGuid.length"))
+}
+
+@Test
 func injectedHelperFindsNestedThreadReplyItems() throws {
   let testFile = URL(fileURLWithPath: #filePath)
   let repoRoot =

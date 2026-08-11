@@ -315,9 +315,37 @@ extension RPCServer {
     text: String,
     file: String,
     selectedMessageGuid: String? = nil,
-    textFormatting: Any? = nil
+    textFormatting: Any? = nil,
+    clientMessageGuid: String? = nil
   ) async throws -> [String: Any] {
     let action: BridgeAction = file.isEmpty ? .sendMessage : .sendAttachment
+    if let clientMessageGuid {
+      guard file.isEmpty else {
+        throw RPCError.invalidParams("tracked sends do not support attachments")
+      }
+      let status: [String: Any]
+      do {
+        status = try await invokeBridge(action: .status, params: [:])
+      } catch {
+        throw DeliveryFailure(
+          disposition: .notStarted,
+          transport: .bridgeV2,
+          operation: action.rawValue,
+          detail: "Bridge capability inspection failed before the tracked send was published."
+        )
+      }
+      let selectors = status["selectors"] as? [String: Any]
+      guard status["client_message_guid"] as? Bool == true
+        || selectors?["clientMessageGuid"] as? Bool == true
+      else {
+        throw DeliveryFailure(
+          disposition: .notStarted,
+          transport: .bridgeV2,
+          operation: action.rawValue,
+          detail: "running bridge does not support caller-owned message GUIDs"
+        )
+      }
+    }
     if !file.isEmpty {
       let requiresMetadata = !text.isEmpty || selectedMessageGuid != nil || textFormatting != nil
       if requiresMetadata {
@@ -371,6 +399,22 @@ extension RPCServer {
     if let textFormatting {
       params["textFormatting"] = textFormatting
     }
-    return try await invokeBridge(action: .sendMessage, params: params)
+    if let clientMessageGuid {
+      params["clientMessageGuid"] = clientMessageGuid
+    }
+    let result = try await invokeBridge(action: .sendMessage, params: params)
+    if let clientMessageGuid {
+      guard let returnedGuid = result["messageGuid"] as? String,
+        returnedGuid.caseInsensitiveCompare(clientMessageGuid) == .orderedSame
+      else {
+        throw DeliveryFailure(
+          disposition: .mayHaveCompleted,
+          transport: .bridgeV2,
+          operation: action.rawValue,
+          detail: "Bridge dispatched the tracked send but did not echo its exact message GUID."
+        )
+      }
+    }
+    return result
   }
 }

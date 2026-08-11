@@ -45,7 +45,7 @@ struct RPCBridgeRequirement: Sendable, Equatable {
 enum RPCDispatchRoute: Sendable, Equatable {
   case initialize, status, chatsList, messagesStats, messagesHistory, messagesSearch
   case messagesAfter, watchSubscribe, bridgeEventsSubscribe, watchUnsubscribe
-  case send, sendRich, sendAttachment
+  case send, sendTracked, sendRich, sendAttachment
   case sendMultipart, sendSticker, messagesScheduled, pollSend, pollVote, pollUnvote
   case tapback, typing, read, messageEdit, messageUnsend, messageDelete
   case messageNotifyAnyways, messageSendStatus, chatsCreate, chatsDelete, chatsMarkUnread
@@ -128,6 +128,9 @@ let rpcMethodDescriptors: [RPCMethodDescriptor] = [
   RPCMethodDescriptor(
     "message.send_status", route: .messageSendStatus, lane: .read, database: [.ready]),
   RPCMethodDescriptor("send", route: .send, lane: .mutation, macOSOnly: true),
+  RPCMethodDescriptor(
+    "send.tracked", route: .sendTracked, lane: .mutation,
+    bridge: .selector("clientMessageGuid"), macOSOnly: true),
   RPCMethodDescriptor(
     "chats.create", route: .chatsCreate, lane: .mutation, bridge: .selector("createChat"),
     macOSOnly: true),

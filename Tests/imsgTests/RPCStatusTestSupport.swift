@@ -37,6 +37,7 @@ func rpcStatusBridgeSnapshot(
 func fullRPCStatusBridgeSelectors() -> [String: Bool] {
   [
     "sendMessage": true,
+    "clientMessageGuid": true,
     "sendAttachment": true,
     "sendMultipart": true,
     "sendReaction": true,

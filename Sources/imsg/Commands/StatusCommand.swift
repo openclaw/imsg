@@ -10,6 +10,12 @@ enum StatusCommand {
     return commands
   }
 
+  static func advertisedRPCMethods(selectors: [String: Bool]) -> [String] {
+    selectors["clientMessageGuid"] == true
+      ? kSupportedRPCMethods
+      : kSupportedRPCMethods.filter { $0 != "send.tracked" }
+  }
+
   static let spec = CommandSpec(
     name: "status",
     abstract: "Check availability of imsg advanced features",
@@ -69,7 +75,7 @@ enum StatusCommand {
         bridgeVersion: bridgeVersion,
         v2Ready: v2Ready,
         selectors: selectors,
-        rpcMethods: kSupportedRPCMethods
+        rpcMethods: advertisedRPCMethods(selectors: selectors)
       )
       try JSONLines.print(payload)
     } else {

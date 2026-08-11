@@ -293,6 +293,8 @@ final class RPCServer: @unchecked Sendable {
         try await handleWatchUnsubscribe(id: id, params: params)
       case .send:
         try await handleSend(params: params, id: id)
+      case .sendTracked:
+        try await handleSendTracked(params: params, id: id)
       case .sendRich:
         try await handleSendRich(params: params, id: id)
       case .sendAttachment:
