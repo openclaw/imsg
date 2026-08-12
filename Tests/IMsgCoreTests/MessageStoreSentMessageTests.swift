@@ -327,6 +327,7 @@ func messageSendStatusMapsFailedSentDeliveredAndPendingRows() throws {
   #expect(delivered?.state == .delivered)
   #expect(delivered?.dateDelivered != nil)
   #expect(try store.messageSendStatus(guid: "pending-guid")?.state == .pending)
+  #expect(try store.messageSendStatus(guid: "DELIVERED-GUID")?.state == .delivered)
   #expect(try store.messageSendStatus(guid: "missing-guid") == nil)
 }
 

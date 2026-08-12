@@ -11,7 +11,7 @@ enum StatusCommand {
   }
 
   static func advertisedRPCMethods(selectors: [String: Bool]) -> [String] {
-    selectors["clientMessageGuid"] == true
+    selectors["clientMessageGuidReservation"] == true
       ? kSupportedRPCMethods
       : kSupportedRPCMethods.filter { $0 != "send.tracked" }
   }

@@ -368,7 +368,7 @@ extension IMsgBridgeClient {
     let error = IMsgBridgeError.dylibReturnedError(response.error ?? "unknown")
     if action.isMutation {
       throw DeliveryFailure(
-        disposition: .mayHaveCompleted,
+        disposition: response.deliveryDisposition ?? .mayHaveCompleted,
         transport: transport,
         operation: action.rawValue,
         detail: error.description

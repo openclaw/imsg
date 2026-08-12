@@ -138,6 +138,8 @@ static NSTimer *fileWatchTimer = nil;
 static NSTimer *rpcInboxTimer = nil;
 static BOOL bridgeDidBootstrap = NO;
 static os_unfair_lock eventsLock = OS_UNFAIR_LOCK_INIT;
+static os_unfair_lock trackedMessageGuidLock = OS_UNFAIR_LOCK_INIT;
+static NSMutableSet<NSString *> *trackedMessageGuids = nil;
 static int lockFd = -1;
 
 static const NSUInteger kEventsRotateBytes = 1 * 1024 * 1024;
@@ -548,6 +550,27 @@ static NSDictionary* errorResponse(NSInteger requestId, NSString *error) {
         @"error": error ?: @"Unknown error",
         @"timestamp": [[NSISO8601DateFormatter new] stringFromDate:[NSDate date]]
     };
+}
+
+static NSDictionary* errorResponseWithDisposition(NSInteger requestId,
+                                                   NSString *error,
+                                                   NSString *disposition) {
+    NSMutableDictionary *response = [errorResponse(requestId, error) mutableCopy];
+    if (disposition.length) response[@"delivery_disposition"] = disposition;
+    return response;
+}
+
+/// The injected helper is the cross-process ownership boundary for tracked
+/// sends. Reserve each caller GUID once immediately before dispatch so two RPC
+/// children cannot both publish messages with the same identity.
+static BOOL reserveTrackedMessageGuid(NSString *guid) {
+    if (!guid.length) return NO;
+    os_unfair_lock_lock(&trackedMessageGuidLock);
+    if (!trackedMessageGuids) trackedMessageGuids = [NSMutableSet set];
+    BOOL available = ![trackedMessageGuids containsObject:guid];
+    if (available) [trackedMessageGuids addObject:guid];
+    os_unfair_lock_unlock(&trackedMessageGuidLock);
+    return available;
 }
 
 static NSString *serviceNameForChat(IMChat *chat, NSString *chatGuid) {
@@ -1098,6 +1121,7 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"sendMessageReason": @(gHasSendMessageReason),
         @"sendMessage": @(chatSend),
         @"clientMessageGuid": @(clientMessageGuid),
+        @"clientMessageGuidReservation": @(clientMessageGuid),
         @"sendAttachment": @(attachmentSend),
         @"sendMultipart": @(chatSend),
         @"sendReaction": @(reactionSend),
@@ -3228,6 +3252,14 @@ static NSDictionary* errorResponseV2(NSString *uuid, NSString *error) {
     };
 }
 
+static NSDictionary* errorResponseV2WithDisposition(NSString *uuid,
+                                                     NSString *error,
+                                                     NSString *disposition) {
+    NSMutableDictionary *response = [errorResponseV2(uuid, error) mutableCopy];
+    if (disposition.length) response[@"delivery_disposition"] = disposition;
+    return response;
+}
+
 #pragma mark - Inbound Events (v2)
 
 /// Append a single JSON object as a line to `.imsg-events.jsonl`. Rotates the
@@ -3810,6 +3842,13 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
             && [imMessage respondsToSelector:@selector(setThreadIdentifier:)]) {
             [imMessage performSelector:@selector(setThreadIdentifier:)
                             withObject:threadIdentifier];
+        }
+
+        if (clientMessageGuid.length && !reserveTrackedMessageGuid(clientMessageGuid)) {
+            return errorResponseWithDisposition(
+                requestId,
+                @"clientMessageGuid is already reserved by another tracked send",
+                @"not_started");
         }
 
         if (gHasSendMessageReason && ddScan) {
@@ -6708,7 +6747,10 @@ static NSDictionary* processV2Envelope(NSDictionary *envelope) {
     BOOL ok = [legacy[@"success"] boolValue];
     if (!ok) {
         NSString *errMsg = legacy[@"error"];
-        return errorResponseV2(uuid, errMsg ?: @"Unknown error");
+        NSString *disposition = legacy[@"delivery_disposition"];
+        return disposition.length
+            ? errorResponseV2WithDisposition(uuid, errMsg ?: @"Unknown error", disposition)
+            : errorResponseV2(uuid, errMsg ?: @"Unknown error");
     }
 
     NSMutableDictionary *data = [NSMutableDictionary dictionaryWithDictionary:legacy];

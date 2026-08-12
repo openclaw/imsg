@@ -70,13 +70,14 @@ func rpcStatusCalculatesDynamicMethodsAcrossResourceStates() async throws {
   #expect(!bridgeOnlyMethods.contains("chats.list"))
   #expect(!bridgeOnlyMethods.contains("send.multipart"))
   #expect(!bridgeOnlyMethods.contains("send.sticker"))
+  #expect(!bridgeOnlyMethods.contains("send.tracked"))
   #expect(!bridgeOnlyMethods.contains("poll.vote"))
 
   var limitedSelectors = fullRPCStatusBridgeSelectors()
   limitedSelectors["stickerSend"] = false
   limitedSelectors["editMessageItem"] = false
   limitedSelectors["sendMultipart"] = false
-  limitedSelectors["clientMessageGuid"] = false
+  limitedSelectors["clientMessageGuidReservation"] = false
   let limitedOutput = TestRPCOutput()
   let limitedServer = RPCServer(
     store: store,

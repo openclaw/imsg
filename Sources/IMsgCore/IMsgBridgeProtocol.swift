@@ -173,12 +173,20 @@ public struct BridgeResponse {
   public let success: Bool
   public let data: [String: Any]
   public let error: String?
+  public let deliveryDisposition: DeliveryDisposition?
 
-  public init(id: String, success: Bool, data: [String: Any], error: String?) {
+  public init(
+    id: String,
+    success: Bool,
+    data: [String: Any],
+    error: String?,
+    deliveryDisposition: DeliveryDisposition? = nil
+  ) {
     self.id = id
     self.success = success
     self.data = data
     self.error = error
+    self.deliveryDisposition = deliveryDisposition
   }
 
   /// Parse a JSON response object into a `BridgeResponse`. Tolerates v1 shape
@@ -197,17 +205,24 @@ public struct BridgeResponse {
 
     let success = (raw["success"] as? Bool) ?? false
     let error = raw["error"] as? String
+    let deliveryDisposition = (raw["delivery_disposition"] as? String).flatMap(
+      DeliveryDisposition.init(rawValue:))
 
     var data: [String: Any]
     if let d = raw["data"] as? [String: Any] {
       data = d
     } else {
       data = raw
-      for stripped in ["v", "id", "success", "error", "timestamp"] {
+      for stripped in ["v", "id", "success", "error", "delivery_disposition", "timestamp"] {
         data.removeValue(forKey: stripped)
       }
     }
 
-    return BridgeResponse(id: id, success: success, data: data, error: error)
+    return BridgeResponse(
+      id: id,
+      success: success,
+      data: data,
+      error: error,
+      deliveryDisposition: deliveryDisposition)
   }
 }

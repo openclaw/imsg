@@ -130,7 +130,7 @@ let rpcMethodDescriptors: [RPCMethodDescriptor] = [
   RPCMethodDescriptor("send", route: .send, lane: .mutation, macOSOnly: true),
   RPCMethodDescriptor(
     "send.tracked", route: .sendTracked, lane: .mutation,
-    bridge: .selector("clientMessageGuid"), macOSOnly: true),
+    database: [.ready], bridge: .selector("clientMessageGuidReservation"), macOSOnly: true),
   RPCMethodDescriptor(
     "chats.create", route: .chatsCreate, lane: .mutation, bridge: .selector("createChat"),
     macOSOnly: true),

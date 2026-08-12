@@ -319,7 +319,7 @@ extension RPCServer {
     clientMessageGuid: String? = nil
   ) async throws -> [String: Any] {
     let action: BridgeAction = file.isEmpty ? .sendMessage : .sendAttachment
-    if let clientMessageGuid {
+    if clientMessageGuid != nil {
       guard file.isEmpty else {
         throw RPCError.invalidParams("tracked sends do not support attachments")
       }
@@ -335,9 +335,7 @@ extension RPCServer {
         )
       }
       let selectors = status["selectors"] as? [String: Any]
-      guard status["client_message_guid"] as? Bool == true
-        || selectors?["clientMessageGuid"] as? Bool == true
-      else {
+      guard selectors?["clientMessageGuidReservation"] as? Bool == true else {
         throw DeliveryFailure(
           disposition: .notStarted,
           transport: .bridgeV2,

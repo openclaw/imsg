@@ -38,6 +38,7 @@ func fullRPCStatusBridgeSelectors() -> [String: Bool] {
   [
     "sendMessage": true,
     "clientMessageGuid": true,
+    "clientMessageGuidReservation": true,
     "sendAttachment": true,
     "sendMultipart": true,
     "sendReaction": true,

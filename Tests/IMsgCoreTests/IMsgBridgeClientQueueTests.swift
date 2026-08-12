@@ -173,6 +173,30 @@ struct IMsgBridgeClientQueueTests {
   }
 
   @Test
+  func helperDuplicateRejectionIsAuthoritativeNotStarted() async throws {
+    let harness = try BridgeClientHarness()
+    defer { harness.remove() }
+    let client = harness.client { publication in
+      let response: [String: Any] = [
+        "v": 2,
+        "id": publication.id,
+        "success": false,
+        "error": "clientMessageGuid is already reserved by another tracked send",
+        "delivery_disposition": "not_started",
+      ]
+      let data = try? JSONSerialization.data(withJSONObject: response)
+      try? data?.write(to: URL(fileURLWithPath: publication.responsePath))
+    }
+
+    let failure = try await deliveryFailure {
+      try await client.invoke(action: .sendMessage, timeout: 1)
+    }
+
+    #expect(failure.disposition == .notStarted)
+    #expect(failure.retrySafe)
+  }
+
+  @Test
   func unreadableQueueIsStillInFlight() async throws {
     let harness = try BridgeClientHarness()
     defer { harness.remove() }

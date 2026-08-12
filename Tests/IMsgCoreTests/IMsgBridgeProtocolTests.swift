@@ -88,6 +88,20 @@ struct IMsgBridgeProtocolTests {
   }
 
   @Test
+  func parsePropagatesAuthoritativeDeliveryDisposition() throws {
+    let raw: [String: Any] = [
+      "v": 2,
+      "id": "duplicate",
+      "success": false,
+      "error": "tracked GUID is already reserved",
+      "delivery_disposition": "not_started",
+    ]
+    let response = try BridgeResponse.parse(raw)
+    #expect(response.deliveryDisposition == .notStarted)
+    #expect(response.data["delivery_disposition"] == nil)
+  }
+
+  @Test
   func bridgeProtocolUsesLongerDefaultForSendActions() {
     #expect(IMsgBridgeProtocol.defaultResponseTimeout == 10.0)
     #expect(IMsgBridgeProtocol.defaultSendResponseTimeout == 150.0)

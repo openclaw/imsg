@@ -351,7 +351,7 @@ extension MessageStore {
                \(column("is_pending_satellite_send", defaultValue: "0")) AS is_pending_satellite_send,
                \(column("was_downgraded", defaultValue: "0")) AS was_downgraded
         FROM message m
-        WHERE \(column("guid", defaultValue: "''")) = ?
+        WHERE \(column("guid", defaultValue: "''")) = ? COLLATE NOCASE
         ORDER BY m.ROWID DESC
         LIMIT 1
         """

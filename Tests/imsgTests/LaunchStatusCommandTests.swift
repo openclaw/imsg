@@ -75,9 +75,9 @@ func statusOnlyAdvertisesStickerSendWhenSelectorsAreReady() {
 func statusOnlyAdvertisesTrackedSendForCurrentHelperCapability() {
   #expect(!StatusCommand.advertisedRPCMethods(selectors: [:]).contains("send.tracked"))
   #expect(
-    !StatusCommand.advertisedRPCMethods(selectors: ["clientMessageGuid": false])
+    !StatusCommand.advertisedRPCMethods(selectors: ["clientMessageGuidReservation": false])
       .contains("send.tracked"))
   #expect(
-    StatusCommand.advertisedRPCMethods(selectors: ["clientMessageGuid": true])
+    StatusCommand.advertisedRPCMethods(selectors: ["clientMessageGuidReservation": true])
       .contains("send.tracked"))
 }

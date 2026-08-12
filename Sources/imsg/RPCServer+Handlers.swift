@@ -195,7 +195,18 @@ extension RPCServer {
     }
 
     let database: RPCDatabaseResources?
-    if input.chatID != nil {
+    if tracked {
+      let required = try await databaseResources.require()
+      if let attemptID, try required.store.messageSendStatus(guid: attemptID) != nil {
+        throw DeliveryFailure(
+          disposition: .notStarted,
+          transport: .bridgeV2,
+          operation: BridgeAction.sendMessage.rawValue,
+          detail: "attempt_id already identifies a message; choose a new UUID"
+        )
+      }
+      database = required
+    } else if input.chatID != nil {
       database = try await databaseResources.require()
     } else {
       database = await databaseResources.available()
