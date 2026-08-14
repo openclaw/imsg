@@ -20,6 +20,7 @@ struct MessageStoreSchema: Sendable {
   let hasChatLastAddressedHandleColumn: Bool
   let hasIsReadColumn: Bool
   let hasDateReadColumn: Bool
+  let hasItemTypeColumn: Bool
 
   init(connection: Connection) throws {
     let messageColumns = try MessageStore.tableColumns(connection: connection, table: "message")
@@ -50,6 +51,7 @@ struct MessageStoreSchema: Sendable {
     self.hasChatLastAddressedHandleColumn = chatColumns.contains("last_addressed_handle")
     self.hasIsReadColumn = messageColumns.contains("is_read")
     self.hasDateReadColumn = messageColumns.contains("date_read")
+    self.hasItemTypeColumn = messageColumns.contains("item_type")
   }
 
   init(
@@ -70,7 +72,8 @@ struct MessageStoreSchema: Sendable {
     hasChatAccountLoginColumn: Bool? = nil,
     hasChatLastAddressedHandleColumn: Bool? = nil,
     hasIsReadColumn: Bool? = nil,
-    hasDateReadColumn: Bool? = nil
+    hasDateReadColumn: Bool? = nil,
+    hasItemTypeColumn: Bool? = nil
   ) {
     self.hasAttributedBody = hasAttributedBody ?? base.hasAttributedBody
     self.hasReactionColumns = hasReactionColumns ?? base.hasReactionColumns
@@ -96,5 +99,6 @@ struct MessageStoreSchema: Sendable {
       hasChatLastAddressedHandleColumn ?? base.hasChatLastAddressedHandleColumn
     self.hasIsReadColumn = hasIsReadColumn ?? base.hasIsReadColumn
     self.hasDateReadColumn = hasDateReadColumn ?? base.hasDateReadColumn
+    self.hasItemTypeColumn = hasItemTypeColumn ?? base.hasItemTypeColumn
   }
 }

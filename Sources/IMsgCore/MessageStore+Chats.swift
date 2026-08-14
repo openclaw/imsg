@@ -21,7 +21,7 @@ private struct ListChatsQuery {
 
   init(limit: Int, offset: Int = 0, unreadOnly: Bool, schema: MessageStoreSchema) {
     let routing = ChatRoutingSelection(schema: schema)
-    let unreadSelection = UnreadChatSelection(enabled: unreadOnly)
+    let unreadSelection = UnreadChatSelection(enabled: unreadOnly, schema: schema)
     if schema.hasChatMessageJoinMessageDateColumn {
       self.sql = """
         SELECT c.ROWID AS chat_rowid, IFNULL(c.display_name, c.chat_identifier) AS name,
@@ -61,17 +61,21 @@ private struct ListChatsQuery {
 private struct UnreadChatSelection {
   let joinClause: String
 
-  init(enabled: Bool) {
+  init(enabled: Bool, schema: MessageStoreSchema) {
     guard enabled else {
       self.joinClause = ""
       return
     }
+    let userMessageFilter =
+      schema.hasItemTypeColumn
+      ? " AND IFNULL(m_unread.item_type, 0) = 0"
+      : ""
     self.joinClause = """
       JOIN (
         SELECT DISTINCT cmj_unread.chat_id
         FROM chat_message_join cmj_unread
         JOIN message m_unread ON m_unread.ROWID = cmj_unread.message_id
-        WHERE m_unread.is_from_me = 0 AND m_unread.is_read = 0
+        WHERE m_unread.is_from_me = 0 AND m_unread.is_read = 0\(userMessageFilter)
       ) unread ON unread.chat_id = c.ROWID
       """
   }
@@ -86,6 +90,10 @@ private struct UnreadMessagesQuery {
     let selection = MessageRowSelection(store: store, includeChatID: true)
     self.selection = selection
     let placeholders = Array(repeating: "?", count: chatIDs.count).joined(separator: ", ")
+    let userMessageFilter =
+      store.schema.hasItemTypeColumn
+      ? " AND IFNULL(m.item_type, 0) = 0"
+      : ""
     self.sql = """
       SELECT \(selection.selectList)
       FROM message m
@@ -93,7 +101,7 @@ private struct UnreadMessagesQuery {
       LEFT JOIN handle h ON m.handle_id = h.ROWID
       WHERE cmj.chat_id IN (\(placeholders))
         AND m.is_from_me = 0
-        AND m.is_read = 0
+        AND m.is_read = 0\(userMessageFilter)
       ORDER BY cmj.chat_id, m.ROWID
       """
     self.bindings = chatIDs.map { $0 as Binding? }

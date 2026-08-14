@@ -32,7 +32,7 @@ Returned by `imsg chats --json` and JSON-RPC `chats.list`.
 | `account_id` | string | Routing diagnostic. Read-only. |
 | `account_login` | string | Routing diagnostic. Read-only. |
 | `last_addressed_handle` | string | Routing diagnostic. Read-only. |
-| `unread_count` | int | Count of unread inbound messages in the chat. Omitted on older database schemas without read state. |
+| `unread_count` | int | Count of unread inbound user messages in the chat. System events are excluded. Omitted on older database schemas without read state. |
 
 ## Message
 
