@@ -2,12 +2,6 @@ import Commander
 import Foundation
 import IMsgCore
 
-#if canImport(Darwin)
-  import Darwin
-#elseif canImport(Glibc)
-  import Glibc
-#endif
-
 enum RpcCommand {
   /// Contacts policy for RPC startup.
   ///
@@ -16,12 +10,12 @@ enum RpcCommand {
   /// remains `.notDetermined`. Interactive terminals keep the prompt-capable
   /// path so Contacts-backed name resolution still works.
   static var startupContactsAccessPolicy: ContactsAccessPolicy {
-    contactsAccessPolicy(stdinIsTTY: isatty(STDIN_FILENO) != 0)
+    contactsAccessPolicy(stdinIsTTY: ContactsAccessPolicy.stdinIsTTY)
   }
 
   /// Pure policy helper for tests and callers that already know interactivity.
   static func contactsAccessPolicy(stdinIsTTY: Bool) -> ContactsAccessPolicy {
-    stdinIsTTY ? .requestIfNeeded : .skipIfNotDetermined
+    .forStdin(isTTY: stdinIsTTY)
   }
 
   static let spec = CommandSpec(

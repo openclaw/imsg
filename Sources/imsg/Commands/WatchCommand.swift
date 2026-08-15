@@ -3,6 +3,11 @@ import Foundation
 import IMsgCore
 
 enum WatchCommand {
+  /// Same TTY rule as RPC: headless stdin must not prompt for Contacts.
+  static func contactsAccessPolicy(stdinIsTTY: Bool) -> ContactsAccessPolicy {
+    .forStdin(isTTY: stdinIsTTY)
+  }
+
   static let spec = CommandSpec(
     name: "watch",
     abstract: "Stream incoming messages",
@@ -55,7 +60,9 @@ enum WatchCommand {
     runtime: RuntimeOptions,
     storeFactory: @escaping (String) throws -> MessageStore = { try MessageStore(path: $0) },
     contactResolverFactory: @escaping () async -> any ContactResolving = {
-      await ContactResolver.create()
+      await ContactResolver.create(
+        accessPolicy: contactsAccessPolicy(stdinIsTTY: ContactsAccessPolicy.stdinIsTTY)
+      )
     },
     streamProvider:
       @escaping (

@@ -1,5 +1,11 @@
 import Foundation
 
+#if canImport(Darwin)
+  import Darwin
+#elseif canImport(Glibc)
+  import Glibc
+#endif
+
 #if os(macOS)
   @preconcurrency import Contacts
 #endif
@@ -37,6 +43,18 @@ public final class NoOpContactResolver: ContactResolving, Sendable {
 public enum ContactsAccessPolicy: Sendable {
   case requestIfNeeded
   case skipIfNotDetermined
+
+  /// Headless stdin (LaunchAgent, pipes, automation) must not block on a
+  /// Contacts prompt that will never resolve while authorization remains
+  /// `.notDetermined`. Interactive terminals keep the prompt-capable path.
+  public static func forStdin(isTTY: Bool) -> ContactsAccessPolicy {
+    isTTY ? .requestIfNeeded : .skipIfNotDetermined
+  }
+
+  /// Whether the current process stdin is an interactive TTY.
+  public static var stdinIsTTY: Bool {
+    isatty(STDIN_FILENO) != 0
+  }
 }
 
 /// A process-owned Contacts catalog. Reads stay synchronous for existing callers, while the

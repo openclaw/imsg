@@ -5,6 +5,11 @@ import IMsgCore
 // MARK: - search
 
 enum SearchCommand {
+  /// Same TTY rule as RPC: headless stdin must not prompt for Contacts.
+  static func contactsAccessPolicy(stdinIsTTY: Bool) -> ContactsAccessPolicy {
+    .forStdin(isTTY: stdinIsTTY)
+  }
+
   static let spec = CommandSpec(
     name: "search",
     abstract: "Search local Messages history",
@@ -30,7 +35,9 @@ enum SearchCommand {
     values: ParsedValues,
     runtime: RuntimeOptions,
     contactResolverFactory: @escaping () async -> any ContactResolving = {
-      await ContactResolver.create()
+      await ContactResolver.create(
+        accessPolicy: contactsAccessPolicy(stdinIsTTY: ContactsAccessPolicy.stdinIsTTY)
+      )
     }
   ) async throws {
     guard let q = values.option("query"), !q.isEmpty else {
