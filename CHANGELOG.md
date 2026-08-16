@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- Let headless `watch` and `search` start without waiting for an undetermined Contacts permission prompt while preserving interactive prompting (#238, thanks @SebTardif).
+
 ## 0.14.1 - 2026-08-11
 
 **Highlight:** search now finds messages whose text lives only in the rich-text
