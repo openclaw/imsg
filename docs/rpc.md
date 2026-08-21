@@ -686,7 +686,7 @@ Without a caption:
 Response:
 
 ```json
-{"ok":true,"event":"imessage.poll.created","guid":"...","message_id":"...","poll":{"kind":"created","event":"imessage.poll.created","question":"Dinner?","options":[{"id":"...","text":"Pizza"},{"id":"...","text":"Sushi"}]}}
+{"ok":true,"event":"imessage.poll.created","guid":"...","message_id":"...","comment":{"requested":true,"sent":true},"poll":{"kind":"created","event":"imessage.poll.created","question":"Dinner?","options":[{"id":"...","text":"Pizza"},{"id":"...","text":"Sushi"}]}}
 ```
 
 `poll.vote` casts a native vote after validating the poll and option against local history.
@@ -702,7 +702,19 @@ it must reconstruct the caller's currently selected options.
 {"jsonrpc":"2.0","id":"unvote","method":"polls.unvote","params":{"chat_id":42,"poll_guid":"POLL-GUID","option":"Sushi"}}
 ```
 
-`messages.poll.send` is accepted as an alias for `poll.send`. The caption echo is deliberately best-effort: if the poll is created but the follow-up caption send fails, the RPC still returns the poll result to avoid retrying and creating a duplicate poll.
+`messages.poll.send` is accepted as an alias for `poll.send`. The caption echo is deliberately best-effort: if the poll is created but the follow-up caption send fails, the RPC still returns the poll result with `ok: true` to avoid retrying and creating a duplicate poll.
+
+Because the balloon shows no question without it, the caption's outcome is reported in the result under `comment`:
+
+| Field | Meaning |
+| --- | --- |
+| `requested` | Whether a caption was supposed to be sent (`false` for `suppress_comment: true`). |
+| `sent` | Whether it landed. |
+| `error` | Redacted failure text. Present only when `requested` and not `sent`. |
+| `disposition` | `not_started`, `may_have_completed`, or `still_in_flight`, when the transport reported a delivery failure. |
+| `retry_safe` | Whether re-sending the caption is safe. Decide from this or `disposition`, never by matching `error`. |
+
+`requested: true` with `sent: false` means the poll is on screen with no visible question. Re-send the caption text alone; re-sending `poll.send` would duplicate the balloon.
 
 ### Stickers
 

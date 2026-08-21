@@ -273,7 +273,11 @@ extension RPCServer {
     // comment failure must not fail the RPC.
     let comment = commentValue.flatMap { $0.isEmpty ? nil : $0 } ?? question
     var poisonAfterResponse: DeliveryFailure?
-    if !suppressComment, !comment.isEmpty {
+    let pollGuid = (data["messageGuid"] as? String) ?? ""
+    let pollDescription = pollGuid.isEmpty ? "queued poll" : "poll \(pollGuid)"
+    if suppressComment || comment.isEmpty {
+      result["comment"] = PollCaptionStatus.suppressed
+    } else {
       do {
         _ = try await invokeBridge(
           action: .sendMessage,
@@ -281,21 +285,23 @@ extension RPCServer {
             "chatGuid": chatGUID,
             "message": comment,
           ])
+        result["comment"] = PollCaptionStatus.sent
       } catch let failure as DeliveryFailure {
         if failure.disposition == .stillInFlight {
           poisonAfterResponse = failure
         }
-        let pollGuid = (data["messageGuid"] as? String) ?? ""
-        let pollDescription = pollGuid.isEmpty ? "queued poll" : "poll \(pollGuid)"
+        result["comment"] = PollCaptionStatus.failed(failure)
         FileHandle.standardError.write(
           Data("[imsg] poll.send: comment echo delivery unresolved for \(pollDescription)\n".utf8))
       } catch {
-        let pollGuid = (data["messageGuid"] as? String) ?? ""
-        let pollDescription = pollGuid.isEmpty ? "queued poll" : "poll \(pollGuid)"
+        result["comment"] = PollCaptionStatus.failed(error)
         FileHandle.standardError.write(
           Data("[imsg] poll.send: comment echo failed for \(pollDescription): \(error)\n".utf8))
       }
     }
+    // `ok` stays true when only the caption failed: the poll balloon really did
+    // land, and a caller that treats this as a failed send would re-send and
+    // duplicate it. `comment` is what tells them the question is missing.
     respond(id: id, result: result)
     if let poisonAfterResponse {
       throw RPCMutationPoisonSignal(failure: poisonAfterResponse)

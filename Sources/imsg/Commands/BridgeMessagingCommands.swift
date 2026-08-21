@@ -61,6 +61,11 @@ enum BridgeOutput {
 
   /// Invoke a bridge action and emit the result. Returns the data dict on
   /// success or nil on failure (after emitting an error message).
+  ///
+  /// `finalize` runs after the action succeeds but before anything is emitted,
+  /// so a command that performs follow-up work can fold that work's outcome
+  /// into the single emitted object. Callers that pass no `finalize` emit the
+  /// bridge payload unchanged.
   static func invokeAndEmit(
     action: BridgeAction,
     params: [String: Any],
@@ -69,16 +74,21 @@ enum BridgeOutput {
       action, params in
       try await IMsgBridgeClient.shared.invoke(action: action, params: params)
     },
+    finalize: (([String: Any]) async -> [String: Any])? = nil,
     summary: (([String: Any]) -> String)
   ) async throws -> [String: Any] {
+    let data: [String: Any]
     do {
-      let data = try await invokeBridge(action, params)
-      emit(data, runtime: runtime, summary: summary(data))
-      return data
+      data = try await invokeBridge(action, params)
     } catch {
       emitError(String(describing: error), runtime: runtime)
       throw EmittedError()
     }
+    // Outside the `do`: the action already succeeded, so follow-up work must
+    // never be reported as an action failure.
+    let payload = await finalize?(data) ?? data
+    emit(payload, runtime: runtime, summary: summary(payload))
+    return payload
   }
 }
 

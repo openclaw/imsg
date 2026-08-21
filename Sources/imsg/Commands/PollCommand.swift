@@ -19,6 +19,12 @@ enum PollCommand {
       appears for free; `--comment` overrides the caption text when it should
       differ from the title. Use `--no-comment` when the caller renders its own
       visible context before the poll.
+
+      The caption is best-effort but not silent: the result reports it under
+      `comment` (`requested`, `sent`, plus `error`/`disposition`/`retry_safe`
+      when it fails). A requested caption that was not sent means the balloon is
+      on screen with no question — re-send the caption text alone, never the
+      poll, which would duplicate the balloon.
       """,
     signature: CommandSignatures.withRuntimeFlags(
       CommandSignature(
@@ -129,16 +135,6 @@ enum PollCommand {
       params["selectedMessageGuid"] = reply
     }
 
-    let data = try await BridgeOutput.invokeAndEmit(
-      action: .sendPoll,
-      params: params,
-      runtime: runtime,
-      invokeBridge: invokeBridge
-    ) { data in
-      let guid = (data["messageGuid"] as? String) ?? ""
-      return guid.isEmpty ? "poll: queued" : "poll: sent (guid=\(guid))"
-    }
-
     // Messages renders only the poll options on the balloon — the poll title
     // (payload item.title) is never shown to recipients. To make the poll's
     // question visible we send it as a PLAIN caption message right after the
@@ -150,24 +146,34 @@ enum PollCommand {
     // Callers set only --question; the caption comes for free, so agents need no
     // knowledge of this. --comment overrides the echoed text.
     let comment = values.option("comment").flatMap { $0.isEmpty ? nil : $0 } ?? question
-    let pollGuid = (data["messageGuid"] as? String) ?? ""
-    if !values.flag("noComment"), !comment.isEmpty {
-      // Best-effort, mirroring the RPC path: the poll already delivered, so a
-      // caption failure must not exit nonzero — a retry would send a duplicate
-      // poll. Report the failure on stderr and leave the poll success intact.
-      do {
-        _ = try await invokeBridge(
-          .sendMessage,
-          [
-            "chatGuid": chat,
-            "message": comment,
-          ])
-      } catch {
-        let pollDescription = pollGuid.isEmpty ? "queued poll" : "poll \(pollGuid)"
-        FileHandle.standardError.write(
-          Data("[imsg] poll send: comment echo failed for \(pollDescription): \(error)\n".utf8))
-      }
-    }
+    let wantsComment = !values.flag("noComment") && !comment.isEmpty
+
+    _ = try await BridgeOutput.invokeAndEmit(
+      action: .sendPoll,
+      params: params,
+      runtime: runtime,
+      invokeBridge: invokeBridge,
+      finalize: { data in
+        await PollCaptionStatus.sendCaption(
+          after: data,
+          chat: chat,
+          comment: wantsComment ? comment : nil,
+          invokeBridge: invokeBridge
+        )
+      },
+      summary: sendSummary
+    )
+  }
+
+  /// A poll whose caption never landed shows no question at all, so say so
+  /// rather than reporting a bare success.
+  private static func sendSummary(_ data: [String: Any]) -> String {
+    let guid = (data["messageGuid"] as? String) ?? ""
+    let base = guid.isEmpty ? "poll: queued" : "poll: sent (guid=\(guid))"
+    guard let status = data["comment"] as? [String: Any],
+      PollCaptionStatus.isUndelivered(status)
+    else { return base }
+    return "\(base); caption NOT delivered — the question is not visible on the balloon"
   }
 
   private static func runVote(
