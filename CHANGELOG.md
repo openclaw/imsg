@@ -5,6 +5,7 @@
 ### Fixes
 
 - Let headless `watch` and `search` start without waiting for an undetermined Contacts permission prompt while preserving interactive prompting (#238, thanks @SebTardif).
+- Strip generated documentation heading markup in one pass so malformed tag boundaries cannot survive into the table of contents.
 
 ## 0.14.1 - 2026-08-11
 

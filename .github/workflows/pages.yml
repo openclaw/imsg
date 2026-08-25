@@ -8,6 +8,8 @@ on:
       - "docs/**"
       - "scripts/build-docs-site.mjs"
       - "scripts/docs-site-assets.mjs"
+      - "scripts/html-text.mjs"
+      - "scripts/html-text.test.mjs"
       - "Makefile"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
@@ -37,6 +39,9 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
+
+      - name: Test docs helpers
+        run: node --test scripts/html-text.test.mjs
 
       - name: Build docs site
         run: make docs-site
