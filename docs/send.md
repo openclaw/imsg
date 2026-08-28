@@ -26,6 +26,16 @@ When `chat.db` is readable and the recipient already has a direct chat, `imsg`
 targets that chat's GUID instead of constructing a new buddy send. New
 recipients still use the existing buddy-send behavior.
 
+If that GUID is absent from Messages.app's live chats, `imsg` recovers from
+the pre-dispatch `-1728` lookup error by resolving the participant on the
+chat's original account. This requires a direct-chat GUID, exactly one matching
+database participant, and a known account with the same service. It also works
+for direct conversations selected with `--chat-id`, `--chat-guid`, or
+`--chat-identifier`. Groups and unverified targets never use this recovery.
+Errors during `send` still have an uncertain outcome and are never retried.
+This account-scoped recovery does not change service and is independent of
+`--no-sms-fallback`.
+
 ## Group sends
 
 You'll typically want `--chat-id`:
@@ -70,7 +80,7 @@ imsg send --to "+14155551212" --text "hi" --no-sms-fallback
 - `imessage` — force iMessage. Fails fast if the recipient isn't on iMessage.
 - `sms` — force SMS relay. Requires Text Message Forwarding enabled on your iPhone for this Mac.
 
-Fallback is intentionally narrow: it does not run for explicit `--service imessage`, `--service sms`, chat-target sends, email recipients, or attachment sends. For groups, omit `--service`. Group sends always use the chat's existing service.
+SMS fallback is intentionally narrow: it does not run for explicit `--service imessage`, `--service sms`, explicit chat-target sends, email recipients, or attachment sends. For groups, omit `--service`. Group sends always use the chat's existing service.
 
 Failed mutations report one of three delivery dispositions: `not_started`
 (retry is safe), `may_have_completed` (outcome unknown; do not retry), or

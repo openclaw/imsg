@@ -130,6 +130,23 @@ enum ChatTargetResolver {
     return true
   }
 
+  static func directParticipantTarget(
+    store: MessageStore?,
+    resolvedTarget: ResolvedChatTarget,
+    directChatInfo: ChatInfo?
+  ) -> DirectParticipantTarget? {
+    guard let store else { return nil }
+    let chat =
+      directChatInfo
+      ?? resolvedTarget.preferredIdentifier.flatMap {
+        try? store.chatInfo(matchingExactTarget: $0)
+      }
+    guard let chat, let participants = try? store.participants(chatID: chat.id) else {
+      return nil
+    }
+    return DirectParticipantTarget(chat: chat, participants: participants)
+  }
+
   static func resolveRecipientName(
     _ recipient: String,
     contacts: any ContactResolving

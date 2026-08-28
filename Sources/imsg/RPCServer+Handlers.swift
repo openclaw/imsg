@@ -262,7 +262,9 @@ extension RPCServer {
       region: region,
       chatIdentifier: input.hasChatTarget ? resolvedTarget.chatIdentifier : "",
       chatGUID: input.hasChatTarget ? resolvedTarget.chatGUID : (directChatInfo?.guid ?? ""),
-      allowSMSFallback: allowSMSFallback
+      allowSMSFallback: allowSMSFallback,
+      directParticipantTarget: ChatTargetResolver.directParticipantTarget(
+        store: database?.store, resolvedTarget: resolvedTarget, directChatInfo: directChatInfo)
     )
     let sentAt = Date()
 

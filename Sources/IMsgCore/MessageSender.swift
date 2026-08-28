@@ -15,6 +15,7 @@ public struct MessageSendOptions: Sendable {
   public var chatIdentifier: String
   public var chatGUID: String
   public var allowSMSFallback: Bool
+  public var directParticipantTarget: DirectParticipantTarget?
 
   public init(
     recipient: String,
@@ -24,7 +25,8 @@ public struct MessageSendOptions: Sendable {
     region: String = "US",
     chatIdentifier: String = "",
     chatGUID: String = "",
-    allowSMSFallback: Bool = true
+    allowSMSFallback: Bool = true,
+    directParticipantTarget: DirectParticipantTarget? = nil
   ) {
     self.recipient = recipient
     self.text = text
@@ -34,6 +36,7 @@ public struct MessageSendOptions: Sendable {
     self.chatIdentifier = chatIdentifier
     self.chatGUID = chatGUID
     self.allowSMSFallback = allowSMSFallback
+    self.directParticipantTarget = directParticipantTarget
   }
 }
 
@@ -159,6 +162,9 @@ public struct MessageSender {
     smsFallbackEligible: Bool
   ) throws {
     let script = appleScript()
+    let directTarget = resolved.directParticipantTarget.flatMap {
+      $0.chatGUID == chatTarget ? $0 : nil
+    }
     func arguments(forService service: MessageService, forceBuddy: Bool = false) -> [String] {
       [
         resolved.recipient,
@@ -168,6 +174,9 @@ public struct MessageSender {
         resolved.attachmentPath.isEmpty ? "0" : "1",
         chatTarget,
         useChat && !forceBuddy ? "1" : "0",
+        directTarget?.accountID ?? "",
+        directTarget?.recipient ?? "",
+        directTarget?.service.rawValue ?? "",
       ]
     }
 
@@ -195,10 +204,27 @@ public struct MessageSender {
           set useAttachment to item 5 of argv
           set chatId to item 6 of argv
           set useChat to item 7 of argv
+          set directAccountID to item 8 of argv
+          set directRecipient to item 9 of argv
+          set directService to item 10 of argv
 
           tell application "Messages"
               if useChat is "1" then
-                  set targetChat to chat id chatId
+                  -- Resolve eagerly; only this lookup may recover before dispatch.
+                  try
+                      set targetChat to get chat id chatId
+                  on error lookupMessage number lookupNumber
+                      if lookupNumber is not -1728 or directAccountID is "" then
+                          error number lookupNumber
+                      end if
+                      set targetAccount to get account id directAccountID
+                      if directService is "imessage" then
+                          if (service type of targetAccount) is not iMessage then error number -1728
+                      else
+                          if (service type of targetAccount) is not SMS then error number -1728
+                      end if
+                      set targetChat to get buddy directRecipient of targetAccount
+                  end try
                   if theMessage is not "" then
                       set dispatchPhase to "dispatch_started"
                       send theMessage to targetChat

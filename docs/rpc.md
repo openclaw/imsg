@@ -521,6 +521,11 @@ Params (chat target):
 `to` and chat selectors are mutually exclusive. Direct sends require `to` and
 no chat selector; chat-target sends require exactly one selector and no `to`.
 
+AppleScript sends use the same [direct-chat recovery](send.md#direct-sends) as
+the CLI: a missing live chat can resolve through its verified participant on
+the original account, before dispatch. This does not change service and is
+independent of `allow_sms_fallback`.
+
 Result:
 
 ```json

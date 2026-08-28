@@ -4,6 +4,7 @@
 
 ### Fixes
 
+- Recover missing live direct-chat objects through the verified participant on the original account before dispatch, for CLI and RPC sends (#244, thanks @0xble).
 - Let headless `watch` and `search` start without waiting for an undetermined Contacts permission prompt while preserving interactive prompting (#238, thanks @SebTardif).
 
 ### Maintenance

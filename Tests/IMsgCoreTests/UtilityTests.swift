@@ -385,11 +385,12 @@ func messageSenderBuildsArguments() throws {
       region: "US"
     )
   )
-  #expect(captured.count == 7)
+  #expect(captured.count == 10)
   #expect(captured[0] == "+16502530000")
   #expect(captured[2] == "imessage")
   #expect(captured[5].isEmpty)
   #expect(captured[6] == "0")
+  #expect(Array(captured[7...]) == ["", "", ""])
 }
 
 @Test
