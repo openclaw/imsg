@@ -136,19 +136,22 @@ func richLinkPreparerDropsMultiFrameImages() async throws {
   #expect(staged.withValue { $0 } == false)
 }
 
-@Test
+@Test(.timeLimit(.minutes(1)))
 func richLinkPreparerCancellationDoesNotWaitForCancellationIgnoringLoader() async throws {
   typealias Continuation = CheckedContinuation<RichLinkFetchedMetadata?, Never>
   let continuation = RichLinkTestBox<Continuation?>(nil)
-  let loaderStarted = RichLinkTestBox(false)
+  let loaderStarted = AsyncStream<Void>.makeStream()
   let staged = RichLinkTestBox(false)
   let task = Task {
     try await RichLinkPreparer.prepare(
       "https://example.com",
+      // Outlast the test limit so the deadline cannot hide broken cancellation.
+      timeout: .seconds(120),
       loadMetadata: { _ in
         return await withCheckedContinuation { pending in
           continuation.withValue { $0 = pending }
-          loaderStarted.withValue { $0 = true }
+          loaderStarted.continuation.yield(())
+          loaderStarted.continuation.finish()
         }
       },
       stageImage: { _ in
@@ -158,14 +161,10 @@ func richLinkPreparerCancellationDoesNotWaitForCancellationIgnoringLoader() asyn
     )
   }
 
-  let clock = ContinuousClock()
-  let waitDeadline = clock.now.advanced(by: .seconds(1))
-  while !loaderStarted.withValue({ $0 }), clock.now < waitDeadline {
-    try await Task.sleep(for: .milliseconds(1))
+  for await _ in loaderStarted.stream {
+    break
   }
-  #expect(loaderStarted.withValue { $0 })
 
-  let cancelledAt = clock.now
   task.cancel()
   do {
     _ = try await task.value
@@ -175,13 +174,13 @@ func richLinkPreparerCancellationDoesNotWaitForCancellationIgnoringLoader() asyn
   } catch {
     Issue.record("unexpected error: \(error)")
   }
-  let elapsed = cancelledAt.duration(to: clock.now)
-  continuation.withValue { pending in
-    pending?.resume(returning: nil)
-    pending = nil
+  // Cancellation must return while the cancellation-ignoring loader is suspended.
+  let pendingLoader = continuation.withValue { pending in
+    defer { pending = nil }
+    return pending
   }
+  try #require(pendingLoader).resume(returning: nil)
 
-  #expect(elapsed < .seconds(1))
   #expect(staged.withValue { $0 } == false)
 }
 
