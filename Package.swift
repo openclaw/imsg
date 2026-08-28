@@ -11,7 +11,7 @@ let package = Package(
   dependencies: [
     .package(url: "https://github.com/steipete/Commander.git", from: "0.2.4"),
     .package(url: "https://github.com/stephencelis/SQLite.swift.git", from: "0.16.0"),
-    .package(url: "https://github.com/PhoneNumberKit/PhoneNumberKit.git", from: "5.0.6"),
+    .package(url: "https://github.com/PhoneNumberKit/PhoneNumberKit.git", from: "5.0.7"),
   ],
   targets: {
     var targets: [Target] = [

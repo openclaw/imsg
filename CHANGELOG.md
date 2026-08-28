@@ -6,6 +6,10 @@
 
 - Let headless `watch` and `search` start without waiting for an undetermined Contacts permission prompt while preserving interactive prompting (#238, thanks @SebTardif).
 
+### Maintenance
+
+- Update PhoneNumberKit to 5.0.7, the CI SwiftLint pin to 0.65.1, and the docs build runtime to Node 26.
+
 ## 0.14.1 - 2026-08-11
 
 **Highlight:** search now finds messages whose text lives only in the rich-text
