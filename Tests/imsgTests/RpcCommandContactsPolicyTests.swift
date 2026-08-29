@@ -55,3 +55,16 @@ struct SearchCommandContactsPolicyTests {
     #expect(SearchCommand.contactsAccessPolicy(stdinIsTTY: true) == .requestIfNeeded)
   }
 }
+
+@Suite("NicknameCommand Contacts policy")
+struct NicknameCommandContactsPolicyTests {
+  @Test("nickname --local uses skipIfNotDetermined when stdin is not a TTY")
+  func headlessLocalSkipsUndetermined() {
+    #expect(NicknameCommand.contactsAccessPolicy(stdinIsTTY: false) == .skipIfNotDetermined)
+  }
+
+  @Test("nickname --local keeps requestIfNeeded on interactive stdin")
+  func interactiveLocalRequestsIfNeeded() {
+    #expect(NicknameCommand.contactsAccessPolicy(stdinIsTTY: true) == .requestIfNeeded)
+  }
+}

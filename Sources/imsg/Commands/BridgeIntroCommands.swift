@@ -277,6 +277,11 @@ enum WhoisCommand {
 // MARK: - nickname
 
 enum NicknameCommand {
+  /// Same TTY rule as RPC: headless stdin must not prompt for Contacts.
+  static func contactsAccessPolicy(stdinIsTTY: Bool) -> ContactsAccessPolicy {
+    .forStdin(isTTY: stdinIsTTY)
+  }
+
   static let spec = CommandSpec(
     name: "nickname",
     abstract: "Show contact-card / nickname info for a handle",
@@ -313,7 +318,10 @@ enum NicknameCommand {
     values: ParsedValues,
     runtime: RuntimeOptions,
     contactResolverFactory: @escaping (String) async -> any ContactResolving = { region in
-      await ContactResolver.create(region: region)
+      await ContactResolver.create(
+        region: region,
+        accessPolicy: contactsAccessPolicy(stdinIsTTY: ContactsAccessPolicy.stdinIsTTY)
+      )
     }
   ) async throws {
     guard let addr = values.option("address"), !addr.isEmpty else {
