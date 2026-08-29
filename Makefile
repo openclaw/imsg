@@ -6,7 +6,7 @@ help:
 	@printf "%s\n" \
 		"make format     - swift format in-place" \
 		"make lint       - swift format lint + swiftlint" \
-		"make test       - sync version, patch deps, run swift test" \
+		"make test       - run docs-site and Swift tests" \
 		"make build      - universal release build into bin/" \
 		"make build-dylib - build injectable dylib for Messages.app" \
 		"make imsg       - clean rebuild + run debug binary (ARGS=...)" \
@@ -21,6 +21,7 @@ lint:
 	swiftlint
 
 test:
+	node --test scripts/build-docs-site.test.mjs
 	scripts/generate-version.sh
 	swift package resolve
 	scripts/patch-deps.sh
