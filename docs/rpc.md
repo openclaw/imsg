@@ -677,16 +677,22 @@ With a caption override:
 {"jsonrpc":"2.0","id":"poll","method":"poll.send","params":{"chat_id":42,"question":"Dinner?","comment":"Vote by 5pm","options":["Pizza","Sushi"]}}
 ```
 
+Response to either of the two requests above, which do send a caption:
+
+```json
+{"ok":true,"event":"imessage.poll.created","guid":"...","message_id":"...","comment":{"requested":true,"sent":true,"verified":true},"poll":{"kind":"created","event":"imessage.poll.created","question":"Dinner?","options":[{"id":"...","text":"Pizza"},{"id":"...","text":"Sushi"}]}}
+```
+
 Without a caption:
 
 ```json
 {"jsonrpc":"2.0","id":"poll","method":"poll.send","params":{"chat_id":42,"question":"Dinner?","suppress_comment":true,"options":["Pizza","Sushi"]}}
 ```
 
-Response:
+That request suppresses the caption, so its response reports it as never requested:
 
 ```json
-{"ok":true,"event":"imessage.poll.created","guid":"...","message_id":"...","comment":{"requested":true,"sent":true},"poll":{"kind":"created","event":"imessage.poll.created","question":"Dinner?","options":[{"id":"...","text":"Pizza"},{"id":"...","text":"Sushi"}]}}
+{"ok":true,"event":"imessage.poll.created","guid":"...","message_id":"...","comment":{"requested":false,"sent":false},"poll":{"kind":"created","event":"imessage.poll.created","question":"Dinner?","options":[{"id":"...","text":"Pizza"},{"id":"...","text":"Sushi"}]}}
 ```
 
 `poll.vote` casts a native vote after validating the poll and option against local history.
@@ -709,12 +715,13 @@ Because the balloon shows no question without it, the caption's outcome is repor
 | Field | Meaning |
 | --- | --- |
 | `requested` | Whether a caption was supposed to be sent (`false` for `suppress_comment: true`). |
-| `sent` | Whether it landed. |
+| `sent` | Whether it landed. Not reported true on a bare bridge acknowledgement when the row can be checked. |
+| `verified` | Whether the caption's row was found in the target chat. Absent when the check could not run — that is "we did not look", not a verdict. |
 | `error` | Redacted failure text. Present only when `requested` and not `sent`. |
 | `disposition` | `not_started`, `may_have_completed`, or `still_in_flight`, when the transport reported a delivery failure. |
 | `retry_safe` | Whether re-sending the caption is safe. Decide from this or `disposition`, never by matching `error`. |
 
-`requested: true` with `sent: false` means the poll is on screen with no visible question. Re-send the caption text alone; re-sending `poll.send` would duplicate the balloon.
+`requested: true` with `sent: false` means the poll is on screen with no visible question. Re-send the caption text alone; re-sending `poll.send` would duplicate the balloon. This includes the case where the bridge acknowledged the caption but its row never appeared (`verified: false`, `disposition: may_have_completed`) — an accepted caption that did not persist leaves the recipient with exactly the same unlabelled balloon as one that was never sent.
 
 ### Stickers
 

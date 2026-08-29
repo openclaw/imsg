@@ -21,10 +21,13 @@ enum PollCommand {
       visible context before the poll.
 
       The caption is best-effort but not silent: the result reports it under
-      `comment` (`requested`, `sent`, plus `error`/`disposition`/`retry_safe`
-      when it fails). A requested caption that was not sent means the balloon is
-      on screen with no question — re-send the caption text alone, never the
-      poll, which would duplicate the balloon.
+      `comment` (`requested`, `sent`, `verified`, plus
+      `error`/`disposition`/`retry_safe` when it fails). A bridge
+      acknowledgement is not proof of delivery, so the caption's row is looked
+      up in the target chat before `sent` is reported true. A requested caption
+      that was not sent means the balloon is on screen with no question —
+      re-send the caption text alone, never the poll, which would duplicate the
+      balloon.
       """,
     signature: CommandSignatures.withRuntimeFlags(
       CommandSignature(
@@ -87,12 +90,14 @@ enum PollCommand {
     invokeBridge: @escaping (BridgeAction, [String: Any]) async throws -> [String: Any] = {
       action, params in
       try await IMsgBridgeClient.shared.invoke(action: action, params: params)
-    }
+    },
+    verifyCaption: ((_ captionGUID: String) async -> Bool?)? = nil
   ) async throws {
     switch values.argument(0) {
     case "send":
       try await runSend(
-        values: values, runtime: runtime, storeFactory: storeFactory, invokeBridge: invokeBridge)
+        values: values, runtime: runtime, storeFactory: storeFactory, invokeBridge: invokeBridge,
+        verifyCaption: verifyCaption)
     case "vote":
       try await runVote(
         remove: false,
@@ -110,7 +115,8 @@ enum PollCommand {
     values: ParsedValues,
     runtime: RuntimeOptions,
     storeFactory: @escaping (String) throws -> MessageStore,
-    invokeBridge: @escaping (BridgeAction, [String: Any]) async throws -> [String: Any]
+    invokeBridge: @escaping (BridgeAction, [String: Any]) async throws -> [String: Any],
+    verifyCaption: ((_ captionGUID: String) async -> Bool?)? = nil
   ) async throws {
     if values.option("comment") != nil, values.flag("noComment") {
       throw ParsedValuesError.invalidOption("comment")
@@ -147,6 +153,17 @@ enum PollCommand {
     // knowledge of this. --comment overrides the echoed text.
     let comment = values.option("comment").flatMap { $0.isEmpty ? nil : $0 } ?? question
     let wantsComment = !values.flag("noComment") && !comment.isEmpty
+    // A bridge acknowledgement is not proof the caption row persisted, so look
+    // for it. `try?`: an unreadable database means we simply do not check, and
+    // must never turn that into a delivery claim either way.
+    let dbPath = values.option("db") ?? MessageStore.defaultPath
+    let verifier =
+      verifyCaption
+      ?? { captionGUID in
+        // Opened lazily: a suppressed caption must not pay for a database open.
+        await PollCaptionStatus.verifyCaption(
+          captionGUID: captionGUID, chatGUID: chat, store: try? storeFactory(dbPath))
+      }
 
     _ = try await BridgeOutput.invokeAndEmit(
       action: .sendPoll,
@@ -158,7 +175,8 @@ enum PollCommand {
           after: data,
           chat: chat,
           comment: wantsComment ? comment : nil,
-          invokeBridge: invokeBridge
+          invokeBridge: invokeBridge,
+          verify: verifier
         )
       },
       summary: sendSummary

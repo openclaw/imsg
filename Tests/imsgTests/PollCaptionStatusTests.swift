@@ -34,7 +34,8 @@ private func pollSendValues(
 /// returning the decoded JSON object the command emitted.
 private func runPollSend(
   values: ParsedValues,
-  captionError: Error? = nil
+  captionError: Error? = nil,
+  verified: Bool? = true
 ) async throws -> (json: [String: Any], calls: Int, output: String) {
   let runtime = RuntimeOptions(parsedValues: values)
   var calls = 0
@@ -47,8 +48,9 @@ private func runPollSend(
         if action == .sendMessage, let captionError {
           throw captionError
         }
-        return ["messageGuid": "poll-guid"]
-      }
+        return ["messageGuid": action == .sendMessage ? "caption-guid" : "poll-guid"]
+      },
+      verifyCaption: { _ in verified }
     )
   }
   let line = output.split(separator: "\n").last.map(String.init) ?? ""
@@ -66,6 +68,41 @@ func pollSendReportsCaptionDeliveryWhenItLands() async throws {
   let comment = try #require(json["comment"] as? [String: Any])
   #expect(comment["requested"] as? Bool == true)
   #expect(comment["sent"] as? Bool == true)
+  #expect(comment["verified"] as? Bool == true)
+  #expect(comment["error"] == nil)
+}
+
+@Test
+func pollSendWillNotClaimDeliveryWhenTheCaptionRowNeverAppears() async throws {
+  // The bridge acknowledged the send, but no caption row reached the chat —
+  // the recipient is looking at a question-less balloon, so `sent` must be
+  // false even though nothing threw.
+  let (json, calls, _) = try await runPollSend(
+    values: pollSendValues(flags: ["jsonOutput"]),
+    verified: false
+  )
+
+  #expect(calls == 2)
+  #expect(json["messageGuid"] as? String == "poll-guid")
+  let comment = try #require(json["comment"] as? [String: Any])
+  #expect(comment["requested"] as? Bool == true)
+  #expect(comment["sent"] as? Bool == false)
+  #expect(comment["verified"] as? Bool == false)
+  #expect(comment["disposition"] as? String == "may_have_completed")
+  #expect(comment["retry_safe"] as? Bool == false)
+}
+
+@Test
+func pollSendOmitsVerifiedWhenTheCheckCannotRun() async throws {
+  // No readable database: we did not look, so we claim neither outcome.
+  let (json, _, _) = try await runPollSend(
+    values: pollSendValues(flags: ["jsonOutput"]),
+    verified: nil
+  )
+
+  let comment = try #require(json["comment"] as? [String: Any])
+  #expect(comment["sent"] as? Bool == true)
+  #expect(comment["verified"] == nil)
   #expect(comment["error"] == nil)
 }
 
@@ -143,7 +180,8 @@ func pollSendHumanSummaryStaysQuietWhenCaptionLands() async throws {
 /// Runs `poll.send` over the RPC server, returning the response result object.
 private func runRPCPollSend(
   suppressComment: Bool = false,
-  captionError: Error? = nil
+  captionError: Error? = nil,
+  verified: Bool? = true
 ) async throws -> [String: Any] {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()
@@ -155,8 +193,9 @@ private func runRPCPollSend(
       if action == .sendMessage, let captionError {
         throw captionError
       }
-      return ["messageGuid": "poll-guid"]
-    }
+      return ["messageGuid": action == .sendMessage ? "caption-guid" : "poll-guid"]
+    },
+    verifyCaption: { _, _, _ in verified }
   )
 
   let suppress = suppressComment ? #","suppress_comment":true"# : ""
@@ -178,6 +217,20 @@ func rpcPollSendReportsCaptionDeliveryWhenItLands() async throws {
   let comment = try #require(result["comment"] as? [String: Any])
   #expect(comment["requested"] as? Bool == true)
   #expect(comment["sent"] as? Bool == true)
+  #expect(comment["verified"] as? Bool == true)
+}
+
+@Test
+func rpcPollSendWillNotClaimDeliveryWhenTheCaptionRowNeverAppears() async throws {
+  let result = try await runRPCPollSend(verified: false)
+
+  // The balloon landed, so the send is still a success…
+  #expect(result["ok"] as? Bool == true)
+  // …but the question is not on screen, and the caller has to be told.
+  let comment = try #require(result["comment"] as? [String: Any])
+  #expect(comment["sent"] as? Bool == false)
+  #expect(comment["verified"] as? Bool == false)
+  #expect(comment["disposition"] as? String == "may_have_completed")
 }
 
 @Test

@@ -87,12 +87,23 @@ Messages does not render the payload title on the poll balloon, so `poll send` f
 The caption *is* the question as far as recipients are concerned, so `poll send` reports whether it landed under `comment` rather than leaving a failure on stderr:
 
 ```json
+{"messageGuid":"...","comment":{"requested":true,"sent":true,"verified":true}}
+{"messageGuid":"...","comment":{"requested":true,"sent":false,"verified":false,"error":"The bridge accepted the caption but no matching row appeared in the target chat.","disposition":"may_have_completed","retry_safe":false}}
+{"messageGuid":"...","comment":{"requested":true,"sent":false,"error":"...","disposition":"...","retry_safe":false}}
 {"messageGuid":"...","comment":{"requested":true,"sent":true}}
-{"messageGuid":"...","comment":{"requested":true,"sent":false,"error":"...","disposition":"may_have_completed","retry_safe":false}}
 {"messageGuid":"...","comment":{"requested":false,"sent":false}}
 ```
 
-`requested` is false when the caption was suppressed. A `requested` caption that is not `sent` means the poll balloon is on screen with no question next to it: re-send just the caption text, never the poll, or the balloon is duplicated. `disposition` and `retry_safe` come from the transport's delivery report when it produced one — decide re-send safety from `disposition`, not by matching `error`. The command still exits 0 in that case, because the poll itself did land.
+`requested` is false when the caption was suppressed. **A `requested` caption that is not `sent` means the poll balloon is on screen with no question next to it**: re-send just the caption text, never the poll, or the balloon is duplicated. The command still exits 0 in that case, because the poll itself did land.
+
+A bridge acknowledgement only proves the transport accepted the send, so `poll send` also looks for the caption's row in the target chat before claiming delivery:
+
+- `sent: true, verified: true` — the row was found. The question is visible.
+- `sent: false, verified: false` — the bridge accepted it but the row never appeared. Treated as undelivered, with the transport's `may_have_completed` disposition because nothing can prove which way it went.
+- `sent: true` with no `verified` key — the check could not run (no readable database, or no caption GUID to look for). Transport acknowledgement only; not a delivery claim.
+- `sent: false` with a `disposition` other than the above — the caption send itself failed.
+
+`disposition` and `retry_safe` come from the transport's delivery report — decide re-send safety from `disposition`, not by matching `error`.
 
 Vote or remove a vote with one option selector:
 

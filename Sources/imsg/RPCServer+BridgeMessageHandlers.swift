@@ -279,13 +279,24 @@ extension RPCServer {
       result["comment"] = PollCaptionStatus.suppressed
     } else {
       do {
-        _ = try await invokeBridge(
+        let captionData = try await invokeBridge(
           action: .sendMessage,
           params: [
             "chatGuid": chatGUID,
             "message": comment,
           ])
-        result["comment"] = PollCaptionStatus.sent
+        // The bridge acknowledging the send is not proof the caption row
+        // reached the chat, and an accepted-but-absent caption leaves exactly
+        // the question-less balloon this status exists to expose.
+        let captionGUID = (captionData["messageGuid"] as? String) ?? ""
+        let verified = await captionVerifier(
+          captionGUID, chatGUID, await databaseResources.available()?.store)
+        result["comment"] = PollCaptionStatus.status(forVerification: verified)
+        if verified == false {
+          FileHandle.standardError.write(
+            Data(
+              "[imsg] poll.send: caption \(captionGUID) never appeared in \(chatGUID)\n".utf8))
+        }
       } catch let failure as DeliveryFailure {
         if failure.disposition == .stillInFlight {
           poisonAfterResponse = failure
