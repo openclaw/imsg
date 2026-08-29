@@ -175,6 +175,37 @@ func pollSendHumanSummaryStaysQuietWhenCaptionLands() async throws {
   #expect(!output.contains("caption NOT delivered"))
 }
 
+// MARK: - The verifier itself
+
+@Test
+func verifyCaptionDoesNotGuessWithoutAStore() async throws {
+  // No store means the check never ran. That must stay distinct from a
+  // negative verdict, or callers read "we did not look" as "it never arrived".
+  let result = await PollCaptionStatus.verifyCaption(
+    captionGUID: "caption-guid", chatGUID: "iMessage;-;+15551234567", store: nil)
+  #expect(result == nil)
+}
+
+@Test
+func verifyCaptionDoesNotGuessWithoutAGuidToLookFor() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let result = await PollCaptionStatus.verifyCaption(
+    captionGUID: "", chatGUID: "iMessage;-;+15551234567", store: store)
+  #expect(result == nil)
+}
+
+@Test
+func verifyCaptionReportsAnAbsentRowAsUndelivered() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let result = await PollCaptionStatus.verifyCaption(
+    captionGUID: "never-sent-guid",
+    chatGUID: "iMessage;-;+15551234567",
+    store: store,
+    timeout: 0.2
+  )
+  #expect(result == false)
+}
+
 // MARK: - RPC surface
 
 /// Runs `poll.send` over the RPC server, returning the response result object.

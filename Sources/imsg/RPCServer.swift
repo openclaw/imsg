@@ -86,7 +86,8 @@ final class RPCServer: @unchecked Sendable {
     },
     verifyCaption: @escaping CaptionVerifier = { captionGUID, chatGUID, store in
       await PollCaptionStatus.verifyCaption(
-        captionGUID: captionGUID, chatGUID: chatGUID, store: store)
+        captionGUID: captionGUID, chatGUID: chatGUID, store: store,
+        timeout: PollCaptionStatus.rpcVerifyTimeout)
     },
     stageAttachment: @escaping AttachmentStager = MessageSender.stageAttachmentForMessagesApp,
     stageSticker: @escaping StickerStager = {
@@ -155,7 +156,8 @@ final class RPCServer: @unchecked Sendable {
     },
     verifyCaption: @escaping CaptionVerifier = { captionGUID, chatGUID, store in
       await PollCaptionStatus.verifyCaption(
-        captionGUID: captionGUID, chatGUID: chatGUID, store: store)
+        captionGUID: captionGUID, chatGUID: chatGUID, store: store,
+        timeout: PollCaptionStatus.rpcVerifyTimeout)
     },
     stageAttachment: @escaping AttachmentStager = MessageSender.stageAttachmentForMessagesApp,
     stageSticker: @escaping StickerStager = { try StickerAssetPreparer.prepare(at: $0) },

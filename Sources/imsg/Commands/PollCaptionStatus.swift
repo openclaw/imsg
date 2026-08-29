@@ -77,6 +77,14 @@ enum PollCaptionStatus {
   /// or the deadline passes, because Messages persists an accepted send
   /// asynchronously. Returns `nil` when the check cannot run — a missing store
   /// or an empty GUID is "we did not look", never "it did not arrive".
+  /// Bound for the JSON-RPC surface. Mutations there are drained by a single
+  /// worker, so a caption that never lands would otherwise hold the lane for
+  /// the full CLI deadline and stall every mutation queued behind it. Rows
+  /// normally appear well inside a second; timing out here reports
+  /// `may_have_completed`, which tells callers not to retry, so a pessimistic
+  /// bound costs honesty about certainty rather than causing duplicate sends.
+  static let rpcVerifyTimeout: TimeInterval = 2
+
   static func verifyCaption(
     captionGUID: String,
     chatGUID: String,
@@ -87,10 +95,17 @@ enum PollCaptionStatus {
     let deadline = Date().addingTimeInterval(timeout)
     repeat {
       if Task.isCancelled { return nil }
-      if (try? store.messageSendStatus(guid: captionGUID)) != nil,
-        (try? store.messageBelongsToChat(messageGUID: captionGUID, chatGUID: chatGUID)) == true
-      {
-        return true
+      do {
+        if try store.messageSendStatus(guid: captionGUID) != nil,
+          try store.messageBelongsToChat(messageGUID: captionGUID, chatGUID: chatGUID)
+        {
+          return true
+        }
+      } catch {
+        // The database became unreadable mid-check. That is "we could not
+        // look", never "it did not arrive" — returning false here would report
+        // a delivery verdict this code did not earn.
+        return nil
       }
       try? await Task.sleep(nanoseconds: 100_000_000)
     } while Date() < deadline
