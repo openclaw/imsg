@@ -216,6 +216,31 @@ func captionOutcomeAcceptsSentAndDeliveredRows() async throws {
 }
 
 @Test
+func verifyCaptionToleratesGuidCasingBetweenBridgeAndDatabase() async throws {
+  // messageSendStatus matches COLLATE NOCASE but messageBelongsToChat does
+  // not, so a bridge GUID whose casing differs from the stored row must not
+  // read back as a missing caption.
+  let store = try CommandTestDatabase.makeStoreForRPCDirectChat()
+  _ = try store.withConnection { db in
+    try db.run("ALTER TABLE message ADD COLUMN guid TEXT")
+    try db.run("ALTER TABLE message ADD COLUMN is_sent INTEGER")
+    try db.run("ALTER TABLE message ADD COLUMN error INTEGER")
+    // The row stores the GUID uppercased; the bridge will hand us lowercase.
+    try db.run(
+      "UPDATE message SET guid = ?, is_sent = 1, error = 0 WHERE ROWID = 5", "CAPTION-GUID")
+    try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 5)")
+  }
+
+  let result = await PollCaptionStatus.verifyCaption(
+    captionGUID: "caption-guid",
+    chatGUID: "iMessage;-;+123",
+    store: store,
+    timeout: 0.5
+  )
+  #expect(result == true)
+}
+
+@Test
 func verifyCaptionReportsAnAbsentRowAsUndelivered() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let result = await PollCaptionStatus.verifyCaption(
