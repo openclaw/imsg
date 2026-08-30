@@ -99,7 +99,7 @@ The caption *is* the question as far as recipients are concerned, so `poll send`
 A bridge acknowledgement only proves the transport accepted the send, so `poll send` also looks for the caption's row in the target chat before claiming delivery:
 
 - `sent: true, verified: true` — the row was found. The question is visible.
-- `sent: false, verified: false` — the bridge accepted it but the row never appeared. Treated as undelivered, with the transport's `may_have_completed` disposition because nothing can prove which way it went.
+- `sent: false, verified: false` — the bridge accepted it but the row never reached a sent state: it never appeared, Messages recorded the send as failed, or it was still pending at the deadline. Treated as undelivered, with the transport's `may_have_completed` disposition because nothing can prove which way it went.
 - `sent: true` with no `verified` key — the check could not run (no readable database, or no caption GUID to look for). Transport acknowledgement only; not a delivery claim.
 - `sent: false` with a `disposition` other than the above — the caption send itself failed.
 

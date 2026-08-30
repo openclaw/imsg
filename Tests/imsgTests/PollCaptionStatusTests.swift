@@ -195,6 +195,27 @@ func verifyCaptionDoesNotGuessWithoutAGuidToLookFor() async throws {
 }
 
 @Test
+func captionOutcomeRejectsARowMessagesRecordedAsFailed() async throws {
+  // A row existing is not delivery. Messages writes a row for a failed send
+  // too, and calling that verified is the exact false success this whole
+  // status object exists to remove.
+  #expect(PollCaptionStatus.captionOutcome(for: .failed) == false)
+}
+
+@Test
+func captionOutcomeKeepsWaitingWhileTheSendIsPending() async throws {
+  // nil means "no verdict yet" — the caller keeps polling until the row flips
+  // or the deadline passes, rather than banking an answer it does not have.
+  #expect(PollCaptionStatus.captionOutcome(for: .pending) == nil)
+}
+
+@Test
+func captionOutcomeAcceptsSentAndDeliveredRows() async throws {
+  #expect(PollCaptionStatus.captionOutcome(for: .sent) == true)
+  #expect(PollCaptionStatus.captionOutcome(for: .delivered) == true)
+}
+
+@Test
 func verifyCaptionReportsAnAbsentRowAsUndelivered() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let result = await PollCaptionStatus.verifyCaption(

@@ -716,12 +716,12 @@ Because the balloon shows no question without it, the caption's outcome is repor
 | --- | --- |
 | `requested` | Whether a caption was supposed to be sent (`false` for `suppress_comment: true`). |
 | `sent` | Whether it landed. Not reported true on a bare bridge acknowledgement when the row can be checked. |
-| `verified` | Whether the caption's row was found in the target chat. Absent when the check could not run — that is "we did not look", not a verdict. |
+| `verified` | Whether the caption's row reached a sent or delivered state in the target chat. A row that Messages recorded as failed, or one still pending at the deadline, is not verified — a row existing is not delivery. Absent when the check could not run at all, which is "we did not look", not a verdict. |
 | `error` | Redacted failure text. Present only when `requested` and not `sent`. |
 | `disposition` | `not_started`, `may_have_completed`, or `still_in_flight`, when the transport reported a delivery failure. |
 | `retry_safe` | Whether re-sending the caption is safe. Decide from this or `disposition`, never by matching `error`. |
 
-`requested: true` with `sent: false` means the poll is on screen with no visible question. Re-send the caption text alone; re-sending `poll.send` would duplicate the balloon. This includes the case where the bridge acknowledged the caption but its row never appeared (`verified: false`, `disposition: may_have_completed`) — an accepted caption that did not persist leaves the recipient with exactly the same unlabelled balloon as one that was never sent.
+`requested: true` with `sent: false` means the poll is on screen with no visible question. Re-send the caption text alone; re-sending `poll.send` would duplicate the balloon. This includes the case where the bridge acknowledged the caption but its row never reached a sent state — never appeared, recorded as failed, or still pending at the deadline (`verified: false`, `disposition: may_have_completed`) — an accepted caption that did not persist leaves the recipient with exactly the same unlabelled balloon as one that was never sent.
 
 ### Stickers
 

@@ -47,7 +47,7 @@ enum PollCaptionStatus {
       "sent": false,
       "verified": false,
       "error":
-        "The bridge accepted the caption but no matching row appeared in the target chat.",
+        "The bridge accepted the caption but it never reached a sent state in the target chat.",
       "disposition": DeliveryDisposition.mayHaveCompleted.rawValue,
       "retry_safe": false,
     ]
@@ -85,6 +85,22 @@ enum PollCaptionStatus {
   /// bound costs honesty about certainty rather than causing duplicate sends.
   static let rpcVerifyTimeout: TimeInterval = 2
 
+  /// Reads a caption row's send state. A row existing is not delivery: Messages
+  /// records failed and still-pending sends as rows too, and reporting either
+  /// as a delivered caption would recreate exactly the false success this
+  /// status object exists to remove.
+  ///
+  /// - Returns: `true` once Messages reports the row sent or delivered, `false`
+  ///   when it recorded a failure — waiting cannot change that — and `nil`
+  ///   while the send is still pending and may yet flip either way.
+  static func captionOutcome(for state: MessageSendState) -> Bool? {
+    switch state {
+    case .sent, .delivered: return true
+    case .failed: return false
+    case .pending: return nil
+    }
+  }
+
   static func verifyCaption(
     captionGUID: String,
     chatGUID: String,
@@ -96,10 +112,11 @@ enum PollCaptionStatus {
     repeat {
       if Task.isCancelled { return nil }
       do {
-        if try store.messageSendStatus(guid: captionGUID) != nil,
-          try store.messageBelongsToChat(messageGUID: captionGUID, chatGUID: chatGUID)
+        if let status = try store.messageSendStatus(guid: captionGUID),
+          try store.messageBelongsToChat(messageGUID: captionGUID, chatGUID: chatGUID),
+          let outcome = captionOutcome(for: status.state)
         {
-          return true
+          return outcome
         }
       } catch {
         // The database became unreadable mid-check. That is "we could not
