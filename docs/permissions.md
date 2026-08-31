@@ -52,6 +52,13 @@ When granted, `imsg` resolves names from your Address Book and includes them as 
 
 Grant it under **System Settings → Privacy & Security → Contacts**.
 
+`imsg nickname --local` distinguishes `(Contacts unavailable)` from `(none)` in
+text output; JSON exposes the same distinction as `contacts_unavailable`. An
+unavailable result means imsg could not read Contacts, not that the handle has no
+matching contact. For SSH and other indirect launches, check the Contacts grant
+for the app or process running imsg. Full Disk Access alone does not grant Contacts
+access.
+
 If you skip this, JSON output simply leaves the resolved name fields empty. Nothing else changes. A long-running `imsg rpc` child observes Contacts changes and periodically rechecks authorization, so grants and contact edits become visible without restarting. Revocation clears cached names; a transient Contacts read failure retains the last successful catalog until the next refresh.
 
 On Macs with CardDAV accounts such as Google or Yahoo, Apple's Contacts framework may periodically write `Could not fetch group … :ABGroup` reconciliation messages to stderr. These messages are benign and do not come from `imsg`; a parent process that captures `imsg rpc --json` stderr should not report this specific framework message as an `imsg` error.

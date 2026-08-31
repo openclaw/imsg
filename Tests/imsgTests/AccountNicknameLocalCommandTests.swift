@@ -140,6 +140,31 @@ func nicknameLocalJsonReportsFoundFalseWhenUnknown() async throws {
   #expect(payload["contacts_unavailable"] as? Bool == true)
 }
 
+@Test(arguments: [false, true])
+func nicknameLocalTextDistinguishesUnavailableContacts(contactsUnavailable: Bool) async throws {
+  let values = ParsedValues(
+    positional: [],
+    options: ["address": ["contact@example.invalid"]],
+    flags: ["local"]
+  )
+  let resolver = MockContactResolver(names: [:], contactsUnavailable: contactsUnavailable)
+  let (output, _) = try await StdoutCapture.capture {
+    try await NicknameCommand.run(
+      values: values,
+      runtime: RuntimeOptions(parsedValues: values),
+      contactResolverFactory: { _ in resolver }
+    )
+  }
+  if contactsUnavailable {
+    #expect(output.contains("local_contact_name: (Contacts unavailable)"))
+    #expect(output.contains("Privacy & Security > Contacts"))
+    #expect(!output.contains("(none)"))
+  } else {
+    #expect(output.contains("local_contact_name: (none)"))
+    #expect(!output.contains("Contacts unavailable"))
+  }
+}
+
 @Test
 func nicknameLocalRequiresAddress() async {
   let values = ParsedValues(

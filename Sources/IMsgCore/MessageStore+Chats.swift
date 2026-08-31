@@ -24,7 +24,7 @@ private struct ListChatsQuery {
     let unreadSelection = UnreadChatSelection(enabled: unreadOnly)
     if schema.hasChatMessageJoinMessageDateColumn {
       self.sql = """
-        SELECT c.ROWID AS chat_rowid, IFNULL(c.display_name, c.chat_identifier) AS name,
+        SELECT c.ROWID AS chat_rowid, IFNULL(NULLIF(c.display_name, ''), c.chat_identifier) AS name,
                c.chat_identifier AS chat_identifier, c.service_name AS service_name,
                MAX(cmj.message_date) AS last_date,
                \(routing.accountIDColumn) AS account_id,
@@ -39,7 +39,7 @@ private struct ListChatsQuery {
         """
     } else {
       self.sql = """
-        SELECT c.ROWID AS chat_rowid, IFNULL(c.display_name, c.chat_identifier) AS name,
+        SELECT c.ROWID AS chat_rowid, IFNULL(NULLIF(c.display_name, ''), c.chat_identifier) AS name,
                c.chat_identifier AS chat_identifier, c.service_name AS service_name,
                MAX(m.date) AS last_date,
                \(routing.accountIDColumn) AS account_id,
@@ -125,6 +125,7 @@ private struct ChatInfoQuery {
 
   init(chatID: ChatID, schema: MessageStoreSchema) {
     let routing = ChatRoutingSelection(schema: schema)
+    // ChatInfo.name also backs JSON display_name; preserve stored empty titles.
     self.sql = """
       SELECT c.ROWID AS chat_rowid, IFNULL(c.chat_identifier, '') AS identifier, IFNULL(c.guid, '') AS guid,
              IFNULL(c.display_name, c.chat_identifier) AS name, IFNULL(c.service_name, '') AS service,

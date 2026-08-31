@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fixes
+
+- Fall back to raw chat identifiers for empty display names and distinguish unavailable Contacts from unmatched local nicknames (#250, thanks @riverr4t).
+- Let headless `nickname --local` return without an unanswered Contacts permission prompt while preserving interactive prompting (#248, thanks @SebTardif).
+
+### Dependencies
+
+- Update PhoneNumberKit to 5.0.8 for current phone-number metadata.
+
 ## 0.14.2 - 2026-08-28
 
 ### Highlights
