@@ -125,10 +125,10 @@ private struct ChatInfoQuery {
 
   init(chatID: ChatID, schema: MessageStoreSchema) {
     let routing = ChatRoutingSelection(schema: schema)
+    // ChatInfo.name also backs JSON display_name; preserve stored empty titles.
     self.sql = """
       SELECT c.ROWID AS chat_rowid, IFNULL(c.chat_identifier, '') AS identifier, IFNULL(c.guid, '') AS guid,
-             IFNULL(NULLIF(c.display_name, ''), c.chat_identifier) AS name,
-             IFNULL(c.service_name, '') AS service,
+             IFNULL(c.display_name, c.chat_identifier) AS name, IFNULL(c.service_name, '') AS service,
              \(routing.accountIDColumn) AS account_id,
              \(routing.accountLoginColumn) AS account_login,
              \(routing.lastAddressedHandleColumn) AS last_addressed_handle

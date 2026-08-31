@@ -99,6 +99,6 @@ func chatNamesFallBackForEmptyAndNullDisplayNames(hasJoinDate: Bool) throws {
   #expect(chats.map(\.name) == ["Study Group", "null@example.invalid", "empty@example.invalid"])
   for chat in chats {
     let info = try #require(try store.chatInfo(chatID: chat.id))
-    #expect(info.name == chat.name)
+    #expect(info.name == (chat.id == 1 ? "" : chat.name))
   }
 }

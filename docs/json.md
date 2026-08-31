@@ -20,7 +20,7 @@ Returned by `imsg chats --json` and JSON-RPC `chats.list`.
 | Field | Type | Notes |
 |-------|------|-------|
 | `id` | int | `chat.ROWID`. Stable within one DB. Preferred routing handle. |
-| `name` | string | Display name, contact match, or raw handle fallback. |
+| `name` | string | Messages display name or raw chat identifier fallback. |
 | `display_name` | string | Group title from `chat.display_name`. Empty for direct chats without a custom name. |
 | `contact_name` | string | Resolved Contacts name (when permission granted). |
 | `identifier` | string | `chat.chat_identifier`. Portable. |

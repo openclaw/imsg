@@ -20,6 +20,8 @@ display name or raw chat identifier.
 Empty and missing Messages display names fall back to the raw chat identifier,
 including when Contacts is unavailable over SSH. JSON exposes a resolved Contacts
 match separately as `contact_name` in both `chats` and RPC `chats.list`.
+The presentation fallback belongs to `name`: an empty stored title remains empty
+in JSON `display_name` and chat-detail metadata.
 
 ## Inspect one chat
 
@@ -40,7 +42,7 @@ Objects returned by `imsg chats --json` and JSON-RPC `chats.list` include:
 |-------|------|-------|
 | `id` | int | `chat.ROWID`. Stable within one Messages database. Preferred routing handle. |
 | `name` | string | Messages display name or raw chat identifier fallback. |
-| `display_name` | string | Chat detail display name, with the same raw-identifier fallback. |
+| `display_name` | string | Chat title metadata. An empty stored title remains empty. |
 | `contact_name` | string | Resolved Contacts name when permission granted. |
 | `identifier` | string | `chat.chat_identifier` — Messages' portable handle. |
 | `guid` | string | `chat.guid` — Messages' portable GUID. |
