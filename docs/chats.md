@@ -14,7 +14,12 @@ imsg chats --limit 20 --json | jq -s
 
 Columns (text mode): `id`, `name`, `service`, `last_message_at`.
 
-`name` is the resolved display name when available — group title, contact match, or raw handle as a fallback.
+Text output prefers a resolved contact name for direct chats, then the Messages
+display name or raw chat identifier.
+
+Empty and missing Messages display names fall back to the raw chat identifier,
+including when Contacts is unavailable over SSH. JSON exposes a resolved Contacts
+match separately as `contact_name` in both `chats` and RPC `chats.list`.
 
 ## Inspect one chat
 
@@ -34,8 +39,8 @@ Objects returned by `imsg chats --json` and JSON-RPC `chats.list` include:
 | Field | Type | Notes |
 |-------|------|-------|
 | `id` | int | `chat.ROWID`. Stable within one Messages database. Preferred routing handle. |
-| `name` | string | Display name, contact match, or raw handle fallback. |
-| `display_name` | string | `chat.display_name` (group title) when set. |
+| `name` | string | Messages display name or raw chat identifier fallback. |
+| `display_name` | string | Chat detail display name, with the same raw-identifier fallback. |
 | `contact_name` | string | Resolved Contacts name when permission granted. |
 | `identifier` | string | `chat.chat_identifier` — Messages' portable handle. |
 | `guid` | string | `chat.guid` — Messages' portable GUID. |

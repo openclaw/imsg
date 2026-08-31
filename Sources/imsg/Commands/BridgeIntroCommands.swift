@@ -333,8 +333,13 @@ enum NicknameCommand {
           "contacts_unavailable": contacts.contactsUnavailable,
         ])
       } else {
+        let missingName = contacts.contactsUnavailable ? "(Contacts unavailable)" : "(none)"
         StdoutWriter.writeLine(
-          "local_contact_name: \(name ?? "(none)") (source=local-addressbook)")
+          "local_contact_name: \(name ?? missingName) (source=local-addressbook)")
+        if contacts.contactsUnavailable {
+          StdoutWriter.writeLine(
+            "Check System Settings > Privacy & Security > Contacts for the app running imsg.")
+        }
       }
       return
     }

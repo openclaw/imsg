@@ -65,3 +65,40 @@ func listChatsUsesChatMessageJoinDateWithoutMessageJoinWhenAvailable() throws {
   #expect(chats.first?.accountLogin == nil)
   #expect(chats.first?.lastAddressedHandle == nil)
 }
+
+@Test(arguments: [false, true])
+func chatNamesFallBackForEmptyAndNullDisplayNames(hasJoinDate: Bool) throws {
+  let db = try Connection(.inMemory)
+  try db.execute(
+    """
+    CREATE TABLE chat (
+      ROWID INTEGER PRIMARY KEY, chat_identifier TEXT, guid TEXT,
+      display_name TEXT, service_name TEXT
+    );
+    CREATE TABLE message (ROWID INTEGER PRIMARY KEY, date INTEGER);
+    CREATE TABLE chat_message_join (chat_id INTEGER, message_id INTEGER);
+    INSERT INTO chat VALUES
+      (1, 'empty@example.invalid', 'iMessage;-;empty@example.invalid', '', 'iMessage'),
+      (2, 'null@example.invalid', 'iMessage;-;null@example.invalid', NULL, 'iMessage'),
+      (3, 'chat123', 'iMessage;+;chat123', 'Study Group', 'iMessage');
+    INSERT INTO message VALUES (1, 100), (2, 200), (3, 300);
+    INSERT INTO chat_message_join VALUES (1, 1), (2, 2), (3, 3);
+    """
+  )
+  if hasJoinDate {
+    try db.execute(
+      """
+      ALTER TABLE chat_message_join ADD COLUMN message_date INTEGER;
+      UPDATE chat_message_join SET message_date = message_id * 100;
+      """
+    )
+  }
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let chats = try store.listChats(limit: 3)
+  #expect(chats.map(\.name) == ["Study Group", "null@example.invalid", "empty@example.invalid"])
+  for chat in chats {
+    let info = try #require(try store.chatInfo(chatID: chat.id))
+    #expect(info.name == chat.name)
+  }
+}

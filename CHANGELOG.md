@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- Fall back to raw chat identifiers for empty display names and distinguish unavailable Contacts from unmatched local nicknames (#250, thanks @riverr4t).
+
 ### Dependencies
 
 - Update PhoneNumberKit to 5.0.8 for current phone-number metadata.
