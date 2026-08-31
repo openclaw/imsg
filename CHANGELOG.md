@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Dependencies
+
+- Update PhoneNumberKit to 5.0.8 for current phone-number metadata.
+
 ## 0.14.2 - 2026-08-28
 
 ### Highlights
