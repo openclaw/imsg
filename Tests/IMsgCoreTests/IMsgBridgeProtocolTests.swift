@@ -163,12 +163,11 @@ struct IMsgBridgeProtocolTests {
 }
 
 // A wedged helper keeps Messages.app alive and the dylib mapped, so `status`
-// cannot infer liveness from either. Only the absence of a reply proves the
-// bridge stopped serving; an error reply still proves it answered.
+// cannot infer liveness from either. Only a published request that never gets
+// a reply establishes that the bridge stopped serving.
 @Test
-func noReplyFromBridgeIsTreatedAsUnresponsive() {
+func aPublishedRequestWithNoReplyIsTreatedAsUnresponsive() {
   #expect(IMsgBridgeError.timeout(action: "status").indicatesUnresponsiveBridge)
-  #expect(IMsgBridgeError.bridgeNotReady("not injected").indicatesUnresponsiveBridge)
 }
 
 @Test
@@ -178,4 +177,13 @@ func aReplyFromBridgeIsNotTreatedAsUnresponsive() {
   #expect(!IMsgBridgeError.dylibReturnedError("unknown action").indicatesUnresponsiveBridge)
   #expect(!IMsgBridgeError.malformedResponse("non-object body").indicatesUnresponsiveBridge)
   #expect(!IMsgBridgeError.ioError("/tmp traverses a symlink").indicatesUnresponsiveBridge)
+}
+
+// `prepublicationError` reports launch, queue-write, and cancellation failures
+// as .bridgeNotReady before any request is published. No reply was expected, so
+// treating it as a dead bridge would flip the capability flags and send the
+// operator to re-inject a bridge that was never probed.
+@Test
+func aPrepublicationFailureIsNotTreatedAsUnresponsive() {
+  #expect(!IMsgBridgeError.bridgeNotReady("launch failed").indicatesUnresponsiveBridge)
 }
