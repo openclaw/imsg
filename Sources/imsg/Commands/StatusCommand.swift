@@ -51,6 +51,13 @@ enum StatusCommand {
     var bridgeVersion: Int = 0
     var v2Ready: Bool = false
     var selectors: [String: Bool] = [:]
+    // The injected helper can stop answering while Messages.app stays alive and
+    // the dylib stays mapped. checkAvailability() cannot see that: it only
+    // inspects SIP and whether the dylib exists. This probe is the one place
+    // that learns whether the bridge is actually serving, so its outcome has to
+    // reach the reported status instead of being discarded.
+    var bridgeResponsive = availability.available
+    var unresponsiveDetail: String?
     if availability.available {
       do {
         let data = try await IMsgBridgeClient.shared.invoke(
@@ -58,20 +65,32 @@ enum StatusCommand {
         bridgeVersion = (data["bridge_version"] as? Int) ?? 0
         v2Ready = (data["v2_ready"] as? Bool) ?? false
         if let raw = data["selectors"] as? [String: Bool] { selectors = raw }
+      } catch let error as IMsgBridgeError {
+        if error.indicatesUnresponsiveBridge {
+          bridgeResponsive = false
+          unresponsiveDetail = error.description
+        }
       } catch {
-        // Bridge probe failure is non-fatal.
+        // Unknown failure shape: do not claim the bridge is dead on a guess.
       }
     }
+
+    let advancedAvailable = availability.available && bridgeResponsive
+    let unresponsiveMessage = """
+      The IMCore bridge is not responding (\(unresponsiveDetail ?? "no reply")).
+      Messages.app may be running with a stale or hung helper.
+      Re-inject it with `imsg launch`.
+      """
 
     if runtime.jsonOutput {
       let payload = StatusPayload(
         version: IMsgVersion.current,
         basicFeatures: true,
-        advancedFeatures: availability.available,
-        typingIndicators: availability.available,
-        readReceipts: availability.available,
+        advancedFeatures: advancedAvailable,
+        typingIndicators: advancedAvailable,
+        readReceipts: advancedAvailable,
         sip: sipStatus,
-        message: availability.message,
+        message: bridgeResponsive ? availability.message : unresponsiveMessage,
         bridgeVersion: bridgeVersion,
         v2Ready: v2Ready,
         selectors: selectors,
@@ -92,7 +111,12 @@ enum StatusCommand {
       StdoutWriter.writeLine("  \(sipStatus)")
       StdoutWriter.writeLine("")
       StdoutWriter.writeLine("Advanced features (typing, read receipts):")
-      if availability.available {
+      if availability.available && !bridgeResponsive {
+        StdoutWriter.writeLine("  Unavailable - IMCore bridge is not responding")
+        for line in unresponsiveMessage.split(separator: "\n") {
+          StdoutWriter.writeLine("  \(line)")
+        }
+      } else if advancedAvailable {
         StdoutWriter.writeLine("  Available - IMCore bridge connected")
         StdoutWriter.writeLine(
           "  bridge version: v\(bridgeVersion)\(v2Ready ? " (v2 inbox active)" : "")")

@@ -161,3 +161,21 @@ struct IMsgBridgeProtocolTests {
     _ = explicitTimeoutSend
   }
 }
+
+// A wedged helper keeps Messages.app alive and the dylib mapped, so `status`
+// cannot infer liveness from either. Only the absence of a reply proves the
+// bridge stopped serving; an error reply still proves it answered.
+@Test
+func noReplyFromBridgeIsTreatedAsUnresponsive() {
+  #expect(IMsgBridgeError.timeout(action: "status").indicatesUnresponsiveBridge)
+  #expect(IMsgBridgeError.bridgeNotReady("not injected").indicatesUnresponsiveBridge)
+}
+
+@Test
+func aReplyFromBridgeIsNotTreatedAsUnresponsive() {
+  // An older helper that does not implement an action still serves real
+  // commands; reporting it as dead would send operators to the wrong repair.
+  #expect(!IMsgBridgeError.dylibReturnedError("unknown action").indicatesUnresponsiveBridge)
+  #expect(!IMsgBridgeError.malformedResponse("non-object body").indicatesUnresponsiveBridge)
+  #expect(!IMsgBridgeError.ioError("/tmp traverses a symlink").indicatesUnresponsiveBridge)
+}

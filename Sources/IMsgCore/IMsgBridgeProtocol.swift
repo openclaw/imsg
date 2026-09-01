@@ -151,6 +151,23 @@ public enum IMsgBridgeError: Error, CustomStringConvertible, Equatable {
   case dylibReturnedError(String)
   case ioError(String)
 
+  /// True when the bridge produced no reply at all, so its liveness is
+  /// genuinely unknown-bad rather than merely unhelpful.
+  ///
+  /// The distinction matters because the injected helper can stop answering
+  /// while Messages.app stays alive and the dylib stays mapped. A reply that
+  /// happens to be an error still proves the bridge is serving: an older helper
+  /// that does not implement a given action is fully able to run real commands,
+  /// and must not be reported as dead.
+  public var indicatesUnresponsiveBridge: Bool {
+    switch self {
+    case .timeout, .bridgeNotReady:
+      return true
+    case .malformedResponse, .dylibReturnedError, .ioError:
+      return false
+    }
+  }
+
   public var description: String {
     switch self {
     case .bridgeNotReady(let detail): return "imsg bridge not ready: \(detail)"
