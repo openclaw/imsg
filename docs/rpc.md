@@ -716,7 +716,7 @@ Because the balloon shows no question without it, the caption's outcome is repor
 | --- | --- |
 | `requested` | Whether a caption was supposed to be sent (`false` for `suppress_comment: true`). |
 | `sent` | Tri-state delivery result: `true` means delivered, `false` means confirmed not delivered, and `null` means delivery is unknown. A bare bridge acknowledgement is never reported as `true`. |
-| `verified` | Whether the caption's row reached a sent or delivered state in the target chat. `false` can mean a recorded failure or an absent/pending row at the deadline; use `sent` to distinguish confirmed failure from unknown delivery. Absent when the check could not run at all. |
+| `verified` | Whether Messages recorded the caption as delivered in the target chat. `false` can mean a recorded failure or a row that was absent, pending, or only locally sent at the deadline; use `sent` to distinguish confirmed failure from unknown delivery. Absent when the check could not run at all. |
 | `error` | Failure or unresolved-delivery diagnostic. Typed transport failures are redacted. |
 | `disposition` | `not_started`, `may_have_completed`, or `still_in_flight`. Transport failures supply this directly; verification timeout conservatively synthesizes `may_have_completed`. |
 | `retry_safe` | Whether re-sending the caption is safe. Transport failures supply this directly; verification timeout synthesizes `false`. Never infer it by matching `error`. |

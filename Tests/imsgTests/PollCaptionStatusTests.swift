@@ -286,8 +286,8 @@ func captionOutcomeKeepsWaitingWhileTheSendIsPending() async throws {
 }
 
 @Test
-func captionOutcomeAcceptsSentAndDeliveredRows() async throws {
-  #expect(PollCaptionStatus.captionOutcome(for: .sent) == .delivered)
+func captionOutcomeRequiresDeliveredRatherThanLocallySent() async throws {
+  #expect(PollCaptionStatus.captionOutcome(for: .sent) == .unknown)
   #expect(PollCaptionStatus.captionOutcome(for: .delivered) == .delivered)
 }
 
@@ -300,10 +300,12 @@ func verifyCaptionToleratesGuidCasingBetweenBridgeAndDatabase() async throws {
   _ = try store.withConnection { db in
     try db.run("ALTER TABLE message ADD COLUMN guid TEXT")
     try db.run("ALTER TABLE message ADD COLUMN is_sent INTEGER")
+    try db.run("ALTER TABLE message ADD COLUMN is_delivered INTEGER")
     try db.run("ALTER TABLE message ADD COLUMN error INTEGER")
     // The row stores the GUID uppercased; the bridge will hand us lowercase.
     try db.run(
-      "UPDATE message SET guid = ?, is_sent = 1, error = 0 WHERE ROWID = 5", "CAPTION-GUID")
+      "UPDATE message SET guid = ?, is_sent = 1, is_delivered = 1, error = 0 WHERE ROWID = 5",
+      "CAPTION-GUID")
     try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 5)")
   }
 
@@ -314,6 +316,29 @@ func verifyCaptionToleratesGuidCasingBetweenBridgeAndDatabase() async throws {
     timeout: 0.5
   )
   #expect(result == .delivered)
+}
+
+@Test
+func verifyCaptionKeepsLocallySentRowUnknownUntilDelivered() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPCDirectChat()
+  _ = try store.withConnection { db in
+    try db.run("ALTER TABLE message ADD COLUMN guid TEXT")
+    try db.run("ALTER TABLE message ADD COLUMN is_sent INTEGER")
+    try db.run("ALTER TABLE message ADD COLUMN is_delivered INTEGER")
+    try db.run("ALTER TABLE message ADD COLUMN error INTEGER")
+    try db.run(
+      "UPDATE message SET guid = ?, is_sent = 1, is_delivered = 0, error = 0 WHERE ROWID = 5",
+      "SENT-GUID")
+    try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 5)")
+  }
+
+  let result = await PollCaptionStatus.verifyCaption(
+    captionGUID: "sent-guid",
+    chatGUID: "iMessage;-;+123",
+    store: store,
+    timeout: 0.2
+  )
+  #expect(result == .unknown)
 }
 
 @Test

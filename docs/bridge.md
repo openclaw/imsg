@@ -99,9 +99,9 @@ The caption *is* the question as far as recipients are concerned, so `poll send`
 
 A bridge acknowledgement only proves the transport accepted the send, so `poll send` also looks for the caption's row in the target chat before claiming delivery:
 
-- `sent: true, verified: true`: the row reached a sent or delivered state. The question is visible.
+- `sent: true, verified: true`: Messages recorded the row as delivered. The question reached the recipient.
 - `sent: false, verified: false`: Messages recorded the caption row as failed. This is confirmed non-delivery, but retry safety is not inferred from the database.
-- `sent: null, verified: false`: the row was absent or still pending at the verification deadline. Delivery is unknown because the caption may still arrive later.
+- `sent: null, verified: false`: the row was absent, pending, or only locally sent at the verification deadline. Delivery is unknown because the caption may still arrive or fail later.
 - `sent: null` with no `verified` key: the check could not run because there was no readable database or caption GUID. Transport acknowledgement alone is not a delivery claim.
 - `sent: false, retry_safe: true`: the transport proved the caption operation did not start. Re-send only the caption text, never the poll.
 - `sent: null, retry_safe: false`: the transport reported an uncertain or still-running operation. Do not retry automatically.

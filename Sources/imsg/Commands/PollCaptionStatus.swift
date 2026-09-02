@@ -43,7 +43,8 @@ enum PollCaptionStatus {
     ["requested": true, "sent": NSNull()]
   }
 
-  /// The caption was accepted *and* its row was found in the target chat.
+  /// The caption was accepted and Messages recorded it as delivered in the
+  /// target chat.
   static var sentVerified: [String: Any] {
     ["requested": true, "sent": true, "verified": true]
   }
@@ -121,14 +122,14 @@ enum PollCaptionStatus {
   /// as a delivered caption would recreate exactly the false success this
   /// status object exists to remove.
   ///
-  /// - Returns: `.delivered` once Messages reports the row sent or delivered,
-  ///   `.failed` when it recorded a failure, and `.unknown` while the send is
-  ///   still pending and may yet flip either way.
+  /// - Returns: `.delivered` once Messages reports remote delivery, `.failed`
+  ///   when it recorded a failure, and `.unknown` while the row is pending or
+  ///   only locally sent and may yet flip either way.
   static func captionOutcome(for state: MessageSendState) -> VerificationOutcome {
     switch state {
-    case .sent, .delivered: return .delivered
+    case .delivered: return .delivered
     case .failed: return .failed
-    case .pending: return .unknown
+    case .pending, .sent: return .unknown
     }
   }
 
