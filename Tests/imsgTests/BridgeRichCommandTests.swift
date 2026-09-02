@@ -344,7 +344,7 @@ func pollCommandSendInvokesPollBridge() async throws {
         return ["messageGuid": "poll-guid"]
       },
       // Stubbed: this test asserts bridge wiring, not row verification.
-      verifyCaption: { _ in true }
+      verifyCaption: { _ in .delivered }
     )
   }
 
@@ -386,7 +386,7 @@ func pollCommandSendUsesCommentOverrideWithoutPollGuid() async throws {
         return [:]
       },
       // Stubbed: this test asserts bridge wiring, not row verification.
-      verifyCaption: { _ in true }
+      verifyCaption: { _ in .delivered }
     )
   }
 
@@ -483,7 +483,7 @@ func pollCommandSendResolvesChatID() async throws {
         return ["messageGuid": "poll-guid"]
       },
       // Stubbed: this test asserts bridge wiring, not row verification.
-      verifyCaption: { _ in true }
+      verifyCaption: { _ in .delivered }
     )
   }
 

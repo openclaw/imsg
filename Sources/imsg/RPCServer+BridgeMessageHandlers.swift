@@ -289,21 +289,25 @@ extension RPCServer {
         // reached the chat, and an accepted-but-absent caption leaves exactly
         // the question-less balloon this status exists to expose.
         let captionGUID = (captionData["messageGuid"] as? String) ?? ""
-        let verified = await captionVerifier(
+        let outcome = await captionVerifier(
           captionGUID, chatGUID, await databaseResources.available()?.store)
-        result["comment"] = PollCaptionStatus.status(forVerification: verified)
-        if verified == false {
+        result["comment"] = PollCaptionStatus.status(forVerification: outcome)
+        if outcome == .unknown {
           FileHandle.standardError.write(
             Data(
-              "[imsg] poll.send: caption \(captionGUID) never appeared in \(chatGUID)\n".utf8))
+              "[imsg] poll.send: caption \(captionGUID) delivery was not verified in \(chatGUID); automatic retry is unsafe\n"
+                .utf8))
         }
       } catch let failure as DeliveryFailure {
         if failure.disposition == .stillInFlight {
           poisonAfterResponse = failure
         }
         result["comment"] = PollCaptionStatus.failed(failure)
+        let failureState = failure.retrySafe ? "failed before dispatch" : "delivery unresolved"
         FileHandle.standardError.write(
-          Data("[imsg] poll.send: comment echo delivery unresolved for \(pollDescription)\n".utf8))
+          Data(
+            "[imsg] poll.send: comment echo \(failureState) for \(pollDescription): \(failure)\n"
+              .utf8))
       } catch {
         result["comment"] = PollCaptionStatus.failed(error)
         FileHandle.standardError.write(
@@ -312,7 +316,8 @@ extension RPCServer {
     }
     // `ok` stays true when only the caption failed: the poll balloon really did
     // land, and a caller that treats this as a failed send would re-send and
-    // duplicate it. `comment` is what tells them the question is missing.
+    // duplicate it. `comment` reports confirmed failure separately from an
+    // outcome that is still unknown.
     respond(id: id, result: result)
     if let poisonAfterResponse {
       throw RPCMutationPoisonSignal(failure: poisonAfterResponse)

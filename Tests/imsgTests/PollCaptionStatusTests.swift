@@ -17,6 +17,13 @@ private let captionFailure = DeliveryFailure(
   detail: "The bridge response deadline expired."
 )
 
+private let retrySafeCaptionFailure = DeliveryFailure(
+  disposition: .notStarted,
+  transport: .bridgeV2,
+  operation: "send_message",
+  detail: "The bridge rejected the request before dispatch."
+)
+
 private func pollSendValues(
   extraOptions: [String: [String]] = [:],
   flags: Set<String> = []
@@ -35,7 +42,7 @@ private func pollSendValues(
 private func runPollSend(
   values: ParsedValues,
   captionError: Error? = nil,
-  verified: Bool? = true
+  verification: PollCaptionStatus.VerificationOutcome = .delivered
 ) async throws -> (json: [String: Any], calls: Int, output: String) {
   let runtime = RuntimeOptions(parsedValues: values)
   var calls = 0
@@ -50,7 +57,7 @@ private func runPollSend(
         }
         return ["messageGuid": action == .sendMessage ? "caption-guid" : "poll-guid"]
       },
-      verifyCaption: { _ in verified }
+      verifyCaption: { _ in verification }
     )
   }
   let line = output.split(separator: "\n").last.map(String.init) ?? ""
@@ -73,23 +80,35 @@ func pollSendReportsCaptionDeliveryWhenItLands() async throws {
 }
 
 @Test
-func pollSendWillNotClaimDeliveryWhenTheCaptionRowNeverAppears() async throws {
-  // The bridge acknowledged the send, but no caption row reached the chat —
-  // the recipient is looking at a question-less balloon, so `sent` must be
-  // false even though nothing threw.
+func pollSendReportsUnknownWhenCaptionVerificationExpires() async throws {
+  // The bridge acknowledged the send, but the row was not confirmed before
+  // the deadline. It may still arrive, so this must not become `sent: false`.
   let (json, calls, _) = try await runPollSend(
     values: pollSendValues(flags: ["jsonOutput"]),
-    verified: false
+    verification: .unknown
   )
 
   #expect(calls == 2)
   #expect(json["messageGuid"] as? String == "poll-guid")
   let comment = try #require(json["comment"] as? [String: Any])
   #expect(comment["requested"] as? Bool == true)
-  #expect(comment["sent"] as? Bool == false)
+  #expect(comment["sent"] is NSNull)
   #expect(comment["verified"] as? Bool == false)
   #expect(comment["disposition"] as? String == "may_have_completed")
   #expect(comment["retry_safe"] as? Bool == false)
+}
+
+@Test
+func pollSendReportsRecordedCaptionFailureWithoutInferringRetrySafety() async throws {
+  let (json, _, _) = try await runPollSend(
+    values: pollSendValues(flags: ["jsonOutput"]),
+    verification: .failed
+  )
+
+  let comment = try #require(json["comment"] as? [String: Any])
+  #expect(comment["sent"] as? Bool == false)
+  #expect(comment["verified"] as? Bool == false)
+  #expect(comment["retry_safe"] == nil)
 }
 
 @Test
@@ -97,11 +116,11 @@ func pollSendOmitsVerifiedWhenTheCheckCannotRun() async throws {
   // No readable database: we did not look, so we claim neither outcome.
   let (json, _, _) = try await runPollSend(
     values: pollSendValues(flags: ["jsonOutput"]),
-    verified: nil
+    verification: .unavailable
   )
 
   let comment = try #require(json["comment"] as? [String: Any])
-  #expect(comment["sent"] as? Bool == true)
+  #expect(comment["sent"] is NSNull)
   #expect(comment["verified"] == nil)
   #expect(comment["error"] == nil)
 }
@@ -118,10 +137,10 @@ func pollSendReportsCaptionFailureInsteadOfSwallowingIt() async throws {
   #expect(calls == 2)
   #expect(json["messageGuid"] as? String == "poll-guid")
 
-  // …but the caller can now see that the question never became visible.
+  // …but the transport cannot prove whether the caption eventually landed.
   let comment = try #require(json["comment"] as? [String: Any])
   #expect(comment["requested"] as? Bool == true)
-  #expect(comment["sent"] as? Bool == false)
+  #expect(comment["sent"] is NSNull)
   #expect(comment["disposition"] as? String == "may_have_completed")
   #expect(comment["retry_safe"] as? Bool == false)
   let error = try #require(comment["error"] as? String)
@@ -137,10 +156,42 @@ func pollSendReportsCaptionFailureForUntypedErrors() async throws {
   )
 
   let comment = try #require(json["comment"] as? [String: Any])
-  #expect(comment["sent"] as? Bool == false)
+  #expect(comment["sent"] is NSNull)
   #expect(comment["error"] as? String == "boom")
   // No transport disposition to report when the error is not a DeliveryFailure.
   #expect(comment["disposition"] == nil)
+}
+
+@Test
+func pollSendReportsNotStartedCaptionAsRetrySafe() async throws {
+  let (json, _, _) = try await runPollSend(
+    values: pollSendValues(flags: ["jsonOutput"]),
+    captionError: retrySafeCaptionFailure
+  )
+
+  let comment = try #require(json["comment"] as? [String: Any])
+  #expect(comment["sent"] as? Bool == false)
+  #expect(comment["disposition"] as? String == "not_started")
+  #expect(comment["retry_safe"] as? Bool == true)
+}
+
+@Test
+func pollSendReportsStillInFlightCaptionAsUnknown() async throws {
+  let failure = DeliveryFailure(
+    disposition: .stillInFlight,
+    transport: .bridgeV2,
+    operation: "send_message",
+    detail: "The bridge still owns the request."
+  )
+  let (json, _, _) = try await runPollSend(
+    values: pollSendValues(flags: ["jsonOutput"]),
+    captionError: failure
+  )
+
+  let comment = try #require(json["comment"] as? [String: Any])
+  #expect(comment["sent"] is NSNull)
+  #expect(comment["disposition"] as? String == "still_in_flight")
+  #expect(comment["retry_safe"] as? Bool == false)
 }
 
 @Test
@@ -157,14 +208,39 @@ func pollSendMarksSuppressedCaptionAsNotRequested() async throws {
 }
 
 @Test
-func pollSendHumanSummaryCallsOutAMissingCaption() async throws {
+func pollSendHumanSummaryPreservesUnknownDelivery() async throws {
   let (_, _, output) = try await runPollSend(
     values: pollSendValues(),
     captionError: captionFailure
   )
 
   #expect(output.contains("poll: sent (guid=poll-guid)"))
+  #expect(output.contains("caption delivery UNKNOWN"))
+  #expect(output.contains("do not retry automatically"))
+  #expect(!output.contains("caption NOT delivered"))
+}
+
+@Test
+func pollSendHumanSummaryAdvisesRetryOnlyWhenSafe() async throws {
+  let (_, _, output) = try await runPollSend(
+    values: pollSendValues(),
+    captionError: retrySafeCaptionFailure
+  )
+
   #expect(output.contains("caption NOT delivered"))
+  #expect(output.contains("re-send the caption only, never the poll"))
+}
+
+@Test
+func pollSendHumanSummaryDoesNotInferRetrySafetyFromRecordedFailure() async throws {
+  let (_, _, output) = try await runPollSend(
+    values: pollSendValues(),
+    verification: .failed
+  )
+
+  #expect(output.contains("caption NOT delivered"))
+  #expect(output.contains("automatic retry is not known to be safe"))
+  #expect(!output.contains("re-send the caption only"))
 }
 
 @Test
@@ -183,7 +259,7 @@ func verifyCaptionDoesNotGuessWithoutAStore() async throws {
   // negative verdict, or callers read "we did not look" as "it never arrived".
   let result = await PollCaptionStatus.verifyCaption(
     captionGUID: "caption-guid", chatGUID: "iMessage;-;+15551234567", store: nil)
-  #expect(result == nil)
+  #expect(result == .unavailable)
 }
 
 @Test
@@ -191,7 +267,7 @@ func verifyCaptionDoesNotGuessWithoutAGuidToLookFor() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let result = await PollCaptionStatus.verifyCaption(
     captionGUID: "", chatGUID: "iMessage;-;+15551234567", store: store)
-  #expect(result == nil)
+  #expect(result == .unavailable)
 }
 
 @Test
@@ -199,20 +275,20 @@ func captionOutcomeRejectsARowMessagesRecordedAsFailed() async throws {
   // A row existing is not delivery. Messages writes a row for a failed send
   // too, and calling that verified is the exact false success this whole
   // status object exists to remove.
-  #expect(PollCaptionStatus.captionOutcome(for: .failed) == false)
+  #expect(PollCaptionStatus.captionOutcome(for: .failed) == .failed)
 }
 
 @Test
 func captionOutcomeKeepsWaitingWhileTheSendIsPending() async throws {
-  // nil means "no verdict yet" — the caller keeps polling until the row flips
+  // unknown means "no verdict yet" — the caller keeps polling until the row flips
   // or the deadline passes, rather than banking an answer it does not have.
-  #expect(PollCaptionStatus.captionOutcome(for: .pending) == nil)
+  #expect(PollCaptionStatus.captionOutcome(for: .pending) == .unknown)
 }
 
 @Test
 func captionOutcomeAcceptsSentAndDeliveredRows() async throws {
-  #expect(PollCaptionStatus.captionOutcome(for: .sent) == true)
-  #expect(PollCaptionStatus.captionOutcome(for: .delivered) == true)
+  #expect(PollCaptionStatus.captionOutcome(for: .sent) == .delivered)
+  #expect(PollCaptionStatus.captionOutcome(for: .delivered) == .delivered)
 }
 
 @Test
@@ -237,11 +313,11 @@ func verifyCaptionToleratesGuidCasingBetweenBridgeAndDatabase() async throws {
     store: store,
     timeout: 0.5
   )
-  #expect(result == true)
+  #expect(result == .delivered)
 }
 
 @Test
-func verifyCaptionReportsAnAbsentRowAsUndelivered() async throws {
+func verifyCaptionReportsAnAbsentRowAsUnknown() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let result = await PollCaptionStatus.verifyCaption(
     captionGUID: "never-sent-guid",
@@ -249,7 +325,49 @@ func verifyCaptionReportsAnAbsentRowAsUndelivered() async throws {
     store: store,
     timeout: 0.2
   )
-  #expect(result == false)
+  #expect(result == .unknown)
+}
+
+@Test
+func verifyCaptionReportsARecordedFailureSeparatelyFromTimeout() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPCDirectChat()
+  _ = try store.withConnection { db in
+    try db.run("ALTER TABLE message ADD COLUMN guid TEXT")
+    try db.run("ALTER TABLE message ADD COLUMN is_sent INTEGER")
+    try db.run("ALTER TABLE message ADD COLUMN error INTEGER")
+    try db.run(
+      "UPDATE message SET guid = ?, is_sent = 0, error = 1 WHERE ROWID = 5", "FAILED-GUID")
+    try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 5)")
+  }
+
+  let result = await PollCaptionStatus.verifyCaption(
+    captionGUID: "failed-guid",
+    chatGUID: "iMessage;-;+123",
+    store: store,
+    timeout: 0.5
+  )
+  #expect(result == .failed)
+}
+
+@Test
+func verifyCaptionReportsAPendingRowAtDeadlineAsUnknown() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPCDirectChat()
+  _ = try store.withConnection { db in
+    try db.run("ALTER TABLE message ADD COLUMN guid TEXT")
+    try db.run("ALTER TABLE message ADD COLUMN is_sent INTEGER")
+    try db.run("ALTER TABLE message ADD COLUMN error INTEGER")
+    try db.run(
+      "UPDATE message SET guid = ?, is_sent = 0, error = 0 WHERE ROWID = 5", "PENDING-GUID")
+    try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 5)")
+  }
+
+  let result = await PollCaptionStatus.verifyCaption(
+    captionGUID: "pending-guid",
+    chatGUID: "iMessage;-;+123",
+    store: store,
+    timeout: 0.2
+  )
+  #expect(result == .unknown)
 }
 
 // MARK: - RPC surface
@@ -258,7 +376,7 @@ func verifyCaptionReportsAnAbsentRowAsUndelivered() async throws {
 private func runRPCPollSend(
   suppressComment: Bool = false,
   captionError: Error? = nil,
-  verified: Bool? = true
+  verification: PollCaptionStatus.VerificationOutcome = .delivered
 ) async throws -> [String: Any] {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()
@@ -272,7 +390,7 @@ private func runRPCPollSend(
       }
       return ["messageGuid": action == .sendMessage ? "caption-guid" : "poll-guid"]
     },
-    verifyCaption: { _, _, _ in verified }
+    verifyCaption: { _, _, _ in verification }
   )
 
   let suppress = suppressComment ? #","suppress_comment":true"# : ""
@@ -298,16 +416,26 @@ func rpcPollSendReportsCaptionDeliveryWhenItLands() async throws {
 }
 
 @Test
-func rpcPollSendWillNotClaimDeliveryWhenTheCaptionRowNeverAppears() async throws {
-  let result = try await runRPCPollSend(verified: false)
+func rpcPollSendReportsUnknownWhenCaptionVerificationExpires() async throws {
+  let result = try await runRPCPollSend(verification: .unknown)
 
   // The balloon landed, so the send is still a success…
   #expect(result["ok"] as? Bool == true)
-  // …but the question is not on screen, and the caller has to be told.
+  // …but a late caption may still arrive, so delivery remains unknown.
+  let comment = try #require(result["comment"] as? [String: Any])
+  #expect(comment["sent"] is NSNull)
+  #expect(comment["verified"] as? Bool == false)
+  #expect(comment["disposition"] as? String == "may_have_completed")
+}
+
+@Test
+func rpcPollSendReportsRecordedCaptionFailureWithoutInferringRetrySafety() async throws {
+  let result = try await runRPCPollSend(verification: .failed)
+
   let comment = try #require(result["comment"] as? [String: Any])
   #expect(comment["sent"] as? Bool == false)
   #expect(comment["verified"] as? Bool == false)
-  #expect(comment["disposition"] as? String == "may_have_completed")
+  #expect(comment["retry_safe"] == nil)
 }
 
 @Test
@@ -321,9 +449,19 @@ func rpcPollSendReportsCaptionFailureWithoutFailingTheSend() async throws {
 
   let comment = try #require(result["comment"] as? [String: Any])
   #expect(comment["requested"] as? Bool == true)
-  #expect(comment["sent"] as? Bool == false)
+  #expect(comment["sent"] is NSNull)
   #expect(comment["disposition"] as? String == "may_have_completed")
   #expect(comment["retry_safe"] as? Bool == false)
+}
+
+@Test
+func rpcPollSendReportsRetrySafeCaptionFailure() async throws {
+  let result = try await runRPCPollSend(captionError: retrySafeCaptionFailure)
+
+  let comment = try #require(result["comment"] as? [String: Any])
+  #expect(comment["sent"] as? Bool == false)
+  #expect(comment["disposition"] as? String == "not_started")
+  #expect(comment["retry_safe"] as? Bool == true)
 }
 
 @Test

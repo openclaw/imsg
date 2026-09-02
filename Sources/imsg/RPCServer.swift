@@ -69,11 +69,11 @@ final class RPCServer: @unchecked Sendable {
   let bridgeEventPathUsable: @Sendable (String) -> Bool
   let bridgeEventStreamProvider: RPCBridgeEventStreamProvider
 
-  /// Confirms a caption row reached the target chat. Returns nil when the
-  /// check could not run, which must never be reported as a delivery verdict.
+  /// Reports the caption row's outcome in the target chat, including explicit
+  /// unknown and unavailable states that must not become delivery verdicts.
   typealias CaptionVerifier = (
     _ captionGUID: String, _ chatGUID: String, _ store: MessageStore?
-  ) async -> Bool?
+  ) async -> PollCaptionStatus.VerificationOutcome
 
   init(
     store: MessageStore,

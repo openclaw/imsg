@@ -6,7 +6,7 @@
 
 - Fall back to raw chat identifiers for empty display names and distinguish unavailable Contacts from unmatched local nicknames (#250, thanks @riverr4t).
 - Let headless `nickname --local` return without an unanswered Contacts permission prompt while preserving interactive prompting (#248, thanks @SebTardif).
-- Report whether a poll's caption was delivered, and verify it against the target chat before saying so. Messages never renders a poll's title, so the caption sent after the balloon is the only thing that shows the question — but a failed caption was written to stderr while `poll send` / `poll.send` still reported plain success, leaving callers unable to tell a question-less poll from a complete one. Both surfaces now return a `comment` object (`requested`, `sent`, `verified`, and `error` / `disposition` / `retry_safe` on failure). The send still succeeds when only the caption fails, because re-sending would duplicate the balloon (#239).
+- Report whether a poll's caption was delivered, and verify it against the target chat before saying so. Messages never renders a poll's title, so the caption sent after the balloon is the only thing that shows the question. Both CLI and RPC now return a `comment` object with tri-state `sent` (`true`, `false`, or `null` when delivery is unknown), `verified`, and typed retry guidance. Caption recovery is recommended only when the transport proves `retry_safe: true`; re-sending the poll would duplicate the balloon (#239).
 
 ### Dependencies
 

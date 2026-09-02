@@ -165,7 +165,7 @@ func rpcPollSendInvokesBridgeWithResolvedChat() async throws {
       ]
     },
     // Stubbed: this test asserts bridge wiring, not row verification.
-    verifyCaption: { _, _, _ in true }
+    verifyCaption: { _, _, _ in .delivered }
   )
 
   await server.handleLineForTesting(
@@ -205,7 +205,7 @@ func rpcPollSendUsesCommentOverrideWithoutPollGuid() async throws {
       return [:]
     },
     // Stubbed: this test asserts bridge wiring, not row verification.
-    verifyCaption: { _, _, _ in true }
+    verifyCaption: { _, _, _ in .delivered }
   )
 
   await server.handleLineForTesting(
