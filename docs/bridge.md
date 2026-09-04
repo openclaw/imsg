@@ -122,6 +122,8 @@ imsg chat-mark --chat 'iMessage;+;chat0000' --read
 
 `chat-create` can create handles for previously uncontacted phone numbers and email addresses through the active iMessage account. Every recipient is IDS-checked before creating the chat; an unreachable or unresolved address fails the whole request instead of silently creating a smaller group. No Messages.app recipient-field warm-up is needed. See [chat creation](chats.md#create-an-imessage-chat) for errors and optional name/message behavior.
 
+`chat-add-member` uses the same handle creation and IDS check. An unreachable or unresolved recipient is rejected before Messages sends a group invitation.
+
 ## Account and identity
 
 Inspect the active account, local history, and address capabilities:

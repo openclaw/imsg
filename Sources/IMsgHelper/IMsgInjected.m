@@ -652,6 +652,23 @@ static id vendIMHandle(id registrar, NSString *address, NSString *preferredServi
     return allowFallback ? fallbackHandles.firstObject : nil;
 }
 
+static NSString *iMessageAvailabilityError(id handle, NSString *address) {
+    // Account-vended handles do not prove reachability. Check their canonical
+    // addresses before group creation or invitation can mutate a conversation.
+    NSString *canonicalAddress = [handle respondsToSelector:@selector(ID)] ? [handle ID] : address;
+    NSDictionary *check = handleCheckIMessageAvailability(0, @{
+        @"address": canonicalAddress ?: address,
+        @"aliasType": [address containsString:@"@"] ? @"email" : @"phone"
+    });
+    if (![check[@"success"] boolValue]) return [NSString stringWithFormat:
+        @"Could not check iMessage availability for %@: %@", address, check[@"error"]];
+    if ([check[@"available"] boolValue]) return nil;
+    NSString *reason = [check[@"id_status"] integerValue] == 2
+        ? @"is not reachable on iMessage; verify the address or use imsg send --service sms for a phone number"
+        : @"could not confirm iMessage availability; check the Messages account and connection, then retry";
+    return [NSString stringWithFormat:@"%@: %@", address, reason];
+}
+
 #pragma mark - Chat Resolution
 
 static NSArray<NSString *>* chatIdentifierPrefixes(void) {
@@ -6011,6 +6028,8 @@ static NSDictionary *handleAddParticipant(NSInteger requestId, NSDictionary *par
     // Match chat-create's fallback-capable iMessage handle lookup.
     id handle = vendIMHandle(hr, address, @"iMessage", YES);
     if (!handle) return errorResponse(requestId, @"Could not vend handle");
+    NSString *availabilityError = iMessageAvailabilityError(handle, address);
+    if (availabilityError) return errorResponse(requestId, availabilityError);
 
     @try {
         // macOS 26 renamed this selector; retain the older spelling as fallback.
@@ -6232,22 +6251,8 @@ static NSDictionary *handleCreateChat(NSInteger requestId, NSDictionary *params)
             @"Could not create %@ handle for %@; check that the account is signed in to Messages",
             preferredService, addr]);
         if ([preferredService isEqualToString:@"iMessage"]) {
-            // Vend first: an uncached address is not evidence of IDS reachability.
-            // Validate every participant before the registry can create a chat.
-            NSString *canonicalAddress = [h respondsToSelector:@selector(ID)] ? [h ID] : addr;
-            NSDictionary *check = handleCheckIMessageAvailability(requestId, @{
-                @"address": canonicalAddress ?: addr,
-                @"aliasType": [addr containsString:@"@"] ? @"email" : @"phone"
-            });
-            if (![check[@"success"] boolValue]) return errorResponse(requestId,
-                [NSString stringWithFormat:@"Could not check iMessage availability for %@: %@",
-                 addr, check[@"error"]]);
-            if (![check[@"available"] boolValue]) {
-                NSString *reason = [check[@"id_status"] integerValue] == 2
-                    ? @"is not reachable on iMessage; verify the address or use imsg send --service sms for a phone number"
-                    : @"could not confirm iMessage availability; check the Messages account and connection, then retry";
-                return errorResponse(requestId, [NSString stringWithFormat:@"%@: %@", addr, reason]);
-            }
+            NSString *availabilityError = iMessageAvailabilityError(h, addr);
+            if (availabilityError) return errorResponse(requestId, availabilityError);
         }
         [handles addObject:h];
     }

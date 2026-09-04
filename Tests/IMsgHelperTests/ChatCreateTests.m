@@ -28,6 +28,7 @@ static NSMutableDictionary *registeredHandles;
 static NSMutableArray *createdAddresses;
 static NSMutableArray *queriedDestinations;
 static NSArray *chatHandles;
+static NSArray *invitedHandles;
 static NSDictionary *availability;
 static NSString *unvendableAddress;
 static NSDictionary *canonicalAddresses;
@@ -73,13 +74,20 @@ static TestHandle *testHandle(NSString *address, NSString *service) {
 
 @interface TestChat : NSObject
 - (NSString *)guid;
+- (void)inviteParticipants:(NSArray *)handles reason:(NSInteger)reason;
 @end
 @implementation TestChat
 - (NSString *)guid { return @"iMessage;+;chat-test"; }
+- (void)inviteParticipants:(NSArray *)handles reason:(NSInteger)reason {
+    invitedHandles = handles;
+}
 @end
 
 @implementation IMChatRegistry
 + (instancetype)sharedInstance { return [self new]; }
+- (id)existingChatWithGUID:(NSString *)guid {
+    return [guid isEqual:@"iMessage;+;chat-test"] ? [TestChat new] : nil;
+}
 - (id)chatForIMHandle:(id)handle { return [self chatForIMHandles:@[handle]]; }
 - (id)chatForIMHandles:(NSArray *)handles {
     chatHandles = handles;
@@ -104,6 +112,7 @@ static void resetFixture(void) {
     createdAddresses = [NSMutableArray array];
     queriedDestinations = [NSMutableArray array];
     chatHandles = nil;
+    invitedHandles = nil;
     availability = @{@"tel:+15550100101": @1, @"tel:+15550100102": @1,
                      @"mailto:new@example.test": @1};
     unvendableAddress = nil;
@@ -204,8 +213,29 @@ int main(void) {
         check(vendIMHandle(registrar, addresses[0], @"SMS", NO) == nil,
               @"Explicit SMS resolution must not create an iMessage handle");
         check(createdAddresses.count == 0, @"SMS lookup must not use the iMessage account");
-        check(vendIMHandle(registrar, addresses[0], @"iMessage", YES) != nil,
-              @"Participant addition also gains unknown-handle creation");
+
+        for (NSNumber *idStatus in @[@0, @1, @2]) {
+            resetFixture();
+            availability = @{@"tel:+15550100101": idStatus};
+            result = handleAddParticipant(1, @{
+                @"chatGuid": @"iMessage;+;chat-test", @"address": addresses[0]
+            });
+            if (idStatus.integerValue == 1) {
+                check([result[@"success"] boolValue], @"Reachable first-contact participants can be invited");
+                check([[invitedHandles valueForKey:@"ID"] isEqual:@[addresses[0]]],
+                      @"Invite the account-created participant");
+            } else {
+                check(![result[@"success"] boolValue], @"Reject unconfirmed first-contact invitations");
+                check(invitedHandles == nil, @"IDS negative/unknown results must never reach the invitation selector");
+                check([result[@"error"] containsString:addresses[0]], @"Invitation errors identify the recipient");
+            }
+        }
+
+        resetFixture();
+        queryThrows = YES;
+        result = handleAddParticipant(1, @{@"chatGuid": @"iMessage;+;chat-test", @"address": addresses[0]});
+        check(![result[@"success"] boolValue] && invitedHandles == nil,
+              @"An IDS error must stop participant invitation");
 
         fprintf(stdout, "Bridge chat-create tests: %lu failure(s)\n", (unsigned long)failures);
         return failures ? 1 : 0;

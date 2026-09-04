@@ -126,7 +126,8 @@ numbers and chat GUIDs out of public test reports.
 
 `make test-helper` runs the actual Objective-C handler against isolated runtime
 stand-ins for cold/cached phone and email handles, mixed services, partial
-resolution, missing accounts, and IDS negative/unknown/error outcomes. It never
+resolution, missing accounts, and IDS negative/unknown/error outcomes for both
+chat creation and participant invitations. It never
 touches the Messages database or sends to recipients. The manual procedure above
 is the separate live private-framework proof; record its outcome when performed.
 
