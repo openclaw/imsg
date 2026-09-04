@@ -153,7 +153,9 @@ cannot preserve the private audio-message flag.
 
 `send-sticker` is always bridge-only and iMessage-only. It accepts PNG/APNG,
 GIF, and JPEG images up to 500 KiB, 618x618 pixels, 100 frames, and 25 million
-total decoded pixels. It reads every frame without following symlinks and
+total decoded pixels. Inputs must be regular files; pipes, devices, and paths
+through symlinks (including `link/../image.png`) are rejected before sending.
+It reads every frame without following symlinks and
 stages a private snapshot under Messages' attachments directory. Content
 bytes—not the filename—define sticker identity. `--attach-to`
 optionally associates the sticker with an exact bubble part; `--target-part`

@@ -1,4 +1,5 @@
 import CoreGraphics
+import Darwin
 import Foundation
 import ImageIO
 import Testing
@@ -72,6 +73,10 @@ func stickerPreparationRejectsUnsafeOrInvalidInputs() throws {
   #expect(throws: StickerAssetError.self) {
     try StickerAssetPreparer.prepare(at: linkedChild.path, destinationRoot: staged)
   }
+  #expect(throws: StickerAssetError.self) {
+    try StickerAssetPreparer.prepare(
+      at: parentLink.path + "/../valid.png", destinationRoot: staged)
+  }
 
   let corrupt = root.appendingPathComponent("corrupt.png")
   try Data("not an image".utf8).write(to: corrupt)
@@ -106,6 +111,32 @@ func stickerPreparationRejectsUnsafeOrInvalidInputs() throws {
   #expect(throws: StickerAssetError.self) {
     try StickerAssetPreparer.prepare(at: root.path, destinationRoot: staged)
   }
+}
+
+@Test
+func stickerPreparationRejectsFIFOWithoutWaitingForAWriter() throws {
+  let root = FileManager.default.temporaryDirectory
+    .appendingPathComponent(UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: root) }
+  let fifo = root.appendingPathComponent("sticker.png")
+  #expect(mkfifo(fifo.path, 0o600) == 0)
+
+  let completed = DispatchSemaphore(value: 0)
+  DispatchQueue.global().async {
+    defer { completed.signal() }
+    #expect(throws: StickerAssetError.self) {
+      try StickerAssetPreparer.prepare(at: fifo.path)
+    }
+  }
+  let rejectedWithoutWriter = completed.wait(timeout: .now() + 2) == .success
+  // Release a regressed blocking open before removing the fixture or ending the test.
+  if !rejectedWithoutWriter {
+    let writer = open(fifo.path, O_WRONLY | O_NONBLOCK)
+    if writer >= 0 { close(writer) }
+    #expect(completed.wait(timeout: .now() + 2) == .success)
+  }
+  #expect(rejectedWithoutWriter)
 }
 
 @Test

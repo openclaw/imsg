@@ -6,17 +6,8 @@ import Foundation
   import Glibc
 #endif
 
-/// Lexical-walk symlink detector. Used wherever we accept a filesystem path
-/// from outside the dylib (RPC inbox dir, attachment paths) and want to refuse
-/// any path that traverses a symbolic link, including parent components.
-///
-/// `realpath()` alone isn't sufficient: a same-UID attacker who can write to
-/// our RPC inbox could otherwise symlink an arbitrary file (a credential file,
-/// a password manager DB) into a location they control and have Messages.app
-/// exfiltrate it as an attachment. Comparing the resolved path against the
-/// lexical input is fragile too — macOS rewrites `/tmp` to `/private/tmp`,
-/// breaking that check for legitimate paths. Walking each component with
-/// `lstat()` and refusing the path on any `S_IFLNK` is the robust answer.
+/// Preserves lexical path components so symlinks cannot disappear through `..`
+/// normalization. Only macOS's trusted system aliases are expanded.
 public enum SecurePath {
   private static func normalizingTrustedSystemAliasPrefix(_ path: String) -> String {
     let aliases = [

@@ -128,25 +128,8 @@ public enum StickerAssetPreparer {
       let extensionName: String
     }
 
-    private static func normalizedLexicalPath(_ path: String) -> String {
-      var result = (path as NSString).expandingTildeInPath
-      if !result.hasPrefix("/") {
-        result = (FileManager.default.currentDirectoryPath as NSString)
-          .appendingPathComponent(result)
-      }
-      result = (result as NSString).standardizingPath
-      if result == "/tmp" || result.hasPrefix("/tmp/") {
-        result = "/private/tmp" + result.dropFirst(4)
-      } else if result == "/var" || result.hasPrefix("/var/") {
-        result = "/private/var" + result.dropFirst(4)
-      } else if result == "/etc" || result.hasPrefix("/etc/") {
-        result = "/private/etc" + result.dropFirst(4)
-      }
-      return result
-    }
-
     private static func securelyOpenDirectory(_ path: String) throws -> (fd: Int32, path: String) {
-      let normalized = normalizedLexicalPath(path)
+      let normalized = SecurePath.absoluteLexicalPath(path)
       let components = (normalized as NSString).pathComponents.filter { $0 != "/" }
       var directoryFD = Darwin.open("/", O_RDONLY | O_CLOEXEC | O_DIRECTORY)
       guard directoryFD >= 0 else { throw StickerAssetError.notRegularFile(normalized) }
@@ -167,21 +150,22 @@ public enum StickerAssetPreparer {
     }
 
     private static func securelyOpenForReading(_ path: String) throws -> (fd: Int32, path: String) {
-      let normalized = normalizedLexicalPath(path)
+      let normalized = SecurePath.absoluteLexicalPath(path)
       let leaf = (normalized as NSString).lastPathComponent
       guard !leaf.isEmpty else { throw StickerAssetError.notRegularFile(normalized) }
       let parentPath = (normalized as NSString).deletingLastPathComponent
       let parent = try securelyOpenDirectory(parentPath)
       let directoryFD = parent.fd
-      let fileFD = Darwin.openat(directoryFD, leaf, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+      // Inspect the opened descriptor before reading; a FIFO must not wait for a writer.
+      let fileFD = Darwin.openat(directoryFD, leaf, O_RDONLY | O_NONBLOCK | O_CLOEXEC | O_NOFOLLOW)
       Darwin.close(directoryFD)
       guard fileFD >= 0 else { throw StickerAssetError.notRegularFile(normalized) }
       return (fileFD, normalized)
     }
 
     private static func discardStagedFile(at path: String, trustedRoot: String) {
-      let normalized = normalizedLexicalPath(path)
-      let normalizedRoot = normalizedLexicalPath(trustedRoot)
+      let normalized = SecurePath.absoluteLexicalPath(path)
+      let normalizedRoot = SecurePath.absoluteLexicalPath(trustedRoot)
       guard normalized.hasPrefix(normalizedRoot + "/") else { return }
       let directoryPath = (normalized as NSString).deletingLastPathComponent
       let filename = (normalized as NSString).lastPathComponent
@@ -246,7 +230,7 @@ public enum StickerAssetPreparer {
       root: URL,
       filename: String
     ) throws -> URL {
-      let normalizedRoot = normalizedLexicalPath(root.path)
+      let normalizedRoot = SecurePath.absoluteLexicalPath(root.path)
       guard !SecurePath.hasSymlinkComponent(normalizedRoot) else {
         throw StickerAssetError.symlink(normalizedRoot)
       }
@@ -256,17 +240,7 @@ public enum StickerAssetPreparer {
         withIntermediateDirectories: true,
         attributes: [.posixPermissions: 0o700]
       )
-      guard !SecurePath.hasSymlinkComponent(normalizedRoot) else {
-        throw StickerAssetError.symlink(normalizedRoot)
-      }
-
-      let rootFD = Darwin.open(
-        normalizedRoot,
-        O_RDONLY | O_CLOEXEC | O_DIRECTORY | O_NOFOLLOW
-      )
-      guard rootFD >= 0 else {
-        throw StickerAssetError.couldNotStage("could not open destination directory")
-      }
+      let rootFD = try securelyOpenDirectory(normalizedRoot).fd
       defer { Darwin.close(rootFD) }
 
       let directoryName = UUID().uuidString
