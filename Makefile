@@ -29,11 +29,15 @@ test:
 	swift test
 
 test-helper:
+ifeq ($(shell uname -s),Darwin)
 	@mkdir -p .build/helper-tests
 	clang -fobjc-arc -Wno-arc-performSelector-leaks -Wno-incomplete-implementation \
 		-framework Foundation -framework AppKit -framework ImageIO -framework LinkPresentation \
 		Tests/IMsgHelperTests/ChatCreateTests.m -o .build/helper-tests/chat-create
 	.build/helper-tests/chat-create
+else
+	@echo "Skipping native bridge tests (macOS only)."
+endif
 
 build:
 	scripts/generate-version.sh
