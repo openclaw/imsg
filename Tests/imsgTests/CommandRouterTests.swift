@@ -1,4 +1,6 @@
+import Darwin
 import Foundation
+import IMsgCore
 import Testing
 
 @testable import imsg
@@ -45,6 +47,22 @@ func executableWrapperPropagatesRouterStatus() throws {
 }
 
 @Test
+func stickerCommandRejectsFIFOWithoutWaitingForAWriter() throws {
+  let root = FileManager.default.temporaryDirectory
+    .appendingPathComponent(UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: root) }
+  let fifo = root.appendingPathComponent("sticker.png")
+  #expect(mkfifo(fifo.path, 0o600) == 0)
+
+  let result = try runIMsgProcess([
+    "send-sticker", "--chat", "iMessage;-;+15550000000", "--file", fifo.path,
+  ])
+  #expect(result.status == 1)
+  #expect(result.output.contains("sticker must be a regular file"))
+}
+
+@Test
 func commandRouterIncludesGroupCommand() {
   let router = CommandRouter()
   #expect(router.specs.contains { $0.name == "group" })
@@ -70,8 +88,8 @@ private func runIMsgProcess(
   process.standardError = output
   try process.run()
   output.fileHandleForWriting.closeFile()
+  #expect(!ProcessTimeout.waitUntilExit(process, timeout: 3))
   let data = output.fileHandleForReading.readDataToEndOfFile()
-  process.waitUntilExit()
   return (process.terminationStatus, String(data: data, encoding: .utf8) ?? "")
 }
 
