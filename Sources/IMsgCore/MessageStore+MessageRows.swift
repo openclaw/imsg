@@ -92,11 +92,16 @@ struct MessagesAfterBatch {
 }
 
 struct MessageRowSelection {
+  // ROWID cursors represent physical messages, even when a row belongs to multiple chats.
+  static let canonicalChatID =
+    "(SELECT MIN(chat_id) FROM chat_message_join WHERE message_id = m.ROWID)"
+  static let scopedChatJoin = "JOIN chat_message_join cmj ON m.ROWID = cmj.message_id"
+
   let selectList: String
   let columns: MessageRowColumns
 
-  init(store: MessageStore, includeChatID: Bool) {
-    let columns = MessageRowColumns.message(chatID: includeChatID ? "chat_id" : nil)
+  init(store: MessageStore, chatIDColumn: String? = nil) {
+    let columns = MessageRowColumns.message(chatID: chatIDColumn == nil ? nil : "chat_id")
     let schema = store.schema
     let bodyColumn = schema.hasAttributedBody ? "m.attributedBody" : "NULL"
     let guidColumn = schema.hasReactionColumns ? "m.guid" : "NULL"
@@ -120,7 +125,7 @@ struct MessageRowSelection {
       ? "CASE WHEN \(pollCandidatePredicate) THEN m.message_summary_info ELSE NULL END" : "NULL"
     let isReadColumn = schema.hasIsReadColumn ? "m.is_read" : "NULL"
     let dateReadColumn = schema.hasDateReadColumn ? "m.date_read" : "NULL"
-    let chatColumn = includeChatID ? ", cmj.chat_id AS \(columns.chatID!)" : ""
+    let chatColumn = chatIDColumn.map { ", \($0) AS chat_id" } ?? ""
 
     let selectList = """
       m.ROWID AS \(columns.rowID)\(chatColumn), m.handle_id AS \(columns.handleID),

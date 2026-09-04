@@ -3,7 +3,7 @@ title: History
 description: "Read message history from one chat with optional date, participant, and attachment filters."
 ---
 
-`imsg history` reads messages from a single chat in chronological order. It's the bread-and-butter command for one-shot reads — search, archive, summarize, transcribe.
+`imsg history` reads messages from a single chat, newest first. Messages with equal timestamps are ordered by descending row ID before applying the limit.
 
 ## Basic read
 

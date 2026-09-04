@@ -18,8 +18,7 @@ private struct CurrentReactionsQuery {
       WHERE m.ROWID = ?
         AND m.guid IS NOT NULL
         AND m.guid != ''
-        AND r.associated_message_type >= 2000
-        AND r.associated_message_type <= 3006
+        AND \(reactionPredicate("r.associated_message_type"))
       ORDER BY r.date ASC
       """
     self.bindings = [messageID.rawValue]

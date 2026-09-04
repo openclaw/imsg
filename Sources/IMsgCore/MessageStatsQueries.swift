@@ -1,14 +1,5 @@
 import SQLite
 
-private func statsNonReactionPredicate(_ column: String) -> String {
-  """
-  (\(column) IS NULL OR (
-    \(column) NOT BETWEEN 2000 AND 2006
-    AND \(column) NOT BETWEEN 3000 AND 3006
-  ))
-  """
-}
-
 struct StatsQueryFilter {
   let whereClause: String
   let bindings: [Binding?]
@@ -17,7 +8,7 @@ struct StatsQueryFilter {
     var clauses: [String] = []
     var bindings: [Binding?] = []
     if schema.hasReactionColumns {
-      clauses.append(statsNonReactionPredicate("m.associated_message_type"))
+      clauses.append(nonReactionPredicate("m.associated_message_type"))
     }
     if let chatID {
       clauses.append("cmj.chat_id = ?")

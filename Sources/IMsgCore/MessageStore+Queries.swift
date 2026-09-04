@@ -1,6 +1,14 @@
 import Foundation
 import SQLite
 
+func reactionPredicate(_ column: String) -> String {
+  "(\(column) BETWEEN 2000 AND 2006 OR \(column) BETWEEN 3000 AND 3006)"
+}
+
+func nonReactionPredicate(_ column: String) -> String {
+  "(\(column) IS NULL OR NOT \(reactionPredicate(column)))"
+}
+
 struct ChatMessagesQuery {
   let sql: String
   let bindings: [Binding?]
@@ -8,17 +16,17 @@ struct ChatMessagesQuery {
   let fallbackChatID: Int64
 
   init(store: MessageStore, chatID: ChatID, limit: Int, filter: MessageFilter?) {
-    self.selection = MessageRowSelection(store: store, includeChatID: false)
+    self.selection = MessageRowSelection(store: store)
     let destinationCallerColumn =
       store.schema.hasDestinationCallerID ? "m.destination_caller_id" : "NULL"
     let reactionFilter =
       store.schema.hasReactionColumns
-      ? " AND (m.associated_message_type IS NULL OR m.associated_message_type < 2000 OR m.associated_message_type > 3006)"
+      ? " AND \(nonReactionPredicate("m.associated_message_type"))"
       : ""
     var sql = """
       SELECT \(selection.selectList)
       FROM message m
-      JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+      \(MessageRowSelection.scopedChatJoin)
       LEFT JOIN handle h ON m.handle_id = h.ROWID
       WHERE cmj.chat_id = ?\(reactionFilter)
       """
@@ -44,7 +52,7 @@ struct ChatMessagesQuery {
       }
     }
 
-    sql += " ORDER BY m.date DESC LIMIT ?"
+    sql += " ORDER BY m.date DESC, m.ROWID DESC LIMIT ?"
     bindings.append(limit)
 
     self.sql = sql
@@ -66,18 +74,19 @@ struct MessagesAfterQuery {
     limit: Int,
     includeReactions: Bool
   ) {
-    self.selection = MessageRowSelection(store: store, includeChatID: true)
+    self.selection = MessageRowSelection(
+      store: store, chatIDColumn: chatID == nil ? MessageRowSelection.canonicalChatID : nil)
     let reactionFilter: String
     if includeReactions || !store.schema.hasReactionColumns {
       reactionFilter = ""
     } else {
       reactionFilter =
-        " AND (m.associated_message_type IS NULL OR m.associated_message_type < 2000 OR m.associated_message_type > 3006)"
+        " AND \(nonReactionPredicate("m.associated_message_type"))"
     }
     var sql = """
       SELECT \(selection.selectList)
       FROM message m
-      LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+      \(chatID == nil ? "" : MessageRowSelection.scopedChatJoin)
       LEFT JOIN handle h ON m.handle_id = h.ROWID
       WHERE m.ROWID > ?\(reactionFilter)
       """
@@ -102,12 +111,13 @@ struct LatestSentMessageQuery {
   let fallbackChatID: Int64?
 
   init(store: MessageStore, text: String, chatID: ChatID?, since date: Date) {
-    self.selection = MessageRowSelection(store: store, includeChatID: true)
+    self.selection = MessageRowSelection(
+      store: store, chatIDColumn: chatID == nil ? MessageRowSelection.canonicalChatID : nil)
     let bodyColumn = store.schema.hasAttributedBody ? "m.attributedBody" : "NULL"
     var sql = """
       SELECT \(selection.selectList)
       FROM message m
-      LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+      \(chatID == nil ? "" : MessageRowSelection.scopedChatJoin)
       LEFT JOIN handle h ON m.handle_id = h.ROWID
       WHERE m.is_from_me = 1
         AND m.date >= ?

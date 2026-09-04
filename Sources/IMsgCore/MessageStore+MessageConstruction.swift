@@ -70,10 +70,10 @@ extension MessageStore {
 
   func precedingTextMessageForURLPreview(_ preview: Message, db: Connection) throws -> Message? {
     guard isURLPreviewBalloon(preview) else { return nil }
-    let selection = MessageRowSelection(store: self, includeChatID: true)
+    let selection = MessageRowSelection(store: self, chatIDColumn: "cmj.chat_id")
     let reactionFilter =
       schema.hasReactionColumns
-      ? "AND (m.associated_message_type IS NULL OR m.associated_message_type < 2000 OR m.associated_message_type > 3006)"
+      ? "AND \(nonReactionPredicate("m.associated_message_type"))"
       : ""
     let sql = """
       SELECT \(selection.selectList)

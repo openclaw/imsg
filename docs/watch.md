@@ -12,6 +12,7 @@ imsg watch --json
 ```
 
 You'll see every new inbound and outbound message across every chat the database covers.
+Each physical message is emitted once. If Messages links a row to multiple chats, an all-chat watch uses its lowest linked chat ID; `--chat-id` preserves the requested chat's context.
 
 ## Stream one chat
 

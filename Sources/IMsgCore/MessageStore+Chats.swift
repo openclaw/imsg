@@ -83,7 +83,7 @@ private struct UnreadMessagesQuery {
   let selection: MessageRowSelection
 
   init(store: MessageStore, chatIDs: [Int64]) {
-    let selection = MessageRowSelection(store: store, includeChatID: true)
+    let selection = MessageRowSelection(store: store, chatIDColumn: "cmj.chat_id")
     self.selection = selection
     let placeholders = Array(repeating: "?", count: chatIDs.count).joined(separator: ", ")
     self.sql = """

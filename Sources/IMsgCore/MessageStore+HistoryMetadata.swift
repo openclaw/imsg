@@ -76,8 +76,7 @@ extension MessageStore {
       LEFT JOIN handle h ON r.handle_id = h.ROWID
       WHERE r.associated_message_guid IS NOT NULL
         AND r.associated_message_guid != ''
-        AND r.associated_message_type >= 2000
-        AND r.associated_message_type <= 3006
+        AND \(reactionPredicate("r.associated_message_type"))
       """
 
     try withConnection { db in

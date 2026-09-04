@@ -132,15 +132,9 @@ extension MessageStore {
 
     let reactionFilter =
       schema.hasReactionColumns
-      ? """
-       AND (
-         next.associated_message_type IS NULL
-         OR next.associated_message_type < 2000
-         OR next.associated_message_type > 3006
-       )
-      """
+      ? "AND \(nonReactionPredicate("next.associated_message_type"))"
       : ""
-    let selection = MessageRowSelection(store: self, includeChatID: true)
+    let selection = MessageRowSelection(store: self, chatIDColumn: "cmj.chat_id")
 
     // Keep each VALUES block below SQLite's historical 999-variable limit.
     for start in stride(from: 0, to: pageBases.count, by: 400) {

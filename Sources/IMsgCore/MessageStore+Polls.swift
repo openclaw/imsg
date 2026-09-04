@@ -98,7 +98,7 @@ extension MessageStore {
   }
 
   private func decodedPollOptions(guid: String, db: Connection) throws -> [MessagePollOption] {
-    let selection = MessageRowSelection(store: self, includeChatID: false)
+    let selection = MessageRowSelection(store: self)
     let sql: String
     let bindings: [Binding?]
     if schema.hasReactionColumns {
@@ -147,7 +147,7 @@ extension MessageStore {
 
   private func latestOutboundPollVoteOptionIDs(guid: String, db: Connection) throws -> [String] {
     guard schema.hasReactionColumns else { return [] }
-    let selection = MessageRowSelection(store: self, includeChatID: false)
+    let selection = MessageRowSelection(store: self)
     let rows = try db.prepareRowIterator(
       """
       SELECT \(selection.selectList)

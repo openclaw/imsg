@@ -8,10 +8,11 @@ private struct SearchMessagesQuery {
   let fallbackChatID: Int64? = nil
 
   init(store: MessageStore, text: String, exact: Bool, limit: Int) {
-    self.selection = MessageRowSelection(store: store, includeChatID: true)
+    self.selection = MessageRowSelection(
+      store: store, chatIDColumn: MessageRowSelection.canonicalChatID)
     let reactionFilter =
       store.schema.hasReactionColumns
-      ? " AND (m.associated_message_type IS NULL OR m.associated_message_type < 2000 OR m.associated_message_type > 3006)"
+      ? " AND \(nonReactionPredicate("m.associated_message_type"))"
       : ""
     let textPredicate =
       exact
@@ -26,7 +27,6 @@ private struct SearchMessagesQuery {
     self.sql = """
       SELECT \(selection.selectList)
       FROM message m
-      LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
       LEFT JOIN handle h ON m.handle_id = h.ROWID
       WHERE \(predicate)\(reactionFilter)
       ORDER BY m.date DESC, m.ROWID DESC
@@ -102,14 +102,14 @@ extension MessageStore {
           fallbackReplacementUsed: {
             usedFallbackReplacement = true
           }
-        ).sorted(by: searchMessagesNewestFirst)
+        ).sorted(by: messageNewestFirst)
 
         if candidateCount < physicalLimit
           || (coalesced.count >= limit && !usedFallbackReplacement)
         {
           return Array(coalesced.prefix(limit))
         }
-        guard let nextLimit = nextSearchPhysicalLimit(after: physicalLimit) else {
+        guard let nextLimit = nextMessageQueryLimit(after: physicalLimit) else {
           return Array(coalesced.prefix(limit))
         }
         physicalLimit = nextLimit
@@ -124,15 +124,4 @@ extension MessageStore {
     return candidate.range(of: text, options: [.caseInsensitive]) != nil
   }
 
-  private func nextSearchPhysicalLimit(after current: Int) -> Int? {
-    guard current > 0, current <= Int.max / 2 else { return nil }
-    return current * 2
-  }
-
-  private func searchMessagesNewestFirst(_ lhs: Message, _ rhs: Message) -> Bool {
-    if lhs.date == rhs.date {
-      return lhs.rowID > rhs.rowID
-    }
-    return lhs.date > rhs.date
-  }
 }

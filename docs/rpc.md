@@ -294,6 +294,7 @@ Result:
 ```
 
 Search results always contain an empty `attachments` array.
+Across all-chat search and cursor reads, each physical message appears once. If Messages links it to multiple chats, `chat_id` is the lowest linked chat ID. An explicit chat filter preserves that chat's context.
 
 ### `messages.after`
 

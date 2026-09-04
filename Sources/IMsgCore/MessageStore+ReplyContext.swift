@@ -24,7 +24,7 @@ extension MessageStore {
   /// row is absent or the guid is empty.
   func resolveReplyParent(_ db: Connection, guid: String) throws -> ReplyParent? {
     guard !guid.isEmpty else { return nil }
-    let selection = MessageRowSelection(store: self, includeChatID: false)
+    let selection = MessageRowSelection(store: self)
     let sql = """
       SELECT \(selection.selectList)
       FROM message m
@@ -49,7 +49,7 @@ extension MessageStore {
     // Older/synthetic message tables may lack reply_to_guid; without it a poll
     // comment cannot be located, so skip the query rather than fail the pull.
     guard schema.hasReplyToGUIDColumn else { return nil }
-    let selection = MessageRowSelection(store: self, includeChatID: false)
+    let selection = MessageRowSelection(store: self)
     // The question caption is a plain message (associated_message_type 0 or NULL)
     // with no thread metadata. A threaded inline reply to the poll (type 100,
     // thread originator set) is NOT the question — exclude it so a reply is never

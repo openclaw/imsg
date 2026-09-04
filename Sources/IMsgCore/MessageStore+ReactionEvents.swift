@@ -61,9 +61,10 @@ extension MessageStore {
     let bodyColumn = schema.hasAttributedBody ? "m.attributedBody" : "NULL"
     let destinationCallerColumn =
       schema.hasDestinationCallerID ? "m.destination_caller_id" : "NULL"
+    let chatColumn = chatID == nil ? MessageRowSelection.canonicalChatID : "NULL"
 
     var sql = """
-      SELECT m.ROWID AS reaction_rowid, cmj.chat_id AS chat_id,
+      SELECT m.ROWID AS reaction_rowid, \(chatColumn) AS chat_id,
              m.associated_message_type AS associated_message_type,
              m.associated_message_guid AS associated_message_guid,
              m.handle_id AS handle_id, h.id AS sender, m.is_from_me AS is_from_me,
@@ -72,13 +73,12 @@ extension MessageStore {
              \(bodyColumn) AS body,
              orig.ROWID AS orig_rowid
       FROM message m
-      LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+      \(chatID == nil ? "" : MessageRowSelection.scopedChatJoin)
       LEFT JOIN handle h ON m.handle_id = h.ROWID
       LEFT JOIN message orig ON (orig.guid = m.associated_message_guid
         OR m.associated_message_guid LIKE '%/' || orig.guid)
       WHERE m.ROWID > ?
-        AND m.associated_message_type >= 2000
-        AND m.associated_message_type <= 3006
+        AND \(reactionPredicate("m.associated_message_type"))
       """
     var bindings: [Binding?] = [afterRowID]
 

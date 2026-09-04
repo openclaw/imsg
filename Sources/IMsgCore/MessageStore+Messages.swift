@@ -61,13 +61,13 @@ extension MessageStore {
           fallbackReplacementUsed: {
             usedFallbackReplacement = true
           }
-        ).sorted(by: messageHistoryNewestFirst)
+        ).sorted(by: messageNewestFirst)
 
         if messages.count < physicalLimit || (coalesced.count >= limit && !usedFallbackReplacement)
         {
           return Array(coalesced.prefix(limit))
         }
-        guard let nextLimit = nextHistoryPhysicalLimit(after: physicalLimit) else {
+        guard let nextLimit = nextMessageQueryLimit(after: physicalLimit) else {
           return Array(coalesced.prefix(limit))
         }
         physicalLimit = nextLimit
@@ -75,12 +75,12 @@ extension MessageStore {
     }
   }
 
-  private func nextHistoryPhysicalLimit(after current: Int) -> Int? {
+  func nextMessageQueryLimit(after current: Int) -> Int? {
     guard current > 0, current <= Int.max / 2 else { return nil }
     return current * 2
   }
 
-  private func messageHistoryNewestFirst(_ lhs: Message, _ rhs: Message) -> Bool {
+  func messageNewestFirst(_ lhs: Message, _ rhs: Message) -> Bool {
     if lhs.date == rhs.date {
       return lhs.rowID > rhs.rowID
     }
@@ -188,7 +188,7 @@ extension MessageStore {
             hasMore: false
           )
         }
-        guard let nextLimit = nextHistoryPhysicalLimit(after: physicalLimit) else {
+        guard let nextLimit = nextMessageQueryLimit(after: physicalLimit) else {
           return MessagesAfterPage(
             messages: visibleMessages,
             nextRowID: physicalMessages.last?.rowID ?? afterRowID,
