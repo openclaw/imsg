@@ -4,14 +4,18 @@
 
   enum ContactCatalogAuthorization: Equatable, Sendable {
     case authorized
+    case addressBook
     case notDetermined
     case unavailable
+    case restricted
+
+    var canAttemptRead: Bool { self == .authorized || self == .addressBook }
   }
 
   struct ContactCatalogRecord: Sendable {
     let name: String
-    let phones: [String]
-    let emails: [String]
+    var phones: [String]
+    var emails: [String]
   }
 
   struct ContactCatalogSource: @unchecked Sendable {
@@ -90,31 +94,33 @@
       let region = Self.normalizedRegion(region)
       condition.lock()
       while true {
+        if refreshing {
+          condition.wait()
+          continue
+        }
         let authorization = source.authorization()
-        if authorization != .authorized {
-          if refreshing {
-            condition.wait()
-            continue
-          }
+        if !authorization.canAttemptRead {
           apply(.unauthorized)
           let catalog = regionSnapshot(region)
           condition.unlock()
           return (catalog, true)
         }
-        let authorizationBecameAvailable = !authorizationWasAvailable
-        authorizationWasAvailable = true
-        let shouldRefresh = authorizationBecameAvailable || invalidated || now() >= nextRefreshAt
-        if shouldRefresh, refreshing {
-          condition.wait()
-          continue
-        }
+        let authorizationChanged = lastAuthorization != authorization
+        // Transient failures may retain only a catalog from the same source.
+        if authorizationChanged { apply(.unauthorized) }
+        lastAuthorization = authorization
+        let shouldRefresh = authorizationChanged || invalidated || now() >= nextRefreshAt
         if shouldRefresh {
           refreshing = true
           invalidated = false
           condition.unlock()
           let result = loadCatalog()
           condition.lock()
-          apply(source.authorization() == .authorized ? result : .unauthorized)
+          // A grant change can switch the data source. Discard an in-flight read
+          // from the old source instead of caching it under the new permission.
+          let sourceChanged = source.authorization() != authorization
+          apply(sourceChanged ? .unauthorized : result)
+          if sourceChanged { invalidated = true }
           refreshing = false
           condition.broadcast()
           if invalidated { continue }
@@ -135,12 +141,15 @@
       case loaded([ContactCatalogRecord])
       case transientFailure
       case unauthorized
+      case unavailable
     }
 
     private func loadCatalog() -> LoadResult {
-      guard source.authorization() == .authorized else { return .unauthorized }
+      guard source.authorization().canAttemptRead else { return .unauthorized }
       do {
         return .loaded(try source.load())
+      } catch AddressBookContacts.ReadError.unavailable {
+        return .unavailable
       } catch {
         return .transientFailure
       }
@@ -157,8 +166,8 @@
         unavailable = false
       case .transientFailure:
         unavailable = !hasLastGoodCatalog
-      case .unauthorized:
-        authorizationWasAvailable = false
+      case .unauthorized, .unavailable:
+        if case .unauthorized = result { lastAuthorization = nil }
         records.removeAll(keepingCapacity: false)
         snapshots.removeAll(keepingCapacity: false)
         regionRecency.removeAll(keepingCapacity: false)
@@ -258,10 +267,12 @@
         return .authorized
       case .notDetermined:
         return .notDetermined
-      case .denied, .restricted:
+      case .denied:
         return .unavailable
+      case .restricted:
+        return .restricted
       @unknown default:
-        return .unavailable
+        return .restricted
       }
     }
 

@@ -347,6 +347,7 @@ enum NicknameCommand {
         if contacts.contactsUnavailable {
           StdoutWriter.writeLine(
             "Check System Settings > Privacy & Security > Contacts for the app running imsg.")
+          StdoutWriter.writeLine("Over SSH, also check Full Disk Access for the SSH service.")
         }
       }
       return

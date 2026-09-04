@@ -75,7 +75,7 @@ public final class ContactResolver: ContactResolving, @unchecked Sendable {
     var nextRefreshAt: TimeInterval = -.infinity
     var invalidated = true
     var refreshing = false
-    var authorizationWasAvailable = false
+    var lastAuthorization: ContactCatalogAuthorization?
     var hasLastGoodCatalog = false
     var unavailable = true
     var cancelObservation: (() -> Void)?
@@ -108,11 +108,16 @@ public final class ContactResolver: ContactResolving, @unchecked Sendable {
   ) async -> any ContactResolving {
     #if os(macOS)
       let store = CNContactStore()
+      let environment = ProcessInfo.processInfo.environment
+      let isSSH = environment["SSH_CONNECTION"] != nil || environment["SSH_CLIENT"] != nil
       let initialStatus = CNContactStore.authorizationStatus(for: .contacts)
-      if initialStatus == .notDetermined, accessPolicy == .requestIfNeeded {
+      if initialStatus == .notDetermined, accessPolicy == .requestIfNeeded, !isSSH {
         _ = await requestAccess(store: store)
       }
-      return ContactResolver(region: region, source: contactSource(store: store))
+      let nativeSource = contactSource(store: store)
+      let source =
+        isSSH ? nativeSource.allowingAddressBook(at: AddressBookContacts.directory) : nativeSource
+      return ContactResolver(region: region, source: source)
     #else
       _ = region
       _ = accessPolicy

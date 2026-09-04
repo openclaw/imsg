@@ -109,9 +109,9 @@ If `which imsg` doesn't point at the Homebrew prefix, remove the older binary or
 
 ## Contacts names are missing in JSON output
 
-Contacts permission isn't granted, or the contact isn't matched.
+The Contacts source is unavailable, the Mac has not synced the contact, or the handle has no match.
 
-1. Confirm under **System Settings → Privacy & Security → Contacts** that the terminal/wrapper app is enabled.
+1. Confirm under **System Settings → Privacy & Security → Contacts** that the terminal/wrapper app is enabled. Over SSH, imsg can instead use the read-only AddressBook store when the SSH service has Full Disk Access; see [Contacts over SSH](permissions.md#contacts-over-ssh). `imsg nickname --local --address <handle> --json` distinguishes unavailable access from no match with `contacts_unavailable`.
 2. Raw handles are always preserved in `sender`, `chat_identifier`, etc. The optional `contact_name` / `sender_name` fields are simply omitted when no match is found.
 
 If you want partial fallback names (initials, or formatted handles), do that in your consumer — `imsg` doesn't synthesize names that aren't in your Address Book.

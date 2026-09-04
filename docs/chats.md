@@ -20,6 +20,7 @@ display name or raw chat identifier.
 Empty and missing Messages display names fall back to the raw chat identifier,
 including when Contacts is unavailable over SSH. JSON exposes a resolved Contacts
 match separately as `contact_name` in both `chats` and RPC `chats.list`.
+[Contacts over SSH](permissions.md#contacts-over-ssh) can resolve these names with Full Disk Access even when Contacts.framework has no grant.
 The presentation fallback belongs to `name`: an empty stored title remains empty
 in JSON `display_name` and chat-detail metadata.
 
@@ -43,7 +44,7 @@ Objects returned by `imsg chats --json` and JSON-RPC `chats.list` include:
 | `id` | int | `chat.ROWID`. Stable within one Messages database. Preferred routing handle. |
 | `name` | string | Messages display name or raw chat identifier fallback. |
 | `display_name` | string | Chat title metadata. An empty stored title remains empty. |
-| `contact_name` | string | Resolved Contacts name when permission granted. |
+| `contact_name` | string | Resolved name from Contacts.framework or the readable AddressBook store over SSH. |
 | `identifier` | string | `chat.chat_identifier` — Messages' portable handle. |
 | `guid` | string | `chat.guid` — Messages' portable GUID. |
 | `service` | string | `iMessage`, `SMS`, etc. |

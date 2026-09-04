@@ -55,13 +55,28 @@ Grant it under **System Settings → Privacy & Security → Contacts**.
 `imsg nickname --local` distinguishes `(Contacts unavailable)` from `(none)` in
 text output; JSON exposes the same distinction as `contacts_unavailable`. An
 unavailable result means imsg could not read Contacts, not that the handle has no
-matching contact. For SSH and other indirect launches, check the Contacts grant
-for the app or process running imsg. Full Disk Access alone does not grant Contacts
-access.
+matching contact. For indirect launches, check the grant for the app or process
+running imsg. Full Disk Access does not grant access through Contacts.framework;
+SSH sessions can use the read-only database path described below.
 
-If you skip this, JSON output simply leaves the resolved name fields empty. Nothing else changes. A long-running `imsg rpc` child observes Contacts changes and periodically rechecks authorization, so grants and contact edits become visible without restarting. Revocation clears cached names; a transient Contacts read failure retains the last successful catalog until the next refresh.
+When neither Contacts source is readable, JSON output leaves resolved name fields empty. A long-running `imsg rpc` child observes Contacts changes and periodically rechecks authorization, so grants and contact edits become visible without restarting. Revocation clears cached names; a transient Contacts read failure retains the last successful catalog until the next refresh.
 
 On Macs with CardDAV accounts such as Google or Yahoo, Apple's Contacts framework may periodically write `Could not fetch group … :ABGroup` reconciliation messages to stderr. These messages are benign and do not come from `imsg`; a parent process that captures `imsg rpc --json` stderr should not report this specific framework message as an `imsg` error.
+
+## Contacts over SSH
+
+SSH sessions prefer Contacts.framework when its permission is available. Otherwise, imsg automatically reads the local AddressBook SQLite stores using the SSH service's existing Full Disk Access. This applies to phone/email lookup, `nickname --local`, chat and message name fields, and `imsg rpc`. It requires no SIP change or separate Contacts prompt, including when SSH allocates a TTY.
+
+```bash
+ssh your-mac 'imsg nickname --local --address friend@example.com --json'
+ssh your-mac 'imsg chats --limit 10 --json'
+```
+
+Give the SSH service Full Disk Access on the Mac, then reconnect. Depending on the macOS version, the relevant control is [**System Settings → General → Sharing → Remote Login → Allow full disk access for remote users**](https://support.apple.com/guide/mac-help/mchlp1066/mac), or the SSH service's Full Disk Access entry. A Contacts restriction imposed by the system remains unavailable.
+
+The contact data must already be synced to that Mac. The reader supports `AddressBook-v22.abcddb` in `~/Library/Application Support/AddressBook/` and its account `Sources` directories. A newer unsupported database version is reported as unavailable instead of reading a retired older copy. It opens existing databases read-only and includes WAL updates; it never edits Contacts, changes permission grants, or copies the database elsewhere. Outside SSH (detected through `SSH_CONNECTION` or `SSH_CLIENT`), Contacts.framework remains the only source.
+
+Long-running processes refresh the database catalog every 30 seconds on use, or sooner after a Contacts change notification. Changes to Contacts authorization re-evaluate the source immediately before returning cached names. Missing access, a removed database, or an unsupported schema clears cached names on that refresh and reports Contacts unavailable. A transient SQLite lock retains the last successful catalog. An empty, readable store is a valid no-match result, so check that Contacts has finished syncing before diagnosing permissions.
 
 ## Why these grants live in three different places
 

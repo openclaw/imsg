@@ -64,6 +64,8 @@ Read commands open the database in SQLite read-only mode. `watch` follows databa
 
 Full Disk Access is required for local database reads. Sending and standard tapbacks also require **Automation → Messages**; Contacts access is optional and only adds resolved names. The [permissions guide](docs/permissions.md) covers parent-process grants and stale TCC entries, while [troubleshooting](docs/troubleshooting.md) maps common failures to their likely gate.
 
+SSH sessions can also resolve contact names through the Mac’s read-only AddressBook database when the SSH service has Full Disk Access and Contacts.framework is unavailable. See [Contacts over SSH](docs/permissions.md#contacts-over-ssh).
+
 For SMS, enable Text Message Forwarding on the paired iPhone. `imsg send` uses Messages.app's AppleScript surface and cannot force a particular outgoing number when several numbers share one Apple ID.
 
 ## JSON and automation

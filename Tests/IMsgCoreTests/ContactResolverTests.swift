@@ -235,18 +235,26 @@ func noOpContactResolverCanRepresentUnavailableContacts() {
     #expect(resolver.contactsUnavailable == false)
   }
 
-  @Test(.timeLimit(.minutes(1)))
-  func contactCatalogCoalescesConcurrentRefreshes() {
+  @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+  func contactCatalogCoalescesConcurrentRefreshes(changingSource: Bool) {
     let source = ContactSourceHarness(records: [contactRecord(name: "Alice")])
     let started = DispatchSemaphore(value: 0)
     let release = DispatchSemaphore(value: 0)
-    source.blockNextLoad(started: started, release: release)
     let resolver = ContactResolver(region: "US", source: source.source, refreshInterval: 60)
+    if changingSource {
+      _ = resolver.displayName(for: "+15551234567")
+      source.setRecords([contactRecord(name: "Bob")])
+      source.setAuthorization(.addressBook)
+    }
+    source.blockNextLoad(started: started, release: release)
+    let entered = DispatchSemaphore(value: 0)
     let group = DispatchGroup()
     let threads = (0..<8).map { _ in
       group.enter()
       return Thread {
-        _ = resolver.displayName(for: "+15551234567")
+        entered.signal()
+        let name = resolver.displayName(for: "+15551234567")
+        #expect(name == (changingSource ? "Bob" : "Alice"))
         group.leave()
       }
     }
@@ -255,10 +263,11 @@ func noOpContactResolverCanRepresentUnavailableContacts() {
     }
 
     started.wait()
-    #expect(source.loadCount == 1)
+    for _ in threads { entered.wait() }
+    #expect(source.loadCount == (changingSource ? 2 : 1))
     release.signal()
     group.wait()
-    #expect(source.loadCount == 1)
+    #expect(source.loadCount == (changingSource ? 2 : 1))
   }
 
   @Test
