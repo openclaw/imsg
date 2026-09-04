@@ -1,6 +1,42 @@
 import Foundation
 import SQLite
 
+#if os(Linux)
+  import SQLiteSwiftCSQLite
+#else
+  import SQLite3
+#endif
+
+func messageSearchMatches(_ candidate: String, query: String, exact: Bool) -> Bool {
+  if exact {
+    return candidate.caseInsensitiveCompare(query) == .orderedSame
+  }
+  return candidate.range(of: query, options: [.caseInsensitive]) != nil
+}
+
+func registerMessageSearch(in db: Connection) throws {
+  // SQLite.swift's block registration crashes on Linux (upstream #1071).
+  // This C callback captures no state and lives with the connection.
+  let result = sqlite3_create_function_v2(
+    db.handle, "imsg_search_text", 3, SQLITE_UTF8 | SQLITE_DETERMINISTIC, nil,
+    { context, _, args in
+      guard let args, let candidate = sqlite3_value_text(args[0]),
+        let query = sqlite3_value_text(args[1])
+      else {
+        sqlite3_result_int(context, 0)
+        return
+      }
+      let matches = messageSearchMatches(
+        String(cString: candidate), query: String(cString: query),
+        exact: sqlite3_value_int(args[2]) != 0)
+      sqlite3_result_int(context, matches ? 1 : 0)
+    }, nil, nil, nil)
+  guard result == SQLITE_OK else {
+    throw SQLite.Result.error(
+      message: String(cString: sqlite3_errmsg(db.handle)), code: result, statement: nil)
+  }
+}
+
 private struct SearchMessagesQuery {
   let sql: String
   let bindings: [Binding?]
@@ -14,16 +50,15 @@ private struct SearchMessagesQuery {
       store.schema.hasReactionColumns
       ? " AND \(nonReactionPredicate("m.associated_message_type"))"
       : ""
-    let textPredicate =
-      exact
-      ? "IFNULL(m.text, '') = ? COLLATE NOCASE"
-      : "IFNULL(m.text, '') LIKE ? ESCAPE '\\' COLLATE NOCASE"
     let attributedBodyCandidate =
       store.schema.hasAttributedBody
       ? " OR (IFNULL(m.text, '') = '' AND m.attributedBody IS NOT NULL)"
       : ""
-    let predicate = "(\(textPredicate)\(attributedBodyCandidate))"
-    let textBinding = exact ? text : SearchMessagesQuery.likePattern(for: text)
+    let audioCandidate =
+      store.schema.hasAudioMessageColumn && store.schema.hasAttachmentUserInfo
+      ? " OR m.is_audio_message != 0" : ""
+    let predicate =
+      "(imsg_search_text(IFNULL(m.text, ''), ?, ?)\(attributedBodyCandidate)\(audioCandidate))"
     self.sql = """
       SELECT \(selection.selectList)
       FROM message m
@@ -32,18 +67,7 @@ private struct SearchMessagesQuery {
       ORDER BY m.date DESC, m.ROWID DESC
       LIMIT ?
       """
-    self.bindings = [textBinding, limit]
-  }
-
-  private static func likePattern(for text: String) -> String {
-    var escaped = ""
-    for char in text {
-      if char == "\\" || char == "%" || char == "_" {
-        escaped.append("\\")
-      }
-      escaped.append(char)
-    }
-    return "%\(escaped)%"
+    self.bindings = [text, exact ? 1 : 0, limit]
   }
 }
 
@@ -75,7 +99,7 @@ extension MessageStore {
             columns: query.selection.columns,
             fallbackChatID: query.fallbackChatID
           )
-          guard searchText(decoded.text, matches: trimmed, exact: exact) else { continue }
+          guard messageSearchMatches(decoded.text, query: trimmed, exact: exact) else { continue }
           messages.append(
             try message(
               from: decoded,
@@ -94,7 +118,7 @@ extension MessageStore {
             guard let previous = try self.precedingTextMessageForURLPreview(preview, db: db) else {
               return nil
             }
-            guard self.searchText(previous.text, matches: trimmed, exact: exact) else {
+            guard messageSearchMatches(previous.text, query: trimmed, exact: exact) else {
               return nil
             }
             return .replace(previous)
@@ -115,13 +139,6 @@ extension MessageStore {
         physicalLimit = nextLimit
       }
     }
-  }
-
-  private func searchText(_ candidate: String, matches text: String, exact: Bool) -> Bool {
-    if exact {
-      return candidate.caseInsensitiveCompare(text) == .orderedSame
-    }
-    return candidate.range(of: text, options: [.caseInsensitive]) != nil
   }
 
 }

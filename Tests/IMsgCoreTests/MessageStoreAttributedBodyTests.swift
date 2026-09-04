@@ -330,6 +330,27 @@ private func makeAttributedBodySearchDatabase() throws -> Connection {
   return db
 }
 
+@Test(arguments: ["contains", "exact"])
+func searchMessagesMatchesUnicodeAcrossPlainAndAttributedBodies(match: String) throws {
+  let db = try makeAttributedBodySearchDatabase()
+  let date = Date(timeIntervalSince1970: 1_700_000_000)
+  try insertSearchMessage(db, rowID: 1, text: "CAFÉ", attributedText: nil, date: date)
+  try insertSearchMessage(db, rowID: 2, text: nil, attributedText: "CAFÉ", date: date)
+  let store = try MessageStore(connection: db, path: ":memory:")
+  #expect(try store.searchMessages(query: "café", match: match, limit: 2).map(\.rowID) == [2, 1])
+}
+
+@Test(arguments: ["contains", "exact"])
+func searchMessagesTreatsSQLPatternCharactersLiterally(match: String) throws {
+  let db = try makeAttributedBodySearchDatabase()
+  let date = Date(timeIntervalSince1970: 1_700_000_000)
+  try insertSearchMessage(db, rowID: 1, text: "100%_\\done", attributedText: nil, date: date)
+  try insertSearchMessage(db, rowID: 2, text: "100xy\\done", attributedText: nil, date: date)
+  let store = try MessageStore(connection: db, path: ":memory:")
+  #expect(
+    try store.searchMessages(query: "100%_\\done", match: match, limit: 2).map(\.rowID) == [1])
+}
+
 private func insertSearchMessage(
   _ db: Connection,
   rowID: Int64,

@@ -26,6 +26,7 @@ public final class MessageStore: @unchecked Sendable {
       let location = Connection.Location.uri(uri, parameters: [.mode(.readOnly)])
       self.connection = try Connection(location, readonly: true)
       self.connection.busyTimeout = 5
+      try registerMessageSearch(in: self.connection)
       self.schema = try MessageStoreSchema(connection: self.connection)
     } catch {
       throw MessageStore.enhance(error: error, path: normalized)
@@ -55,6 +56,7 @@ public final class MessageStore: @unchecked Sendable {
     self.queue.setSpecific(key: queueKey, value: ())
     self.connection = connection
     self.connection.busyTimeout = 5
+    try registerMessageSearch(in: self.connection)
     self.schema = MessageStoreSchema(
       base: try MessageStoreSchema(connection: connection),
       hasAttributedBody: hasAttributedBody,

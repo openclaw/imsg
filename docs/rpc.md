@@ -294,6 +294,7 @@ Result:
 ```
 
 Search results always contain an empty `attachments` array.
+Matching is case-insensitive for Unicode text and uses the text shown by history, including attributed bodies and stored audio transcripts. Characters such as `%`, `_`, and `\` are matched literally.
 Across all-chat search and cursor reads, each physical message appears once. If Messages links it to multiple chats, `chat_id` is the lowest linked chat ID. An explicit chat filter preserves that chat's context.
 
 ### `messages.after`

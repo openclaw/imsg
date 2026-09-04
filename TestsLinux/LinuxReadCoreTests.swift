@@ -180,3 +180,14 @@ private func appleEpoch(_ date: Date) -> Int64 {
   let seconds = date.timeIntervalSince1970 - MessageStore.appleEpochOffset
   return Int64(seconds * 1_000_000_000)
 }
+
+@Test(arguments: ["contains", "exact"])
+func linuxSearchMatchesUnicode(match: String) throws {
+  let databaseURL = try makeTemporaryDatabase()
+  defer { try? FileManager.default.removeItem(at: databaseURL.deletingLastPathComponent()) }
+  try seedDatabase(at: databaseURL)
+  let writer = try Connection(databaseURL.path)
+  try writer.run("UPDATE message SET text = 'CAFÉ' WHERE ROWID = 2")
+  let store = try MessageStore(path: databaseURL.path)
+  #expect(try store.searchMessages(query: "café", match: match, limit: 1).map(\.rowID) == [2])
+}

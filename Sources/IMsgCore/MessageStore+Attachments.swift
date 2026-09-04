@@ -27,7 +27,7 @@ private struct AudioTranscriptionQuery {
       FROM message_attachment_join maj
       JOIN attachment a ON a.ROWID = maj.attachment_id
       WHERE maj.message_id = ?
-      LIMIT 1
+      ORDER BY a.ROWID ASC
       """
     self.bindings = [messageID.rawValue]
   }
