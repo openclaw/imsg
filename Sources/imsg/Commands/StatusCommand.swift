@@ -33,9 +33,13 @@ enum StatusCommand {
     try await run(values: values, runtime: runtime)
   }
 
-  static func run(values: ParsedValues, runtime: RuntimeOptions) async throws {
-    let bridge = IMCoreBridge.shared
-    let availability = bridge.checkAvailability()
+  static func run(
+    values: ParsedValues, runtime: RuntimeOptions,
+    availability: (available: Bool, message: String) = IMCoreBridge.shared.checkAvailability(),
+    probe: () async throws -> [String: Any] = {
+      try await IMsgBridgeClient.shared.invoke(action: .status, params: [:], timeout: 3.0)
+    }
+  ) async throws {
     let sipStatus: String = {
       switch MessagesLauncher.currentSIPStatus() {
       case .enabled:
@@ -51,36 +55,25 @@ enum StatusCommand {
     var bridgeVersion: Int = 0
     var v2Ready: Bool = false
     var selectors: [String: Bool] = [:]
-    // The injected helper can stop answering while Messages.app stays alive and
-    // the dylib stays mapped. checkAvailability() cannot see that: it only
-    // inspects SIP and whether the dylib exists. This probe is the one place
-    // that learns whether the bridge is actually serving, so its outcome has to
-    // reach the reported status instead of being discarded.
-    var bridgeResponsive = availability.available
-    var unresponsiveDetail: String?
+    var unresponsiveMessage: String?
     if availability.available {
       do {
-        let data = try await IMsgBridgeClient.shared.invoke(
-          action: .status, params: [:], timeout: 3.0)
+        let data = try await probe()
         bridgeVersion = (data["bridge_version"] as? Int) ?? 0
         v2Ready = (data["v2_ready"] as? Bool) ?? false
         if let raw = data["selectors"] as? [String: Bool] { selectors = raw }
-      } catch let error as IMsgBridgeError {
-        if error.indicatesUnresponsiveBridge {
-          bridgeResponsive = false
-          unresponsiveDetail = error.description
-        }
+      } catch IMsgBridgeError.timeout {
+        unresponsiveMessage = """
+          The IMCore bridge is not responding.
+          Messages.app may be running with a stale or hung helper.
+          Re-inject it with `imsg launch`.
+          """
       } catch {
-        // Unknown failure shape: do not claim the bridge is dead on a guess.
+        // Reply errors and prepublication failures do not establish a hung helper.
       }
     }
 
-    let advancedAvailable = availability.available && bridgeResponsive
-    let unresponsiveMessage = """
-      The IMCore bridge is not responding (\(unresponsiveDetail ?? "no reply")).
-      Messages.app may be running with a stale or hung helper.
-      Re-inject it with `imsg launch`.
-      """
+    let advancedAvailable = availability.available && unresponsiveMessage == nil
 
     if runtime.jsonOutput {
       let payload = StatusPayload(
@@ -90,7 +83,7 @@ enum StatusCommand {
         typingIndicators: advancedAvailable,
         readReceipts: advancedAvailable,
         sip: sipStatus,
-        message: bridgeResponsive ? availability.message : unresponsiveMessage,
+        message: unresponsiveMessage ?? availability.message,
         bridgeVersion: bridgeVersion,
         v2Ready: v2Ready,
         selectors: selectors,
@@ -111,7 +104,7 @@ enum StatusCommand {
       StdoutWriter.writeLine("  \(sipStatus)")
       StdoutWriter.writeLine("")
       StdoutWriter.writeLine("Advanced features (typing, read receipts):")
-      if availability.available && !bridgeResponsive {
+      if let unresponsiveMessage {
         StdoutWriter.writeLine("  Unavailable - IMCore bridge is not responding")
         for line in unresponsiveMessage.split(separator: "\n") {
           StdoutWriter.writeLine("  \(line)")

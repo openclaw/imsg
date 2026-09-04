@@ -151,30 +151,6 @@ public enum IMsgBridgeError: Error, CustomStringConvertible, Equatable {
   case dylibReturnedError(String)
   case ioError(String)
 
-  /// True only when a request was published and no reply ever came back.
-  ///
-  /// The injected helper can stop answering while Messages.app stays alive and
-  /// the dylib stays mapped, so a timeout is the one signal that actually
-  /// establishes the bridge is not serving.
-  ///
-  /// Everything else is deliberately excluded:
-  ///
-  /// - A reply that happens to be an error still proves the bridge answered.
-  ///   An older helper that does not implement a given action can run real
-  ///   commands and must not be reported as dead.
-  /// - `.bridgeNotReady` is raised *before* a request is published, by
-  ///   `prepublicationError` wrapping launch, queue-write, and cancellation
-  ///   failures. No reply was expected, so it says nothing about a bridge that
-  ///   was never probed.
-  public var indicatesUnresponsiveBridge: Bool {
-    switch self {
-    case .timeout:
-      return true
-    case .bridgeNotReady, .malformedResponse, .dylibReturnedError, .ioError:
-      return false
-    }
-  }
-
   public var description: String {
     switch self {
     case .bridgeNotReady(let detail): return "imsg bridge not ready: \(detail)"

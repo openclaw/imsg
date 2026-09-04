@@ -81,3 +81,68 @@ func statusOnlyAdvertisesTrackedSendForCurrentHelperCapability() {
     StatusCommand.advertisedRPCMethods(selectors: ["clientMessageGuidReservation": true])
       .contains("send.tracked"))
 }
+
+@Test(arguments: [false, true])
+func statusPreservesSetupFailure(json: Bool) async throws {
+  let values = ParsedValues(positional: [], options: [:], flags: json ? ["jsonOutput"] : [])
+  let (output, _) = try await StdoutCapture.capture {
+    try await StatusCommand.run(
+      values: values, runtime: RuntimeOptions(parsedValues: values),
+      availability: (false, "System Integrity Protection (SIP) is enabled."),
+      probe: {
+        Issue.record("An unavailable bridge must not be probed")
+        return [:]
+      })
+  }
+  #expect(!output.contains("not responding"))
+  if json {
+    let payload = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any]
+    #expect(payload?["advanced_features"] as? Bool == false)
+    #expect(payload?["message"] as? String == "System Integrity Protection (SIP) is enabled.")
+  } else {
+    #expect(output.contains("Not available"))
+  }
+}
+
+@Test(
+  arguments: [
+    IMsgBridgeError.timeout(action: "status"), .bridgeNotReady("launch failed"),
+    .dylibReturnedError("unknown action"), .malformedResponse("invalid body"),
+    .ioError("write failed"),
+  ], [false, true])
+func statusReportsProbeOutcome(error: IMsgBridgeError, json: Bool) async throws {
+  let values = ParsedValues(positional: [], options: [:], flags: json ? ["jsonOutput"] : [])
+  let timedOut = error == .timeout(action: "status")
+  let (output, _) = try await StdoutCapture.capture {
+    try await StatusCommand.run(
+      values: values, runtime: RuntimeOptions(parsedValues: values),
+      availability: (true, "Connected to Messages.app."), probe: { throw error })
+  }
+  if json {
+    let payload = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any]
+    for key in ["advanced_features", "typing_indicators", "read_receipts"] {
+      #expect(payload?[key] as? Bool == !timedOut)
+    }
+  }
+  #expect(output.contains("not responding") == timedOut)
+  if timedOut {
+    #expect(output.contains("imsg launch"))
+    #expect(!output.contains("Available - IMCore bridge connected"))
+  }
+}
+
+@Test
+func statusReportsHealthyBridgeCapabilities() async throws {
+  let values = ParsedValues(positional: [], options: [:], flags: ["jsonOutput"])
+  let (output, _) = try await StdoutCapture.capture {
+    try await StatusCommand.run(
+      values: values, runtime: RuntimeOptions(parsedValues: values),
+      availability: (true, "Connected to Messages.app."),
+      probe: { ["bridge_version": 2, "v2_ready": true, "selectors": ["stickerSend": true]] })
+  }
+  let payload = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any]
+  #expect(payload?["advanced_features"] as? Bool == true)
+  #expect(payload?["bridge_version"] as? Int == 2)
+  #expect(payload?["v2_ready"] as? Bool == true)
+  #expect((payload?["selectors"] as? [String: Bool])?["stickerSend"] == true)
+}

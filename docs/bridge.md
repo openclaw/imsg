@@ -7,6 +7,8 @@ This page is the command reference for `imsg` features that run through the inje
 
 Most commands take `--chat <guid>`, where a direct chat looks like `iMessage;-;+15551234567` and a group looks like `iMessage;+;chat0000`. Get the exact GUID from `imsg chats --json`, and run `imsg status --json` to inspect the selectors and RPC methods available on the current macOS version.
 
+`imsg status` probes the running helper before reporting advanced features as available. If the probe times out, text and JSON report the bridge as unresponsive and recommend `imsg launch`. A missing helper, enabled SIP, or a bridge that has not been injected retains its setup diagnostic; a reply error from an older helper is not treated as a timeout.
+
 ## Messaging
 
 Send an Apple URL preview. URL mode cannot be combined with text, effects, replies, or files.
