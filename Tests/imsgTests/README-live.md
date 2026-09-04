@@ -131,6 +131,10 @@ chat creation and participant invitations. It never
 touches the Messages database or sends to recipients. The manual procedure above
 is the separate live private-framework proof; record its outcome when performed.
 
+The harness also verifies that generic direct-GUID resolution remains limited
+to registered handles: first-contact creation is explicit in `chat-create` and
+`chat-add-member`, where IDS validation precedes group mutation.
+
 ## 5. typing events streaming
 
 ```bash

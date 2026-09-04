@@ -51,7 +51,6 @@ func injectedHelperWiresStickerSendAction() throws {
   #expect(secureOpenBody.contains("fstat(nextFD, &componentInfo)"))
   #expect(cleanupBody.contains("removeStickerTransferFileSecurely(activePath)"))
   #expect(resolveChatBody.contains(#"[parts[1] isEqualToString:@"-"]"#))
-  #expect(resolveChatBody.contains("vendIMHandle(hr, address, preferredService, NO)"))
 }
 
 @Test

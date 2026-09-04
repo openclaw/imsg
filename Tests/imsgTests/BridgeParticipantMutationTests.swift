@@ -9,7 +9,6 @@ func participantMutationsUseCurrentAndLegacySelectors() throws {
   let removeBody = try #require(
     participantMutationFunctionBody(named: "handleRemoveParticipant", in: source))
 
-  #expect(addBody.contains(#"vendIMHandle(hr, address, @"iMessage", YES)"#))
   #expect(addBody.contains(#"@"inviteParticipants:reason:""#))
   #expect(addBody.contains(#"@"inviteParticipantsToiMessageChat:reason:""#))
   #expect(removeBody.contains(#"@"removeParticipants:reason:""#))

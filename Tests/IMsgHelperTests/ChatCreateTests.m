@@ -209,9 +209,8 @@ int main(void) {
         checkFailure(createChat(@[addresses[0], @42]), @"Invalid addresses must not be silently omitted");
 
         resetFixture();
-        id registrar = [IMHandleRegistrar sharedInstance];
-        check(vendIMHandle(registrar, addresses[0], @"SMS", NO) == nil,
-              @"Explicit SMS resolution must not create an iMessage handle");
+        result = handleCreateChat(1, @{@"addresses": @[addresses[0]], @"service": @"SMS"});
+        checkFailure(result, @"Explicit SMS creation must not create an iMessage handle");
         check(createdAddresses.count == 0, @"SMS lookup must not use the iMessage account");
 
         for (NSNumber *idStatus in @[@0, @1, @2]) {
@@ -236,6 +235,24 @@ int main(void) {
         result = handleAddParticipant(1, @{@"chatGuid": @"iMessage;+;chat-test", @"address": addresses[0]});
         check(![result[@"success"] boolValue] && invitedHandles == nil,
               @"An IDS error must stop participant invitation");
+
+        resetFixture();
+        check(resolveChatByGuid(@"iMessage;-;+15550100101") == nil,
+              @"Generic direct GUID resolution must not create a first-contact chat");
+        check(createdAddresses.count == 0 && chatHandles == nil,
+              @"Lookup-only commands must not create handles or chats for unknown recipients");
+
+        resetFixture();
+        registeredHandles[addresses[0]] = testHandle(addresses[0], @"iMessage");
+        check(resolveChatByGuid(@"iMessage;-;+15550100101") != nil,
+              @"Generic direct GUID resolution still materializes registered handles");
+        check([[chatHandles valueForKey:@"ID"] isEqual:@[addresses[0]]],
+              @"Registered direct resolution preserves the requested participant");
+
+        resetFixture();
+        registeredHandles[addresses[0]] = testHandle(addresses[0], @"SMS");
+        check(resolveChatByGuid(@"iMessage;-;+15550100101") == nil && chatHandles == nil,
+              @"Direct iMessage resolution must not fall back to a registered SMS handle");
 
         fprintf(stdout, "Bridge chat-create tests: %lu failure(s)\n", (unsigned long)failures);
         return failures ? 1 : 0;

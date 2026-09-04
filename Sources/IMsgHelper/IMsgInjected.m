@@ -615,7 +615,8 @@ static id handleMatchingService(NSArray *handles, NSString *preferredService) {
     return nil;
 }
 
-static id vendIMHandle(id registrar, NSString *address, NSString *preferredService, BOOL allowFallback) {
+static id vendIMHandle(id registrar, NSString *address, NSString *preferredService,
+                      BOOL allowFallback, BOOL createIfMissing) {
     if (![address isKindOfClass:[NSString class]] || address.length == 0) {
         return nil;
     }
@@ -639,7 +640,8 @@ static id vendIMHandle(id registrar, NSString *address, NSString *preferredServi
         // The registrar only knows existing handles. Let the active account
         // canonicalize and create first-contact iMessage handles before falling
         // back to a cached handle from another service.
-        if ([preferredService caseInsensitiveCompare:@"iMessage"] == NSOrderedSame) {
+        if (createIfMissing &&
+            [preferredService caseInsensitiveCompare:@"iMessage"] == NSOrderedSame) {
             IMAccount *account = activeIMessageAccount();
             if ([account respondsToSelector:@selector(imHandleWithID:)]) {
                 id handle = [account imHandleWithID:address];
@@ -1287,7 +1289,8 @@ static IMChat *resolveChatByGuid(NSString *chatGuid) {
     }
 
     // Fallback: parse a direct `<service>;-;<address>` guid and materialize
-    // a chat using only a handle for the explicitly requested service.
+    // a chat using only a registered handle for the explicitly requested service.
+    // First-contact creation belongs to the IDS-checked create/invite handlers.
     NSArray *parts = [chatGuid componentsSeparatedByString:@";"];
     if (parts.count == 3 && [parts[1] isEqualToString:@"-"]) {
         NSString *preferredService = parts.firstObject;
@@ -1295,7 +1298,7 @@ static IMChat *resolveChatByGuid(NSString *chatGuid) {
         Class hrClass = NSClassFromString(@"IMHandleRegistrar");
         if (hrClass) {
             id hr = [hrClass performSelector:@selector(sharedInstance)];
-            id handle = vendIMHandle(hr, address, preferredService, NO);
+            id handle = vendIMHandle(hr, address, preferredService, NO, NO);
             if (handle && [registry respondsToSelector:@selector(chatForIMHandle:)]) {
                 id chat = [registry performSelector:@selector(chatForIMHandle:)
                                          withObject:handle];
@@ -6026,7 +6029,7 @@ static NSDictionary *handleAddParticipant(NSInteger requestId, NSDictionary *par
     Class hrClass = NSClassFromString(@"IMHandleRegistrar");
     id hr = hrClass ? [hrClass performSelector:@selector(sharedInstance)] : nil;
     // Match chat-create's fallback-capable iMessage handle lookup.
-    id handle = vendIMHandle(hr, address, @"iMessage", YES);
+    id handle = vendIMHandle(hr, address, @"iMessage", YES, YES);
     if (!handle) return errorResponse(requestId, @"Could not vend handle");
     NSString *availabilityError = iMessageAvailabilityError(handle, address);
     if (availabilityError) return errorResponse(requestId, availabilityError);
@@ -6246,7 +6249,7 @@ static NSDictionary *handleCreateChat(NSInteger requestId, NSDictionary *params)
         if (![addr isKindOfClass:[NSString class]] || addr.length == 0) {
             return errorResponse(requestId, @"Each address must be a non-empty phone number or email");
         }
-        id h = vendIMHandle(hr, addr, preferredService, NO);
+        id h = vendIMHandle(hr, addr, preferredService, NO, YES);
         if (!h) return errorResponse(requestId, [NSString stringWithFormat:
             @"Could not create %@ handle for %@; check that the account is signed in to Messages",
             preferredService, addr]);
