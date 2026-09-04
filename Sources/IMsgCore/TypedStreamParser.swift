@@ -4,108 +4,58 @@ enum TypedStreamParser {
   static func parseAttributedBody(_ data: Data) -> String {
     guard !data.isEmpty else { return "" }
     let bytes = [UInt8](data)
-    if bytes.count >= 2, bytes[0] == 0xff, bytes[1] == 0xfe {
-      let payload = data.dropFirst(2)
-      if let text = String(data: payload, encoding: .utf16LittleEndian) {
-        return text.trimmingLeadingControlCharacters()
-      }
+    if bytes.starts(with: [0xff, 0xfe]) {
+      return String(data: data.dropFirst(2), encoding: .utf16LittleEndian) ?? ""
     }
-    let start = [UInt8(0x01), UInt8(0x2b)]
-    let end = [UInt8(0x86), UInt8(0x84)]
-    var best = ""
+    guard bytes.starts(with: [4, 11]) else {
+      return String(decoding: bytes, as: UTF8.self).trimmingLeadingControlCharacters()
+    }
+    guard bytes.count >= 13 else { return "" }
+    let signature = bytes[2..<13]
+    let littleEndian = signature.elementsEqual("streamtyped".utf8)
+    guard littleEndian || signature.elementsEqual("typedstream".utf8) else { return "" }
 
-    var index = 0
+    var index = 13
     while index + 1 < bytes.count {
-      if bytes[index] == start[0], bytes[index + 1] == start[1] {
-        let sliceStart = index + 2
-        if let sliceEnd = findSequence(end, in: bytes, from: sliceStart) {
-          let segment = Array(bytes[sliceStart..<sliceEnd])
-          let candidate = decodeSegment(segment)
-          if candidate.count > best.count {
-            best = candidate
-          }
-        }
+      if bytes[index] == 0x01, bytes[index + 1] == 0x2b {
+        // The first NSString is the message body. Length framing preserves embedded
+        // object-marker bytes in UTF-8 and avoids reading later attribute values.
+        return decodeString(bytes, from: index + 2, littleEndian: littleEndian) ?? ""
       }
       index += 1
     }
-
-    if !best.isEmpty {
-      return best
-    }
-
-    let text = String(decoding: bytes, as: UTF8.self)
-    return text.trimmingLeadingControlCharacters()
+    return ""
   }
 
-  /// Strips a typedstream length prefix from `segment` and returns the longest valid UTF-8 decoding.
-  /// Length prefix forms (BER-style): single byte (< 0x80), `0x81 NN`, or `0x82 NN NN`.
-  /// Structured prefixes always win over the raw `prefixLen = 0` decode: otherwise, when the
-  /// length byte is itself a printable-ASCII character (body length 32–126), the unstripped decode
-  /// produces an N+1 character string that beats the correct N-character body.
-  private static func decodeSegment(_ segment: [UInt8]) -> String {
-    guard let first = segment.first else { return "" }
-
-    var structuredPrefixes: [Int] = []
-    if first < 0x80, Int(first) == segment.count - 1 {
-      structuredPrefixes.append(1)
-    }
-    if first == 0x81, segment.count >= 2 {
-      structuredPrefixes.append(2)
-    }
-    if first == 0x82, segment.count >= 3 {
-      structuredPrefixes.append(3)
-    }
-
-    var bestStructured = ""
-    var anyStructuredValid = false
-    for prefixLen in structuredPrefixes {
-      let body = Array(segment[prefixLen...])
-      guard
-        let candidate = String(bytes: body, encoding: .utf8)?
-          .trimmingLeadingControlCharacters()
-      else { continue }
-      anyStructuredValid = true
-      if candidate.count > bestStructured.count {
-        bestStructured = candidate
-      }
-    }
-    if anyStructuredValid {
-      return bestStructured
-    }
-
-    return String(bytes: segment, encoding: .utf8)?
-      .trimmingLeadingControlCharacters() ?? ""
-  }
-
-  private static func findSequence(_ needle: [UInt8], in haystack: [UInt8], from start: Int)
-    -> Int?
+  private static func decodeString(_ bytes: [UInt8], from index: Int, littleEndian: Bool)
+    -> String?
   {
-    guard !needle.isEmpty else { return nil }
-    guard start >= 0, start < haystack.count else { return nil }
-    let limit = haystack.count - needle.count
-    if limit < start { return nil }
-    var index = start
-    while index <= limit {
-      var matched = true
-      for offset in 0..<needle.count {
-        if haystack[index + offset] != needle[offset] {
-          matched = false
-          break
-        }
+    guard index < bytes.count else { return nil }
+    let head = bytes[index]
+    var bodyStart = index + 1
+    var length = 0
+    if head == 0x81 || head == 0x82 {
+      // Typedstream integers use two or four bytes in the archive's byte order.
+      let width = head == 0x81 ? 2 : 4
+      guard width <= bytes.count - bodyStart else { return nil }
+      for offset in 0..<width {
+        let shift = (littleEndian ? offset : width - 1 - offset) * 8
+        length |= Int(bytes[bodyStart + offset]) << shift
       }
-      if matched { return index }
-      index += 1
+      bodyStart += width
+    } else {
+      guard !(0x80...0x91).contains(head) else { return nil }
+      length = Int(head)
     }
-    return nil
+    guard length <= bytes.count - bodyStart else { return nil }
+    return String(bytes: bytes[bodyStart..<(bodyStart + length)], encoding: .utf8)
   }
 }
 
 extension String {
   fileprivate func trimmingLeadingControlCharacters() -> String {
     var scalars = unicodeScalars
-    while let first = scalars.first,
-      CharacterSet.controlCharacters.contains(first) || first == "\n" || first == "\r"
-    {
+    while let first = scalars.first, CharacterSet.controlCharacters.contains(first) {
       scalars.removeFirst()
     }
     return String(String.UnicodeScalarView(scalars))

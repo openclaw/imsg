@@ -537,13 +537,8 @@ func longRepeatedPatternMessage() throws {
   )
 
   let now = Date()
-  // Create message with repeated pattern like "aaaaaaaaaaaa aaaaaaaaaaaa ..."
-  // This pattern triggers the UInt8 overflow bug in TypedStreamParser when segment > 256 bytes
-  let pattern = "aaaaaaaaaaaa "
-  // Creates a message > 1300 bytes
-  let longText = String(repeating: pattern, count: 100)
-  let bodyBytes = [UInt8(0x01), UInt8(0x2b)] + Array(longText.utf8) + [0x86, 0x84]
-  let body = Blob(bytes: bodyBytes)
+  let longText = String(repeating: "aaaaaaaaaaaa ", count: 100)
+  let body = Blob(bytes: Array(archivedAttributedBody(longText)))
   try db.run(
     """
     INSERT INTO chat(ROWID, chat_identifier, guid, display_name, service_name)

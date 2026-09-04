@@ -43,8 +43,7 @@ func messagesByChatUsesAttributedBodyFallback() throws {
   )
 
   let now = Date()
-  let bodyBytes = [UInt8(0x01), UInt8(0x2b)] + Array("fallback text".utf8) + [0x86, 0x84]
-  let body = Blob(bytes: bodyBytes)
+  let body = Blob(bytes: Array(archivedAttributedBody("fallback text")))
   try db.run(
     """
     INSERT INTO chat(ROWID, chat_identifier, guid, display_name, service_name)
@@ -108,8 +107,7 @@ func messagesByChatUsesLengthPrefixedAttributedBodyFallback() throws {
 
   let now = Date()
   let text = "length prefixed"
-  let bodyBytes: [UInt8] = [0x01, 0x2b, UInt8(text.utf8.count)] + Array(text.utf8) + [0x86, 0x84]
-  let body = Blob(bytes: bodyBytes)
+  let body = Blob(bytes: Array(archivedAttributedBody(text)))
   try db.run(
     """
     INSERT INTO chat(ROWID, chat_identifier, guid, display_name, service_name)
@@ -228,8 +226,7 @@ func messagesAfterUsesAttributedBodyFallback() throws {
   )
 
   let now = Date()
-  let bodyBytes = [UInt8(0x01), UInt8(0x2b)] + Array("new text".utf8) + [0x86, 0x84]
-  let body = Blob(bytes: bodyBytes)
+  let body = Blob(bytes: Array(archivedAttributedBody("new text")))
   try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
   try db.run(
     """
@@ -341,7 +338,7 @@ private func insertSearchMessage(
   date: Date
 ) throws {
   let body: Blob? = attributedText.map {
-    Blob(bytes: [0x01, 0x2b] + Array($0.utf8) + [0x86, 0x84])
+    Blob(bytes: Array(archivedAttributedBody($0)))
   }
   try db.run(
     """

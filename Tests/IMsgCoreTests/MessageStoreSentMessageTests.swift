@@ -162,7 +162,7 @@ func latestSentMessageScansPastNewerAttributedBodyNonmatches() throws {
     rowID: 10,
     chatID: 1,
     text: "",
-    attributedBody: attributedBodyFixture(text),
+    attributedBody: archivedAttributedBody(text),
     guid: "target-guid",
     date: now,
     isFromMe: true
@@ -173,7 +173,7 @@ func latestSentMessageScansPastNewerAttributedBodyNonmatches() throws {
       rowID: Int64(10 + offset),
       chatID: 1,
       text: "",
-      attributedBody: attributedBodyFixture("other body \(offset)"),
+      attributedBody: archivedAttributedBody("other body \(offset)"),
       guid: "other-guid-\(offset)",
       date: now.addingTimeInterval(TimeInterval(offset)),
       isFromMe: true
@@ -196,7 +196,7 @@ func latestSentMessageMatchesDecodedAttributedBodyText() throws {
   let db = try makeSentMessageDatabase()
   let now = Date()
   let text = "native root text"
-  let attributedBody = attributedBodyFixture(text)
+  let attributedBody = archivedAttributedBody(text)
   try insertSentMessageFixture(
     db,
     rowID: 1,
@@ -430,7 +430,6 @@ private func insertAttributedSentMessageFixture(
   guid: String,
   date: Date
 ) throws {
-  let bodyBytes = [UInt8(0x01), UInt8(0x2b)] + Array(text.utf8) + [0x86, 0x84]
   try db.run(
     """
     INSERT INTO message(
@@ -440,15 +439,9 @@ private func insertAttributedSentMessageFixture(
     VALUES (?, 1, NULL, ?, ?, NULL, 0, ?, 1, 'iMessage')
     """,
     rowID,
-    Blob(bytes: bodyBytes),
+    Blob(bytes: Array(archivedAttributedBody(text))),
     guid,
     TestDatabase.appleEpoch(date)
   )
   try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (?, ?)", chatID, rowID)
-}
-
-private func attributedBodyFixture(_ text: String) -> Data {
-  let bytes: [UInt8] =
-    [0x01, 0x2b, UInt8(text.utf8.count)] + Array(text.utf8) + [0x86, 0x84]
-  return Data(bytes)
 }

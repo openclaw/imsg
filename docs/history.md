@@ -57,7 +57,7 @@ imsg history --chat-id 42 --attachments --json
 
 Some Messages rows store rich text in a binary `attributedBody` column with the plain `text` column empty. `imsg history` decodes the typed-stream payload (including UTF-16LE BOM bodies) and surfaces the recovered text in the standard `text` field. No flag needed; this is on by default.
 
-If a message is still empty, the source row genuinely had no text — usually a sticker, link preview, or attachment-only message.
+Typed-stream decoding preserves Unicode and leading line breaks, including long messages. Truncated or malformed typed-stream bodies produce empty text instead of binary archive bytes. Sticker, link-preview, and attachment-only rows may also have no text.
 
 ## Reactions in history
 

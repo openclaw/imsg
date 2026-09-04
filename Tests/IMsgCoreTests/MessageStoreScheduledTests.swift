@@ -38,8 +38,7 @@ func scheduledMessagesListsOnlyFutureOutboundRowsInChronologicalOrder() throws {
     db, rowID: 6, guid: "ordinary", text: "ordinary",
     date: asOf.addingTimeInterval(1800), scheduleType: 0, scheduleState: 0)
   let attributedText = "body from attributed data"
-  let attributedBody: [UInt8] =
-    [0x01, 0x2b, UInt8(attributedText.utf8.count)] + Array(attributedText.utf8) + [0x86, 0x84]
+  let attributedBody = Array(archivedAttributedBody(attributedText))
   try db.run(
     """
     INSERT INTO message(
