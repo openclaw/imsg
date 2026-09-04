@@ -16,6 +16,72 @@ private func firstReplayMessages(
   return messages
 }
 
+@Test(.timeLimit(.minutes(1)))
+func messageWatcherRetainsPreviewsAcrossUnresolvedChatRetry() async throws {
+  let db = try makeURLPreviewTestDB()
+  let now = Date(timeIntervalSince1970: 1_700_000_000)
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
+  for (offset, text) in [
+    "https://example.com/first", "unresolved", "https://example.com/later",
+    "https://example.com/first", "done",
+  ].enumerated() {
+    let rowID = Int64(offset + 1)
+    try insertURLPreviewTestMessage(
+      db, rowID: rowID, text: text, guid: "message-\(rowID)",
+      balloonBundleID: text.hasPrefix("https:") ? MessageStore.urlPreviewBalloonBundleID : nil,
+      date: now.addingTimeInterval(Double(offset))
+    )
+  }
+  try db.run("DELETE FROM chat_message_join WHERE message_id = 2")
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let polls = WatcherPollController()
+  defer { polls.releaseAll() }
+  let firstPoll = polls.pauseNextPoll()
+  let stream = MessageWatcher(store: store, didPoll: polls.didPoll).stream(
+    sinceRowID: -1,
+    configuration: MessageWatcherConfiguration(
+      debounceInterval: 0, fallbackPollInterval: nil, batchLimit: 10
+    )
+  )
+  await polls.waitUntilPaused(firstPoll)
+  _ = try store.withConnection { connection in
+    try connection.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 2)")
+  }
+  polls.release(firstPoll)
+
+  var received: [Int64] = []
+  for try await message in stream {
+    received.append(message.rowID)
+    if message.rowID == 5 { break }
+  }
+  #expect(received == [1, 2, 3, 5])
+}
+
+@Test(.timeLimit(.minutes(1)))
+func messageWatcherDrainsReplayWithoutFallbackOrFileEvents() async throws {
+  let fixture = try WatcherTestDatabase.makeMutableStore()
+  for rowID in 1...3 {
+    try fixture.insertMessage(Int64(rowID), "message-\(rowID)")
+  }
+  let stream = MessageWatcher(store: fixture.store).stream(
+    sinceRowID: -1,
+    configuration: MessageWatcherConfiguration(
+      debounceInterval: 0, fallbackPollInterval: nil, batchLimit: 1
+    )
+  )
+  let received = try await withThrowingTaskGroup(of: [Message].self) { group in
+    group.addTask { try await firstReplayMessages(3, from: stream) }
+    group.addTask {
+      try await Task.sleep(for: .seconds(3))
+      return []
+    }
+    let messages = try await group.next() ?? []
+    group.cancelAll()
+    return messages
+  }
+  #expect(received.map(\.rowID) == [1, 2, 3])
+}
+
 @Test
 func messagesAfterBatchAdvancesAcrossSuppressedLateURLPreview() throws {
   let db = try makeURLPreviewTestDB()
@@ -45,13 +111,11 @@ func messagesAfterBatchAdvancesAcrossSuppressedLateURLPreview() throws {
   )
 
   let store = try MessageStore(connection: db, path: ":memory:")
-  var dedupeState = URLBalloonDedupeState()
   let previewBatch = try store.messagesAfterBatch(
     afterRowID: 1,
     chatID: 1,
     limit: 1,
-    includeReactions: false,
-    dedupeState: &dedupeState
+    includeReactions: false
   )
   #expect(previewBatch.messages.isEmpty)
   #expect(previewBatch.maxScannedRowID == 2)
@@ -60,8 +124,7 @@ func messagesAfterBatchAdvancesAcrossSuppressedLateURLPreview() throws {
     afterRowID: previewBatch.maxScannedRowID,
     chatID: 1,
     limit: 1,
-    includeReactions: false,
-    dedupeState: &dedupeState
+    includeReactions: false
   )
   #expect(nextBatch.messages.map(\.rowID) == [3])
 }

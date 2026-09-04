@@ -31,7 +31,7 @@ imsg watch --chat-id 42 --since-rowid 9000 --json
 
 `--since-rowid` is exclusive: `9000` means "everything strictly after rowid 9000."
 
-If you don't pass `--since-rowid`, watch starts at the newest message at the moment of launch. Messages written before then are not replayed; use [`history`](history.md) for that.
+If you omit `--since-rowid` or pass `0`, watch starts at the newest message at the moment of launch. Messages written before then are not replayed; use [`history`](history.md) for that.
 
 ROWID cursors belong to one database generation. After replacing or restoring
 `chat.db`, discard cursors from the previous file and choose a starting cursor
@@ -96,7 +96,7 @@ could look like a direct message.
 - CLI default: `250ms`.
 - RPC default: `500ms` (RPC's typical caller is an agent more sensitive to outbound echo races).
 
-Lower the debounce if you need lower latency and can tolerate occasional duplicate emissions during database churn. Raise it if downstream consumers can't keep up.
+Lower the debounce if you need lower latency; raise it to give Messages more time to finish related database updates. Debounce controls event-triggered reads, not the rate at which a backlog is delivered.
 
 `--debounce` accepts non-negative durations in `ms`, `s`, `m`, and `h`, including compounds such as `2s500ms`. Bare numbers are seconds. Invalid, non-finite, and out-of-range values are rejected.
 
@@ -135,6 +135,7 @@ macOS sometimes drops or coalesces filesystem events — especially under heavy 
 `imsg watch` runs a low-frequency poll alongside the event watcher. If the cursor falls behind the actual rowid, the poller catches up and emits the missed rows. You don't configure this — it's always on.
 Each fallback poll also refreshes the file watches, so a rotated `chat.db-wal` or
 `chat.db-shm` is reopened without needing an external `touch chat.db`.
+Once a read advances the cursor, watch continues draining the backlog in bounded batches without waiting for another filesystem event or fallback interval.
 
 This is the fix for the long-standing "watch goes silent after a while" class of bug. See `CHANGELOG.md` 0.6.0 entry.
 

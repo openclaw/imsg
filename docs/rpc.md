@@ -359,7 +359,7 @@ Older Messages database schemas without scheduling columns return an invalid-par
 Params:
 
 - `chat_id` (int, optional) — omit for all-chat stream.
-- `since_rowid` (int, optional) — exclusive cursor.
+- `since_rowid` (int, optional) — positive values resume exclusively after that row; omitted or `0` starts at the current tail. Use `-1` to replay from the beginning.
 - `participants` (array, optional)
 - `start` / `end` (ISO 8601, optional)
 - `attachments` (bool, default `false`)

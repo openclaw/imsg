@@ -269,12 +269,12 @@ private final class WatchState: @unchecked Sendable {
     if stopped { return }
     defer { didPoll() }
     do {
+      let previousCursor = cursor
       let batch = try store.messagesAfterBatch(
         afterRowID: cursor,
         chatID: chatID,
         limit: configuration.batchLimit,
-        includeReactions: configuration.includeReactions,
-        dedupeState: &urlBalloonDedupe
+        includeReactions: configuration.includeReactions
       )
       for message in batch.messages {
         switch yieldDecision(for: message) {
@@ -285,12 +285,10 @@ private final class WatchState: @unchecked Sendable {
         case .skip:
           continue
         }
-        guard filter.allows(message) else {
-          if message.rowID > cursor {
-            cursor = message.rowID
-          }
-          continue
-        }
+        cursor = max(cursor, message.rowID)
+        // Commit dedupe only for rows reached after chat resolution; later rows must survive retries.
+        if store.isURLPreviewBalloon(message), urlBalloonDedupe.shouldSkip(message) { continue }
+        guard filter.allows(message) else { continue }
         switch continuation.yield(message) {
         case .enqueued:
           // This is the last cursor guaranteed to reach the consumer if a later yield overflows.
@@ -305,12 +303,11 @@ private final class WatchState: @unchecked Sendable {
           stopSources()
           return
         }
-        if message.rowID > cursor {
-          cursor = message.rowID
-        }
       }
-      if batch.maxScannedRowID > cursor {
-        cursor = batch.maxScannedRowID
+      cursor = max(cursor, batch.maxScannedRowID)
+      if cursor > previousCursor {
+        // Drain in bounded turns so cancellation can run without waiting for the fallback timer.
+        queue.async { self.poll() }
       }
     } catch {
       finish(throwing: error)

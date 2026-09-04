@@ -110,11 +110,13 @@ extension MessageStore {
         afterRowID: cursor,
         chatID: chatID,
         limit: limit,
-        includeReactions: includeReactions,
-        dedupeState: &dedupeState
+        includeReactions: includeReactions
       )
-      if !batch.messages.isEmpty {
-        return batch.messages
+      let visibleMessages = batch.messages.filter { message in
+        !isURLPreviewBalloon(message) || !dedupeState.shouldSkip(message)
+      }
+      if !visibleMessages.isEmpty {
+        return visibleMessages
       }
       guard batch.maxScannedRowID > cursor else {
         return []
@@ -202,8 +204,7 @@ extension MessageStore {
     afterRowID: Int64,
     chatID: Int64?,
     limit: Int,
-    includeReactions: Bool,
-    dedupeState: inout URLBalloonDedupeState
+    includeReactions: Bool
   ) throws -> MessagesAfterBatch {
     guard limit > 0 else {
       return MessagesAfterBatch(messages: [], maxScannedRowID: afterRowID)
@@ -250,11 +251,7 @@ extension MessageStore {
           return .suppress
         }
       )
-      let visibleMessages = coalesced.filter { message in
-        guard isURLPreviewBalloon(message) else { return true }
-        return !dedupeState.shouldSkip(message)
-      }
-      return MessagesAfterBatch(messages: visibleMessages, maxScannedRowID: maxScannedRowID)
+      return MessagesAfterBatch(messages: coalesced, maxScannedRowID: maxScannedRowID)
     }
   }
 
