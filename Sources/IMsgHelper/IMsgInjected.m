@@ -359,6 +359,9 @@ static BOOL readAccountConnected(id account) {
 - (NSArray *)activeAccounts;
 @end
 
+static IMAccount *activeIMessageAccount(void);
+static NSDictionary *handleCheckIMessageAvailability(NSInteger requestId, NSDictionary *params);
+
 @interface IMHandleRegistrar : NSObject
 + (instancetype)sharedInstance;
 - (id)IMHandleWithID:(NSString *)handleID;
@@ -613,7 +616,7 @@ static id handleMatchingService(NSArray *handles, NSString *preferredService) {
 }
 
 static id vendIMHandle(id registrar, NSString *address, NSString *preferredService, BOOL allowFallback) {
-    if (!registrar || ![address isKindOfClass:[NSString class]] || address.length == 0) {
+    if (![address isKindOfClass:[NSString class]] || address.length == 0) {
         return nil;
     }
 
@@ -632,6 +635,16 @@ static id vendIMHandle(id registrar, NSString *address, NSString *preferredServi
             id handle = handleMatchingService(handles, preferredService);
             if (handle) return handle;
             [fallbackHandles addObjectsFromArray:handles];
+        }
+        // The registrar only knows existing handles. Let the active account
+        // canonicalize and create first-contact iMessage handles before falling
+        // back to a cached handle from another service.
+        if ([preferredService caseInsensitiveCompare:@"iMessage"] == NSOrderedSame) {
+            IMAccount *account = activeIMessageAccount();
+            if ([account respondsToSelector:@selector(imHandleWithID:)]) {
+                id handle = [account imHandleWithID:address];
+                if (handle) return handle;
+            }
         }
     } @catch (__unused NSException *ex) {
         return nil;
@@ -6189,7 +6202,6 @@ static NSDictionary *handleCreateChat(NSInteger requestId, NSDictionary *params)
     NSString *requestedService = params[@"service"] ?: @"iMessage";
     NSString *preferredService = @"iMessage";
     NSString *responseService = @"iMessage";
-    BOOL allowHandleFallback = YES;
 
     if (![addresses isKindOfClass:[NSArray class]] || addresses.count == 0) {
         return errorResponse(requestId, @"Missing addresses array");
@@ -6203,7 +6215,6 @@ static NSDictionary *handleCreateChat(NSInteger requestId, NSDictionary *params)
     } else if ([requestedService caseInsensitiveCompare:@"sms"] == NSOrderedSame) {
         preferredService = @"SMS";
         responseService = @"SMS";
-        allowHandleFallback = NO;
     } else {
         return errorResponse(requestId, [NSString stringWithFormat:
             @"Unsupported chat-create service: %@", requestedService]);
@@ -6211,16 +6222,34 @@ static NSDictionary *handleCreateChat(NSInteger requestId, NSDictionary *params)
 
     Class hrClass = NSClassFromString(@"IMHandleRegistrar");
     id hr = hrClass ? [hrClass performSelector:@selector(sharedInstance)] : nil;
-    if (!hr) return errorResponse(requestId, @"IMHandleRegistrar unavailable");
-
     NSMutableArray *handles = [NSMutableArray array];
     for (NSString *addr in addresses) {
-        if (![addr isKindOfClass:[NSString class]]) continue;
-        id h = vendIMHandle(hr, addr, preferredService, allowHandleFallback);
-        if (h) [handles addObject:h];
-    }
-    if (handles.count == 0) {
-        return errorResponse(requestId, @"Could not vend handles for any address");
+        if (![addr isKindOfClass:[NSString class]] || addr.length == 0) {
+            return errorResponse(requestId, @"Each address must be a non-empty phone number or email");
+        }
+        id h = vendIMHandle(hr, addr, preferredService, NO);
+        if (!h) return errorResponse(requestId, [NSString stringWithFormat:
+            @"Could not create %@ handle for %@; check that the account is signed in to Messages",
+            preferredService, addr]);
+        if ([preferredService isEqualToString:@"iMessage"]) {
+            // Vend first: an uncached address is not evidence of IDS reachability.
+            // Validate every participant before the registry can create a chat.
+            NSString *canonicalAddress = [h respondsToSelector:@selector(ID)] ? [h ID] : addr;
+            NSDictionary *check = handleCheckIMessageAvailability(requestId, @{
+                @"address": canonicalAddress ?: addr,
+                @"aliasType": [addr containsString:@"@"] ? @"email" : @"phone"
+            });
+            if (![check[@"success"] boolValue]) return errorResponse(requestId,
+                [NSString stringWithFormat:@"Could not check iMessage availability for %@: %@",
+                 addr, check[@"error"]]);
+            if (![check[@"available"] boolValue]) {
+                NSString *reason = [check[@"id_status"] integerValue] == 2
+                    ? @"is not reachable on iMessage; verify the address or use imsg send --service sms for a phone number"
+                    : @"could not confirm iMessage availability; check the Messages account and connection, then retry";
+                return errorResponse(requestId, [NSString stringWithFormat:@"%@: %@", addr, reason]);
+            }
+        }
+        [handles addObject:h];
     }
 
     Class regClass = NSClassFromString(@"IMChatRegistry");

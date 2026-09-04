@@ -10,8 +10,9 @@ enum ChatCreateCommand {
     abstract: "Create a new chat (1:1 or group)",
     discussion: """
       Requires `imsg launch` (SIP-disabled, dylib injected). Vends handles for
-      each address through Messages' private IMCore API and asks IMChatRegistry
-      to materialize a chat. Optionally sets a display name and sends an
+      each address, including previously uncontacted recipients, through the
+      active iMessage account. Every recipient must pass an IDS availability
+      check before the chat is created. Optionally sets a display name and sends an
       initial message. Chat creation is currently iMessage-only; use
       `imsg send --service sms` for SMS sends.
       """,

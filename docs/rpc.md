@@ -226,6 +226,9 @@ Params:
 - `text` (string, optional initial message)
 
 This bridge-backed method is iMessage-only, matching `imsg chat-create`.
+Previously uncontacted addresses are supported. All recipients must resolve and
+pass the bridge's IDS availability check before chat creation; failures identify
+an unreachable or unresolved address and do not create a partial group.
 
 ### `messages.stats`
 

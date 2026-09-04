@@ -82,6 +82,46 @@ imsg chat-leave --chat "$GROUP"
 
 Expect: each step is visible in Messages.app within a second or two.
 
+### First-contact handle regression
+
+Use two consenting recipients with active iMessage phone numbers that this Mac's
+Messages account has never contacted, looked up, or entered in the New Message
+recipient field. Existing contacts are not a valid first-contact proof. Keep real
+numbers and chat GUIDs out of public test reports.
+
+1. Record `sw_vers`, `imsg --version`, and `imsg status --json`; require SIP disabled
+   and bridge v2 ready. Confirm both recipients are absent from local history with
+   `imsg whois --address "$RECIPIENT_A" --type phone --local --json` (repeat for B).
+   Local history is supporting evidence, not proof that an in-memory handle was
+   never created; the operator must confirm the latter.
+2. With the old helper, run the command below before touching either address in
+   Messages. The reported regression returns `Could not vend handles for any address`.
+3. Build this checkout with `make build` and launch `./bin/imsg launch` so the new
+   sibling helper is injected. Check `./bin/imsg status --json` again. Do not type
+   the addresses in Messages between the old and new runs.
+4. Repeat using the newly built CLI:
+
+   ```bash
+   ./bin/imsg chat-create --addresses "$RECIPIENT_A,$RECIPIENT_B" --json
+   ```
+
+   Expect success, an iMessage `chatGuid`, and both recipients. No `--text` or
+   `--name` is supplied, so this step sends no message or group-name update.
+5. Run `./bin/imsg whois --address "$RECIPIENT_A" --type phone --json` and repeat
+   for B; expect `available=true`. Repeat `chat-create` with the same pair to
+   exercise cached handle reuse. For a visible Messages.app group, send a test
+   message only with the recipients' permission and verify both participants.
+6. Repeat with one recipient replaced by a number confirmed not registered with
+   iMessage. Expect an address-specific `not reachable on iMessage` error and no
+   partial group. IDS status 0 (unknown) must instead report `could not confirm`;
+   it is not evidence that the number lacks iMessage.
+
+`make test-helper` runs the actual Objective-C handler against isolated runtime
+stand-ins for cold/cached phone and email handles, mixed services, partial
+resolution, missing accounts, and IDS negative/unknown/error outcomes. It never
+touches the Messages database or sends to recipients. The manual procedure above
+is the separate live private-framework proof; record its outcome when performed.
+
 ## 5. typing events streaming
 
 ```bash

@@ -84,6 +84,8 @@ Normal `chats`, `history`, `watch`, `send`, `react`, and read-only RPC workflows
 
 Read receipts, typing indicators, rich sends, message mutation, stickers, polls, and chat management use an injected helper inside Messages.app. They require SIP to be disabled and may be blocked by library validation or private-entitlement checks on current macOS releases. Start with [Advanced IMCore](docs/advanced-imcore.md), then use the [bridge command reference](docs/bridge.md) for the full CLI surface and IPC layout.
 
+[`imsg chat-create`](docs/chats.md#create-an-imessage-chat) accepts phone numbers and email addresses you have never contacted. It creates missing handles through the active iMessage account and checks every recipient with IDS before creating the chat. You do not need to type recipients into Messages first.
+
 ## Documentation
 
 The complete guide lives at **[imsg.sh](https://imsg.sh)**. Useful entry points include [install](docs/install.md), [permissions](docs/permissions.md), [history](docs/history.md), [watch](docs/watch.md), [send](docs/send.md), [attachments](docs/attachments.md), [Linux](docs/linux.md), and [troubleshooting](docs/troubleshooting.md).

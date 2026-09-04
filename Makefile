@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help format lint test build imsg clean build-dylib docs-site
+.PHONY: help format lint test test-helper build imsg clean build-dylib docs-site
 
 help:
 	@printf "%s\n" \
@@ -22,10 +22,18 @@ lint:
 
 test:
 	node --test scripts/build-docs-site.test.mjs
+	$(MAKE) test-helper
 	scripts/generate-version.sh
 	swift package resolve
 	scripts/patch-deps.sh
 	swift test
+
+test-helper:
+	@mkdir -p .build/helper-tests
+	clang -fobjc-arc -Wno-arc-performSelector-leaks -Wno-incomplete-implementation \
+		-framework Foundation -framework AppKit -framework ImageIO -framework LinkPresentation \
+		Tests/IMsgHelperTests/ChatCreateTests.m -o .build/helper-tests/chat-create
+	.build/helper-tests/chat-create
 
 build:
 	scripts/generate-version.sh

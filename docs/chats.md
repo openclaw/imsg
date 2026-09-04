@@ -94,3 +94,18 @@ imsg chats --json | jq -s 'map(select(.service == "SMS"))'
 ```
 
 For more targeted history queries with date and participant filters, use [`imsg history`](history.md).
+
+## Create an iMessage chat
+
+`chat-create` requires the [injected bridge](bridge.md) on a SIP-disabled Mac with an active iMessage account:
+
+```bash
+imsg chat-create --addresses '+15551111111,+15552222222' --json
+imsg chat-create --addresses 'friend@example.com' --json
+```
+
+Replace the examples with real recipients. Previously uncontacted numbers and email addresses work without adding a contact or entering them in Messages.app's **New Message → To:** field first. The bridge reuses registered iMessage handles, creates missing ones through the active account, and checks their canonical addresses with IDS.
+
+Every address must resolve and have confirmed iMessage availability. If IDS reports a recipient is not reachable, the command names that address and stops before creating, naming, or sending to a chat. An unresolved IDS result produces a separate error asking you to check the account and connection, then retry. A failed recipient is never silently dropped from a group. `chat-create` does not fall back to SMS; use `imsg send --service sms` for an intentional SMS send.
+
+`--name` sets the chat display name; `--text` sends an initial message. Omit both when checking creation without sending a message or group-name update. The result includes `chatGuid` and the requested participants; an empty chat may not appear in the recent-chats list until it has activity.
