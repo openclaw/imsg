@@ -125,31 +125,6 @@ func deletedWarmChatIDRejectsBeforeSendOrBridgeDispatch() async throws {
   #expect(bridgeCount == 0)
 }
 
-private final class RPCWatchStreamHarness: @unchecked Sendable {
-  private let lock = NSLock()
-  private let ready = DispatchSemaphore(value: 0)
-  private var continuation: AsyncThrowingStream<Message, Error>.Continuation?
-
-  func stream() -> AsyncThrowingStream<Message, Error> {
-    AsyncThrowingStream { continuation in
-      lock.withLock { self.continuation = continuation }
-      ready.signal()
-    }
-  }
-
-  func waitUntilReady() -> Bool {
-    ready.wait(timeout: .now() + 1) == .success
-  }
-
-  func yield(_ message: Message) {
-    lock.withLock { continuation }?.yield(message)
-  }
-
-  func finish() {
-    lock.withLock { continuation }?.finish()
-  }
-}
-
 @Test(.timeLimit(.minutes(1)))
 func rpcWatchReadsMetadataAndParticipantsForEveryEmission() async throws {
   let fixture = try makeWALFixture()
@@ -158,12 +133,12 @@ func rpcWatchReadsMetadataAndParticipantsForEveryEmission() async throws {
       at: URL(fileURLWithPath: fixture.path).deletingLastPathComponent())
   }
   let output = TestRPCOutput()
-  let stream = RPCWatchStreamHarness()
+  let (stream, continuation) = AsyncThrowingStream<Message, Error>.makeStream()
   let server = RPCServer(
     store: fixture.store,
     verbose: false,
     output: output,
-    watchStreamProvider: { _, _, _, _, _ in stream.stream() }
+    watchStreamProvider: { _, _, _, _, _ in stream }
   )
   let first = Message(
     rowID: 10,
@@ -190,8 +165,7 @@ func rpcWatchReadsMetadataAndParticipantsForEveryEmission() async throws {
 
   await server.handleLineForTesting(
     #"{"jsonrpc":"2.0","id":"watch","method":"watch.subscribe","params":{}}"#)
-  #expect(stream.waitUntilReady())
-  stream.yield(first)
+  continuation.yield(first)
   await output.waitForOutputCount(2)
 
   try fixture.writer.run(
@@ -202,8 +176,8 @@ func rpcWatchReadsMetadataAndParticipantsForEveryEmission() async throws {
   try fixture.writer.run("INSERT INTO handle(ROWID, id) VALUES (2, '+999')")
   try fixture.writer.run("DELETE FROM chat_handle_join WHERE chat_id = 1")
   try fixture.writer.run("INSERT INTO chat_handle_join(chat_id, handle_id) VALUES (1, 2)")
-  stream.yield(second)
-  stream.finish()
+  continuation.yield(second)
+  continuation.finish()
   await output.waitForOutputCount(3)
   await server.subscriptions.waitUntilEmpty()
 
