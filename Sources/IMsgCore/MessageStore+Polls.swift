@@ -1,5 +1,25 @@
 import SQLite
 
+private struct PollReferencesQuery {
+  let sql: String
+  let bindings: [Binding?]
+
+  init(guid: String, hasUpdates: Bool) {
+    let updates =
+      hasUpdates
+      ? """
+      UNION SELECT guid FROM message
+      WHERE associated_message_type = ?
+        AND (associated_message_guid = ? COLLATE NOCASE
+          OR associated_message_guid LIKE '%/' || ?)
+      """ : ""
+    sql = "WITH poll_references(guid) AS (SELECT ? \(updates))"
+    bindings =
+      hasUpdates
+      ? [guid, MessagePollDecoder.updateAssociatedMessageType, guid, guid] : [guid]
+  }
+}
+
 extension MessageStore {
   func enrichedPollEvent(
     _ poll: MessagePollEvent?,
@@ -99,37 +119,18 @@ extension MessageStore {
 
   private func decodedPollOptions(guid: String, db: Connection) throws -> [MessagePollOption] {
     let selection = MessageRowSelection(store: self)
-    let sql: String
-    let bindings: [Binding?]
-    if schema.hasReactionColumns {
-      sql = """
-        SELECT \(selection.selectList)
-        FROM message m
-        LEFT JOIN handle h ON m.handle_id = h.ROWID
-        WHERE m.guid = ?
-           OR (
-             m.associated_message_type = ?
-             AND (
-               m.associated_message_guid = ?
-               OR m.associated_message_guid LIKE '%/' || ?
-             )
-           )
-        ORDER BY m.date ASC, m.ROWID ASC
-        """
-      bindings = [guid, MessagePollDecoder.updateAssociatedMessageType, guid, guid]
-    } else {
-      sql = """
-        SELECT \(selection.selectList)
-        FROM message m
-        LEFT JOIN handle h ON m.handle_id = h.ROWID
-        WHERE m.guid = ?
-        ORDER BY m.date ASC, m.ROWID ASC
-        """
-      bindings = [guid]
-    }
+    let source = try sourcePollGUID(forAny: [guid], db: db) ?? guid
+    let references = PollReferencesQuery(guid: source, hasUpdates: schema.hasReactionColumns)
     let rows = try db.prepareRowIterator(
-      sql,
-      bindings: bindings)
+      """
+      \(references.sql)
+      SELECT \(selection.selectList)
+      FROM message m
+      LEFT JOIN handle h ON m.handle_id = h.ROWID
+      WHERE m.guid COLLATE NOCASE IN (SELECT guid FROM poll_references)
+      ORDER BY m.date ASC, m.ROWID ASC
+      """,
+      bindings: references.bindings)
     var options: [MessagePollOption] = []
     var seenIDs = Set<String>()
     while let row = try rows.failableNext() {
@@ -147,22 +148,26 @@ extension MessageStore {
 
   private func latestOutboundPollVoteOptionIDs(guid: String, db: Connection) throws -> [String] {
     guard schema.hasReactionColumns else { return [] }
+    let source = try sourcePollGUID(forAny: [guid], db: db) ?? guid
+    let references = PollReferencesQuery(guid: source, hasUpdates: true)
     let selection = MessageRowSelection(store: self)
     let rows = try db.prepareRowIterator(
       """
+      \(references.sql)
       SELECT \(selection.selectList)
       FROM message m
       LEFT JOIN handle h ON m.handle_id = h.ROWID
       WHERE m.is_from_me = 1
         AND m.associated_message_type = ?
-        AND (
-          m.associated_message_guid = ?
-          OR m.associated_message_guid LIKE '%/' || ?
+        AND EXISTS (
+          SELECT 1 FROM poll_references p
+          WHERE m.associated_message_guid = p.guid COLLATE NOCASE
+            OR m.associated_message_guid LIKE '%/' || p.guid
         )
       ORDER BY m.date DESC, m.ROWID DESC
       LIMIT 1
       """,
-      bindings: [MessagePollDecoder.voteAssociatedMessageType, guid, guid]
+      bindings: references.bindings + [MessagePollDecoder.voteAssociatedMessageType]
     )
     guard let row = try rows.failableNext() else { return [] }
     let decoded = try decodeMessageRow(
@@ -189,7 +194,7 @@ extension MessageStore {
       """
       SELECT associated_message_guid
       FROM message
-      WHERE guid = ?
+      WHERE guid = ? COLLATE NOCASE
         AND associated_message_type = ?
         AND IFNULL(associated_message_guid, '') != ''
       LIMIT 1

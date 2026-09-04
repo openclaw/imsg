@@ -57,13 +57,12 @@ extension MessageStore {
 
     var messageIDByGUID: [String: Int64] = [:]
     for message in messages where !message.guid.isEmpty {
-      messageIDByGUID[message.guid] = message.rowID
+      messageIDByGUID[message.guid.lowercased()] = message.rowID
     }
     guard !messageIDByGUID.isEmpty else { return [:] }
 
     var reactionsByMessageID: [Int64: [Reaction]] = [:]
-    var reactionIndexByMessageID: [Int64: [BulkReactionKey: Int]] = [:]
-    var matchedRows: [BulkReactionRow] = []
+    var matchedRows: [ReactionRow] = []
     let bodyColumn = schema.hasAttributedBody ? "r.attributedBody" : "NULL"
     // A reaction can be joined to a different chat than its target. Scan the indexed
     // associated-message rows once, then match only the requested GUIDs in memory.
@@ -83,147 +82,19 @@ extension MessageStore {
       let rows = try db.prepareRowIterator(sql)
       while let row = try rows.failableNext() {
         let associatedGUID = try stringValue(row, "associated_message_guid")
-        let baseGUID = baseAssociatedMessageGUID(from: associatedGUID)
+        let baseGUID = normalizeAssociatedGUID(associatedGUID).lowercased()
         guard let messageID = messageIDByGUID[baseGUID] else { continue }
 
-        let rowID = try int64Value(row, "reaction_rowid") ?? 0
-        let typeValue = try intValue(row, "associated_message_type") ?? 0
-        let sender = try stringValue(row, "sender")
-        let isFromMe = try boolValue(row, "is_from_me")
-        let date = try appleDate(from: int64Value(row, "date"))
-        let text = try stringValue(row, "text")
-        let body = try dataValue(row, "body")
-        let resolvedText = text.isEmpty ? TypedStreamParser.parseAttributedBody(body) : text
-        matchedRows.append(
-          BulkReactionRow(
-            rowID: rowID,
-            typeValue: typeValue,
-            sender: sender,
-            isFromMe: isFromMe,
-            date: date,
-            resolvedText: resolvedText,
-            messageID: messageID
-          )
-        )
+        matchedRows.append(try decodeReactionRow(row, messageID: messageID))
       }
     }
+    // Preserve nanosecond order before converting timestamps to Foundation Date.
     matchedRows.sort {
-      $0.date == $1.date ? $0.rowID < $1.rowID : $0.date < $1.date
+      $0.timestamp == $1.timestamp ? $0.rowID < $1.rowID : $0.timestamp < $1.timestamp
     }
     for row in matchedRows {
-      var reactions = reactionsByMessageID[row.messageID, default: []]
-      var reactionIndex = reactionIndexByMessageID[row.messageID] ?? [:]
-      applyBulkReactionRow(
-        rowID: row.rowID,
-        typeValue: row.typeValue,
-        sender: row.sender,
-        isFromMe: row.isFromMe,
-        date: row.date,
-        resolvedText: row.resolvedText,
-        messageID: row.messageID,
-        reactions: &reactions,
-        reactionIndex: &reactionIndex
-      )
-      reactionsByMessageID[row.messageID] = reactions
-      reactionIndexByMessageID[row.messageID] = reactionIndex
+      applyReactionRow(row, to: &reactionsByMessageID[row.messageID, default: []])
     }
     return reactionsByMessageID
-  }
-
-  private func baseAssociatedMessageGUID(from associatedGUID: String) -> String {
-    guard let slashIndex = associatedGUID.lastIndex(of: "/") else { return associatedGUID }
-    let guidStart = associatedGUID.index(after: slashIndex)
-    return String(associatedGUID[guidStart...])
-  }
-
-  private func applyBulkReactionRow(
-    rowID: Int64,
-    typeValue: Int,
-    sender: String,
-    isFromMe: Bool,
-    date: Date,
-    resolvedText: String,
-    messageID: Int64,
-    reactions: inout [Reaction],
-    reactionIndex: inout [BulkReactionKey: Int]
-  ) {
-    if ReactionType.isReactionRemove(typeValue) {
-      let customEmoji = typeValue == 3006 ? extractCustomEmoji(from: resolvedText) : nil
-      let reactionType = ReactionType.fromRemoval(typeValue, customEmoji: customEmoji)
-      if let reactionType {
-        let key = BulkReactionKey(sender: sender, isFromMe: isFromMe, reactionType: reactionType)
-        if let index = reactionIndex.removeValue(forKey: key) {
-          reactions.remove(at: index)
-          reactionIndex = BulkReactionKey.reindex(reactions: reactions)
-        }
-        return
-      }
-      if typeValue == 3006 {
-        if let index = reactions.firstIndex(where: {
-          $0.sender == sender && $0.isFromMe == isFromMe && $0.reactionType.isCustom
-        }) {
-          reactions.remove(at: index)
-          reactionIndex = BulkReactionKey.reindex(reactions: reactions)
-        }
-      }
-      return
-    }
-
-    let customEmoji = typeValue == 2006 ? extractCustomEmoji(from: resolvedText) : nil
-    guard let reactionType = ReactionType(rawValue: typeValue, customEmoji: customEmoji) else {
-      return
-    }
-
-    let key = BulkReactionKey(sender: sender, isFromMe: isFromMe, reactionType: reactionType)
-    if let index = reactionIndex[key] {
-      reactions[index] = Reaction(
-        rowID: rowID,
-        reactionType: reactionType,
-        sender: sender,
-        isFromMe: isFromMe,
-        date: date,
-        associatedMessageID: messageID
-      )
-    } else {
-      reactionIndex[key] = reactions.count
-      reactions.append(
-        Reaction(
-          rowID: rowID,
-          reactionType: reactionType,
-          sender: sender,
-          isFromMe: isFromMe,
-          date: date,
-          associatedMessageID: messageID
-        ))
-    }
-  }
-
-  private struct BulkReactionKey: Hashable {
-    let sender: String
-    let isFromMe: Bool
-    let reactionType: ReactionType
-
-    static func reindex(reactions: [Reaction]) -> [BulkReactionKey: Int] {
-      var index: [BulkReactionKey: Int] = [:]
-      for (offset, reaction) in reactions.enumerated() {
-        let key = BulkReactionKey(
-          sender: reaction.sender,
-          isFromMe: reaction.isFromMe,
-          reactionType: reaction.reactionType
-        )
-        index[key] = offset
-      }
-      return index
-    }
-  }
-
-  private struct BulkReactionRow {
-    let rowID: Int64
-    let typeValue: Int
-    let sender: String
-    let isFromMe: Bool
-    let date: Date
-    let resolvedText: String
-    let messageID: Int64
   }
 }

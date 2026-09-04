@@ -14,7 +14,7 @@ extension MessageStore {
         FROM message m
         JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
         JOIN chat c ON c.ROWID = cmj.chat_id
-        WHERE m.guid = ?
+        WHERE m.guid = ? COLLATE NOCASE
           AND (c.guid IN (\(placeholders)) OR c.chat_identifier IN (\(placeholders)))
         LIMIT 1
         """,

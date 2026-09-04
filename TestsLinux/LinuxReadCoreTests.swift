@@ -191,3 +191,27 @@ func linuxSearchMatchesUnicode(match: String) throws {
   let store = try MessageStore(path: databaseURL.path)
   #expect(try store.searchMessages(query: "café", match: match, limit: 1).map(\.rowID) == [2])
 }
+
+@Test(arguments: [false, true])
+func linuxReactionSnapshotsPreserveDatabaseOrder(equalDates: Bool) throws {
+  let databaseURL = try makeTemporaryDatabase()
+  defer { try? FileManager.default.removeItem(at: databaseURL.deletingLastPathComponent()) }
+  try seedDatabase(at: databaseURL)
+  let db = try Connection(databaseURL.path)
+  try db.run("UPDATE message SET guid = 'target-guid' WHERE ROWID = 1")
+  try db.execute("CREATE INDEX reaction_date_order ON message(date ASC, ROWID DESC)")
+  let date: Int64 = 700_000_000_000_000_000
+  for (rowID, type, timestamp) in [
+    (equalDates ? 10 : 11, 2000, date), (equalDates ? 11 : 10, 3000, equalDates ? date : date + 1),
+  ] {
+    try db.run(
+      """
+      INSERT INTO message(ROWID, handle_id, associated_message_guid, associated_message_type, date, is_from_me)
+      VALUES (?, 1, 'p:0/target-guid', ?, ?, 0)
+      """,
+      rowID, type, timestamp)
+  }
+  let store = try MessageStore(path: databaseURL.path)
+  #expect(try store.reactions(for: 1).isEmpty)
+  #expect(try store.reactions(for: store.messages(chatID: 1, limit: 10))[1]?.isEmpty == true)
+}

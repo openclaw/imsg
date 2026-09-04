@@ -45,9 +45,10 @@ func rpcStatusAdvertisesBridgeMessageMethods() {
   }
 }
 
-@Test
-func rpcPollUnvoteValidatesAndResolvesOption() async throws {
-  let store = try CommandTestDatabase.makeStoreForRPCWithOwnPollVoteSnapshot()
+@Test(arguments: [false, true])
+func rpcPollUnvoteValidatesAndResolvesOption(updateReference: Bool) async throws {
+  let store = try CommandTestDatabase.makeStoreForRPCWithOwnPollVoteSnapshot(
+    updateReference: updateReference)
   let output = TestRPCOutput()
   var capturedAction: BridgeAction?
   var capturedParams: [String: Any] = [:]

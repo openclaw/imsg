@@ -63,6 +63,8 @@ Typed-stream decoding preserves Unicode and leading line breaks, including long 
 
 Tapback rows (`Liked "..."`, `Loved "..."`, etc.) are hidden from `history` output by design. They'd otherwise duplicate every reacted message. To see tapbacks, use [`imsg watch --reactions`](watch.md#reactions); the live stream surfaces add and remove events with `is_reaction`, `reaction_type`, and `reacted_to_guid`.
 
+Current reaction snapshots use the same add/remove rules in history and watch. Changes are applied in database timestamp order, then row ID order when timestamps tie.
+
 ## Native polls
 
 Native Apple Messages polls are decoded when Messages stores them as the Polls extension balloon (`com.apple.messages.Polls`). Creation rows include `poll.kind == "created"` with the question and options when available. Native poll payload titles are often empty because Messages shows the question as a separate caption row; imsg backfills an empty created-poll `question` from the earliest clean caption that replies to the poll. Vote update rows include `poll.kind == "vote"` and `poll.original_guid` pointing back to the poll message. Their `poll.votes` array is the participant's full selected-option snapshot, not necessarily the option that changed.
@@ -94,6 +96,8 @@ poll's stable option identifier before sending:
 ```bash
 imsg poll vote --chat-id <id> --poll <poll-guid> --option-index 2
 ```
+
+Option updates remain part of the original poll. Selective unvote reads the newest outbound vote across the original and its update messages, preserving other selected options. An empty newest snapshot means all selections were removed.
 
 On macOS 26.4, use imsg 0.12.2 or later. Earlier builds could create a local
 vote row without the Polls payload, so the recipient's poll did not update.

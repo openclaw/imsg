@@ -660,8 +660,8 @@ func messageStoreDecodesPollVoteRowsWithPayloadGate() throws {
   #expect(streamedUnvote.poll?.votes?.isEmpty ?? true)
 }
 
-@Test
-func messageStoreResolvesVoteOptionTextFromPollUpdateRows() throws {
+@Test(arguments: ["original-poll-guid", "p/original-poll-guid", "p:0/original-poll-guid"])
+func messageStoreResolvesVoteOptionTextFromPollUpdateRows(updateReference: String) throws {
   let db = try Connection(.inMemory)
   var options = MessageDatabaseFixture.SchemaOptions()
   options.includeReactionColumns = true
@@ -700,8 +700,9 @@ func messageStoreResolvesVoteOptionTextFromPollUpdateRows() throws {
       ROWID, handle_id, text, guid, associated_message_guid, associated_message_type,
       balloon_bundle_id, payload_data, message_summary_info, date, is_from_me, service
     )
-    VALUES (1, 1, '', 'updated-poll-guid', 'p/original-poll-guid', 2, ?, ?, NULL, ?, 0, 'iMessage')
+    VALUES (1, 1, '', 'updated-poll-guid', ?, 2, ?, ?, NULL, ?, 0, 'iMessage')
     """,
+    updateReference,
     testPollBundleID,
     updateBlob,
     TestDatabase.appleEpoch(now)
@@ -712,7 +713,7 @@ func messageStoreResolvesVoteOptionTextFromPollUpdateRows() throws {
       ROWID, handle_id, text, guid, associated_message_guid, associated_message_type,
       balloon_bundle_id, payload_data, message_summary_info, date, is_from_me, service
     )
-    VALUES (2, 1, '', 'vote-row-guid', 'p/updated-poll-guid', 4000, NULL, ?, NULL, ?, 0, 'iMessage')
+    VALUES (2, 1, '', 'vote-row-guid', 'p/updated-poll-guid', 4000, NULL, ?, NULL, ?, 1, 'iMessage')
     """,
     voteBlob,
     TestDatabase.appleEpoch(now.addingTimeInterval(1))
@@ -721,6 +722,7 @@ func messageStoreResolvesVoteOptionTextFromPollUpdateRows() throws {
   try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 2)")
 
   let store = try MessageStore(connection: db, path: ":memory:")
+  #expect(try store.pollSelectedOptionIDs(guid: "original-poll-guid") == ["choice-custom"])
   let messages = try store.messagesAfter(afterRowID: 0, chatID: 1, limit: 10)
   let updateMessage = try #require(messages.first { $0.guid == "updated-poll-guid" })
   let voteMessage = try #require(messages.first { $0.guid == "vote-row-guid" })
@@ -903,4 +905,56 @@ private func applePollEnvelopePayload(jsonObject: [String: Any], query: String =
     ],
     requiringSecureCoding: false
   )
+}
+
+@Test
+func pollSnapshotsSpanUpdatesAndKeepLatestEmptyVote() throws {
+  let db = try Connection(.inMemory)
+  var schema = MessageDatabaseFixture.SchemaOptions()
+  schema.includeReactionColumns = true
+  schema.includeBalloonBundleID = true
+  schema.includePayloadData = true
+  try MessageDatabaseFixture.createSchema(db, options: schema)
+  let options: [String: Any] = [
+    "orderedPollOptions": [
+      ["optionIdentifier": "a", "pollOptionText": "A"],
+      ["optionIdentifier": "b", "pollOptionText": "B"],
+    ]
+  ]
+  let payload = Blob(bytes: [UInt8](try applePollEnvelopePayload(jsonObject: options)))
+  for (rowID, guid, reference) in [
+    (10, "update-a", "p/original"), (11, "update-b", "p:0/original"),
+  ] {
+    try db.run(
+      """
+      INSERT INTO message(ROWID, guid, associated_message_guid, associated_message_type, balloon_bundle_id, payload_data, date)
+      VALUES (?, ?, ?, 2, ?, ?, 1)
+      """,
+      rowID, guid, reference, testPollBundleID, payload)
+  }
+  let store = try MessageStore(connection: db, path: ":memory:")
+  func insertVote(_ rowID: Int, _ reference: String, _ selected: [String], mine: Bool = true) throws
+  {
+    let data = try applePollEnvelopePayload(jsonObject: [
+      "votes": selected.map { ["voteOptionIdentifier": $0] }
+    ])
+    try db.run(
+      """
+      INSERT INTO message(ROWID, guid, associated_message_guid, associated_message_type, payload_data, date, is_from_me)
+      VALUES (?, ?, ?, 4000, ?, ?, ?)
+      """,
+      rowID, "vote-\(rowID)", reference, Blob(bytes: [UInt8](data)), rowID, mine ? 1 : 0)
+  }
+  try insertVote(98, "p/unrelated", ["unrelated"])
+  try insertVote(99, "p/update-a", ["inbound"], mine: false)
+  for (rowID, reference, selected) in [
+    (2, "original", ["a"]), (3, "p/update-a", ["a", "b"]),
+    (4, "p:0/update-b", ["b"]), (5, "p/update-a", []),
+  ] {
+    try insertVote(rowID, reference, selected)
+    for guid in ["original", "p:0/update-a", "update-b"] {
+      #expect(try store.pollSelectedOptionIDs(guid: guid) == selected)
+      #expect(try store.pollOptions(guid: guid).map(\.id) == ["a", "b"])
+    }
+  }
 }

@@ -78,8 +78,8 @@ private enum ReactionTestDatabase {
   }
 }
 
-@Test
-func reactionsForMessageReturnsReactions() throws {
+@Test(arguments: [false, true])
+func reactionsForMessageReturnsReactions(bulk: Bool) throws {
   let db = try ReactionTestDatabase.makeConnection()
   let now = Date()
   try ReactionTestDatabase.seedBaseMessage(db, now: now)
@@ -118,7 +118,7 @@ func reactionsForMessageReturnsReactions() throws {
   )
 
   let store = try MessageStore(connection: db, path: ":memory:")
-  let reactions = try store.reactions(for: 1)
+  let reactions = try reactionSnapshot(store, bulk: bulk)
 
   #expect(reactions.count == 4)
 
@@ -253,8 +253,8 @@ func reactionsForMessageWithNoReactionsReturnsEmpty() throws {
   #expect(reactions.isEmpty)
 }
 
-@Test
-func reactionsForMessageRemovesReactions() throws {
+@Test(arguments: [false, true])
+func reactionsForMessageRemovesReactions(bulk: Bool) throws {
   let db = try ReactionTestDatabase.makeConnection()
   let now = Date()
   try ReactionTestDatabase.seedBaseMessage(db, now: now)
@@ -275,13 +275,13 @@ func reactionsForMessageRemovesReactions() throws {
   )
 
   let store = try MessageStore(connection: db, path: ":memory:")
-  let reactions = try store.reactions(for: 1)
+  let reactions = try reactionSnapshot(store, bulk: bulk)
 
   #expect(reactions.isEmpty)
 }
 
-@Test
-func reactionsForMessageParsesCustomEmojiWithoutEnglishPrefix() throws {
+@Test(arguments: [false, true])
+func reactionsForMessageParsesCustomEmojiWithoutEnglishPrefix(bulk: Bool) throws {
   let db = try ReactionTestDatabase.makeConnection()
   let now = Date()
   try ReactionTestDatabase.seedBaseMessage(db, now: now)
@@ -295,7 +295,7 @@ func reactionsForMessageParsesCustomEmojiWithoutEnglishPrefix() throws {
   )
 
   let store = try MessageStore(connection: db, path: ":memory:")
-  let reactions = try store.reactions(for: 1)
+  let reactions = try reactionSnapshot(store, bulk: bulk)
 
   #expect(reactions.count == 1)
   #expect(reactions[0].reactionType == .custom("🎉"))
@@ -322,8 +322,8 @@ func reactionsMatchGuidWithoutPrefix() throws {
   #expect(reactions[0].reactionType == .love)
 }
 
-@Test
-func reactionsForMessageRemovesCustomEmojiWithoutEmojiText() throws {
+@Test(arguments: [false, true])
+func reactionsForMessageRemovesCustomEmojiWithoutEmojiText(bulk: Bool) throws {
   let db = try ReactionTestDatabase.makeConnection()
   let now = Date()
   try ReactionTestDatabase.seedBaseMessage(db, now: now)
@@ -344,7 +344,7 @@ func reactionsForMessageRemovesCustomEmojiWithoutEmojiText() throws {
   )
 
   let store = try MessageStore(connection: db, path: ":memory:")
-  let reactions = try store.reactions(for: 1)
+  let reactions = try reactionSnapshot(store, bulk: bulk)
 
   #expect(reactions.isEmpty)
 }
@@ -419,4 +419,34 @@ func reactionTypeHelpers() throws {
   #expect(ReactionType.fromRemoval(3001) == .like)
   #expect(ReactionType.fromRemoval(3005) == .question)
   #expect(ReactionType.fromRemoval(3006, customEmoji: "🎉") == .custom("🎉"))
+}
+
+@Test(arguments: [false, true])
+func reactionSnapshotsRespectDatabaseOrdering(equalDates: Bool) throws {
+  let db = try ReactionTestDatabase.makeConnection()
+  try ReactionTestDatabase.seedBaseMessage(db, now: Date())
+  try db.execute("CREATE INDEX reaction_date_order ON message(date ASC, ROWID DESC)")
+  let date: Int64 = 700_000_000_000_000_000
+  for (rowID, type, timestamp) in [
+    (equalDates ? 2 : 3, 2000, date), (equalDates ? 3 : 2, 3000, equalDates ? date : date + 1),
+  ] {
+    try db.run(
+      """
+      INSERT INTO message(ROWID, handle_id, text, guid, associated_message_guid, associated_message_type, date, is_from_me)
+      VALUES (?, 2, '', ?, 'p:0/msg-guid-1', ?, ?, 0)
+      """,
+      rowID, "reaction-\(rowID)", type, timestamp)
+  }
+  let store = try MessageStore(connection: db, path: ":memory:")
+  #expect(try store.reactions(for: 1).isEmpty)
+  let messages = try store.messages(chatID: 1, limit: 10)
+  #expect(try store.reactions(for: messages)[1]?.isEmpty == true)
+}
+
+private func reactionSnapshot(_ store: MessageStore, bulk: Bool) throws -> [Reaction] {
+  if bulk {
+    let messages = try store.messages(chatID: 1, limit: 10)
+    return try store.reactions(for: messages)[1] ?? []
+  }
+  return try store.reactions(for: 1)
 }

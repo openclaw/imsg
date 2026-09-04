@@ -3,8 +3,8 @@ import Testing
 
 @testable import IMsgCore
 
-@Test
-func stickerTargetMembershipRequiresTheSelectedChat() throws {
+@Test(arguments: ["anchor-guid", "ANCHOR-GUID"])
+func stickerTargetMembershipRequiresTheSelectedChat(messageGUID: String) throws {
   let db = try Connection(.inMemory)
   try MessageDatabaseFixture.createSchema(
     db,
@@ -33,12 +33,12 @@ func stickerTargetMembershipRequiresTheSelectedChat() throws {
 
   #expect(
     try store.messageBelongsToChat(
-      messageGUID: "anchor-guid",
+      messageGUID: messageGUID,
       chatGUID: "iMessage;-;+111"
     ))
   #expect(
     try !store.messageBelongsToChat(
-      messageGUID: "anchor-guid",
+      messageGUID: messageGUID,
       chatGUID: "iMessage;-;+222"
     ))
   #expect(

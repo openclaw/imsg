@@ -12,17 +12,27 @@ private struct CurrentReactionsQuery {
              h.id AS sender, r.is_from_me AS is_from_me, r.date AS date, IFNULL(r.text, '') AS text,
              \(bodyColumn) AS body
       FROM message m
-      JOIN message r ON r.associated_message_guid = m.guid
+      JOIN message r ON r.associated_message_guid = m.guid COLLATE NOCASE
         OR r.associated_message_guid LIKE '%/' || m.guid
       LEFT JOIN handle h ON r.handle_id = h.ROWID
       WHERE m.ROWID = ?
         AND m.guid IS NOT NULL
         AND m.guid != ''
         AND \(reactionPredicate("r.associated_message_type"))
-      ORDER BY r.date ASC
+      ORDER BY r.date ASC, r.ROWID ASC
       """
     self.bindings = [messageID.rawValue]
   }
+}
+
+struct ReactionRow {
+  let rowID: Int64
+  let typeValue: Int
+  let sender: String
+  let isFromMe: Bool
+  let timestamp: Int64
+  let resolvedText: String
+  let messageID: Int64
 }
 
 extension MessageStore {
@@ -34,67 +44,9 @@ extension MessageStore {
     )
     return try withConnection { db in
       var reactions: [Reaction] = []
-      var reactionIndex: [ReactionKey: Int] = [:]
       let rows = try db.prepareRowIterator(query.sql, bindings: query.bindings)
       while let row = try rows.failableNext() {
-        let rowID = try int64Value(row, "reaction_rowid") ?? 0
-        let typeValue = try intValue(row, "associated_message_type") ?? 0
-        let sender = try stringValue(row, "sender")
-        let isFromMe = try boolValue(row, "is_from_me")
-        let date = try appleDate(from: int64Value(row, "date"))
-        let text = try stringValue(row, "text")
-        let body = try dataValue(row, "body")
-        let resolvedText = text.isEmpty ? TypedStreamParser.parseAttributedBody(body) : text
-
-        if ReactionType.isReactionRemove(typeValue) {
-          let customEmoji = typeValue == 3006 ? extractCustomEmoji(from: resolvedText) : nil
-          let reactionType = ReactionType.fromRemoval(typeValue, customEmoji: customEmoji)
-          if let reactionType {
-            let key = ReactionKey(sender: sender, isFromMe: isFromMe, reactionType: reactionType)
-            if let index = reactionIndex.removeValue(forKey: key) {
-              reactions.remove(at: index)
-              reactionIndex = ReactionKey.reindex(reactions: reactions)
-            }
-            continue
-          }
-          if typeValue == 3006 {
-            if let index = reactions.firstIndex(where: {
-              $0.sender == sender && $0.isFromMe == isFromMe && $0.reactionType.isCustom
-            }) {
-              reactions.remove(at: index)
-              reactionIndex = ReactionKey.reindex(reactions: reactions)
-            }
-          }
-          continue
-        }
-
-        let customEmoji: String? = typeValue == 2006 ? extractCustomEmoji(from: resolvedText) : nil
-        guard let reactionType = ReactionType(rawValue: typeValue, customEmoji: customEmoji) else {
-          continue
-        }
-
-        let key = ReactionKey(sender: sender, isFromMe: isFromMe, reactionType: reactionType)
-        if let index = reactionIndex[key] {
-          reactions[index] = Reaction(
-            rowID: rowID,
-            reactionType: reactionType,
-            sender: sender,
-            isFromMe: isFromMe,
-            date: date,
-            associatedMessageID: messageID
-          )
-        } else {
-          reactionIndex[key] = reactions.count
-          reactions.append(
-            Reaction(
-              rowID: rowID,
-              reactionType: reactionType,
-              sender: sender,
-              isFromMe: isFromMe,
-              date: date,
-              associatedMessageID: messageID
-            ))
-        }
+        applyReactionRow(try decodeReactionRow(row, messageID: messageID), to: &reactions)
       }
       return reactions
     }
@@ -123,22 +75,45 @@ extension MessageStore {
     return nil
   }
 
-  private struct ReactionKey: Hashable {
-    let sender: String
-    let isFromMe: Bool
-    let reactionType: ReactionType
+  func decodeReactionRow(_ row: Row, messageID: Int64) throws -> ReactionRow {
+    let text = try stringValue(row, "text")
+    let body = try dataValue(row, "body")
+    return ReactionRow(
+      rowID: try int64Value(row, "reaction_rowid") ?? 0,
+      typeValue: try intValue(row, "associated_message_type") ?? 0,
+      sender: try stringValue(row, "sender"),
+      isFromMe: try boolValue(row, "is_from_me"),
+      timestamp: try int64Value(row, "date") ?? 0,
+      resolvedText: text.isEmpty ? TypedStreamParser.parseAttributedBody(body) : text,
+      messageID: messageID)
+  }
 
-    static func reindex(reactions: [Reaction]) -> [ReactionKey: Int] {
-      var index: [ReactionKey: Int] = [:]
-      for (offset, reaction) in reactions.enumerated() {
-        let key = ReactionKey(
-          sender: reaction.sender,
-          isFromMe: reaction.isFromMe,
-          reactionType: reaction.reactionType
-        )
-        index[key] = offset
-      }
-      return index
+  func applyReactionRow(_ row: ReactionRow, to reactions: inout [Reaction]) {
+    let removal = ReactionType.isReactionRemove(row.typeValue)
+    let emoji =
+      row.typeValue == 2006 || row.typeValue == 3006
+      ? extractCustomEmoji(from: row.resolvedText) : nil
+    let type =
+      removal
+      ? ReactionType.fromRemoval(row.typeValue, customEmoji: emoji)
+      : ReactionType(rawValue: row.typeValue, customEmoji: emoji)
+    let index = reactions.firstIndex {
+      $0.sender == row.sender && $0.isFromMe == row.isFromMe
+        && ($0.reactionType == type
+          || (row.typeValue == 3006 && type == nil && $0.reactionType.isCustom))
+    }
+    if removal {
+      if let index { reactions.remove(at: index) }
+      return
+    }
+    guard let type else { return }
+    let reaction = Reaction(
+      rowID: row.rowID, reactionType: type, sender: row.sender, isFromMe: row.isFromMe,
+      date: appleDate(from: row.timestamp), associatedMessageID: row.messageID)
+    if let index {
+      reactions[index] = reaction
+    } else {
+      reactions.append(reaction)
     }
   }
 }

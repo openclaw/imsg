@@ -169,10 +169,13 @@ enum CommandTestDatabase {
     )
   }
 
-  static func makeStoreForRPCWithOwnPollVoteSnapshot() throws -> MessageStore {
+  static func makeStoreForRPCWithOwnPollVoteSnapshot(updateReference: Bool = false) throws
+    -> MessageStore
+  {
     try makeStoreForRPCWithPollVoteSnapshot(
       isFromMe: true,
-      selectedOptionIDs: ["choice-yes", "choice-no"]
+      selectedOptionIDs: ["choice-yes", "choice-no"],
+      updateReference: updateReference
     )
   }
 
@@ -193,7 +196,8 @@ enum CommandTestDatabase {
 
   private static func makeStoreForRPCWithPollVoteSnapshot(
     isFromMe: Bool,
-    selectedOptionIDs: [String]
+    selectedOptionIDs: [String],
+    updateReference: Bool = false
   ) throws -> MessageStore {
     let db = try Connection(.inMemory)
     try createSchema(
@@ -248,6 +252,15 @@ enum CommandTestDatabase {
     )
     try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 6)")
     try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 7)")
+    if updateReference {
+      try db.run(
+        """
+        INSERT INTO message(ROWID, guid, associated_message_guid, associated_message_type, date)
+        VALUES (8, 'poll-update', 'p:0/poll-guid-6', 2, ?)
+        """,
+        appleEpoch(now))
+      try db.run("UPDATE message SET associated_message_guid = 'p:0/poll-update' WHERE ROWID = 7")
+    }
     return try MessageStore(connection: db, path: ":memory:")
   }
 

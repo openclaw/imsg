@@ -86,18 +86,13 @@ enum PollCaptionStatus {
     repeat {
       if Task.isCancelled { return .unavailable }
       do {
-        // `messageSendStatus` matches GUIDs COLLATE NOCASE but
-        // `messageBelongsToChat` does not, so hand the membership check the
-        // row's own GUID rather than the bridge's casing. Otherwise a caption
-        // that plainly landed reads back as missing.
-        if let status = try store.messageSendStatus(guid: captionGUID) {
-          let rowGUID = status.guid.isEmpty ? captionGUID : status.guid
-          if try store.messageBelongsToChat(messageGUID: rowGUID, chatGUID: chatGUID) {
-            switch status.state {
-            case .delivered: return .delivered
-            case .failed: return .failed
-            case .pending, .sent: break
-            }
+        if let status = try store.messageSendStatus(guid: captionGUID),
+          try store.messageBelongsToChat(messageGUID: captionGUID, chatGUID: chatGUID)
+        {
+          switch status.state {
+          case .delivered: return .delivered
+          case .failed: return .failed
+          case .pending, .sent: break
           }
         }
       } catch {
