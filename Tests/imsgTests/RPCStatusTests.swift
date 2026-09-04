@@ -158,7 +158,10 @@ func rpcDatabaseUnavailableIsTypedWhileDirectSendStillWorks() async throws {
   var sent: MessageSendOptions?
   let server = makeUnavailableRPCStatusServer(
     output: output,
-    sendMessage: { sent = $0 }
+    sendMessage: {
+      sent = $0
+      return $0
+    }
   )
 
   await server.handleLineForTesting(
@@ -296,7 +299,10 @@ func rpcBridgePreflightNeverInvokesWhenReadyLockIsAbsentAndAutoSendFallsBack() a
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in sent = true },
+    sendMessage: { options in
+      sent = true
+      return options
+    },
     resolveSentMessage: resolvedSentMessageFixture,
     invokeBridge: { _, _ in
       invocations.increment()

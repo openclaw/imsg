@@ -55,7 +55,10 @@ import Testing
       store: store,
       verbose: false,
       output: output,
-      sendMessage: { sent = $0 },
+      sendMessage: {
+        sent = $0
+        return $0
+      },
       resolveSentMessage: resolvedSentMessageFixture,
       isBridgeReady: { false },
       contactResolver: contacts

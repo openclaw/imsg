@@ -168,15 +168,16 @@ extension RPCServer {
     ).flatMap { $0.isEmpty ? nil : $0 }
     let rawInput = try params.recipientOrChatTarget()
     let rawRecipient = rawInput.recipient
-    let recipient: String
+    let resolvedRecipient: String
     do {
-      recipient =
+      resolvedRecipient =
         rawInput.hasChatTarget || rawRecipient.isEmpty
         ? rawRecipient
         : try ChatTargetResolver.resolveRecipientName(rawRecipient, contacts: requestContacts)
     } catch {
       throw RPCError.invalidParams(error.localizedDescription)
     }
+    let recipient = MessageSender().normalizedRecipient(resolvedRecipient, region: region)
     let input = ChatTargetInput(
       recipient: recipient,
       chatID: rawInput.chatID,
@@ -317,19 +318,17 @@ extension RPCServer {
       )
     }
 
-    try sendMessage(options)
+    let sentOptions = try sendMessage(options)
 
     let sentMessage: Message?
     let verificationChatID =
-      input.chatID
-      ?? resolvedTarget.preferredIdentifier.flatMap {
-        try? database?.store.chatInfo(matchingTarget: $0)?.id
+      database.flatMap {
+        try? SentMessageVerifier.verificationChatID(store: $0.store, options: sentOptions)
       }
-      ?? directChatInfo?.id
     if let database, input.hasChatTarget || !text.isEmpty {
       sentMessage = try await SentMessageVerifier.verifyAppleScriptSend(
         store: database.store,
-        options: options,
+        options: sentOptions,
         chatID: verificationChatID,
         sentAt: sentAt,
         resolve: resolveSentMessage
@@ -345,35 +344,20 @@ extension RPCServer {
         result["message_id"] = sentMessage.guid
       }
     }
-    var responseChatInfo: ChatInfo?
-    if let sentMessage, let database {
-      responseChatInfo = try? database.store.chatInfo(chatID: sentMessage.chatID)
-    }
-    if responseChatInfo == nil, let verificationChatID, let database {
-      responseChatInfo = try? database.store.chatInfo(chatID: verificationChatID)
-    }
-    if responseChatInfo == nil {
-      responseChatInfo = directChatInfo
-    }
-    if let chatInfo = responseChatInfo {
-      if !chatInfo.guid.isEmpty {
-        result["chat_guid"] = chatInfo.guid
-      }
-      if !chatInfo.service.isEmpty {
+    if let sentMessage, !sentMessage.service.isEmpty { result["service"] = sentMessage.service }
+    if let chatID = sentMessage?.chatID ?? verificationChatID,
+      let chatInfo = try? database?.store.chatInfo(chatID: chatID)
+    {
+      if !chatInfo.guid.isEmpty { result["chat_guid"] = chatInfo.guid }
+      if result["service"] == nil && !chatInfo.service.isEmpty {
         result["service"] = chatInfo.service
       }
     }
-    if result["chat_guid"] == nil {
-      let resolvedChatGUID =
-        !resolvedTarget.chatGUID.isEmpty ? resolvedTarget.chatGUID : (directChatInfo?.guid ?? "")
-      if !resolvedChatGUID.isEmpty {
-        result["chat_guid"] = resolvedChatGUID
-      }
+    if result["chat_guid"] == nil && !sentOptions.chatGUID.isEmpty {
+      result["chat_guid"] = sentOptions.chatGUID
     }
-    if result["service"] == nil,
-      let directService = directChatInfo?.service, !directService.isEmpty
-    {
-      result["service"] = directService
+    if result["service"] == nil && sentOptions.service != .auto {
+      result["service"] = sentOptions.service == .sms ? "SMS" : "iMessage"
     }
     respond(id: id, result: result)
   }

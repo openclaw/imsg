@@ -73,18 +73,7 @@ enum SentMessageVerifier {
     chatID: Int64?,
     since date: Date
   ) throws -> Message? {
-    let verificationChatID: Int64?
-    if let chatID {
-      verificationChatID = chatID
-    } else if !options.recipient.isEmpty {
-      verificationChatID = try ChatTargetResolver.existingDirectChat(
-        store: store,
-        recipient: options.recipient,
-        service: options.service
-      )?.id
-    } else {
-      verificationChatID = nil
-    }
+    let verificationChatID = try chatID ?? self.verificationChatID(store: store, options: options)
     guard let verificationChatID else { return nil }
 
     return try store.latestSentMessage(
@@ -92,6 +81,14 @@ enum SentMessageVerifier {
       chatID: verificationChatID,
       since: date
     )
+  }
+
+  static func verificationChatID(store: MessageStore, options: MessageSendOptions) throws -> Int64?
+  {
+    let target = options.chatGUID.isEmpty ? options.chatIdentifier : options.chatGUID
+    if !target.isEmpty { return try store.chatInfo(matchingTarget: target)?.id }
+    return try ChatTargetResolver.existingDirectChat(
+      store: store, recipient: options.recipient, service: options.service)?.id
   }
 
   static func throwIfMisroutedChatSend(
@@ -103,7 +100,7 @@ enum SentMessageVerifier {
     guard !handles.isEmpty else { return }
     let lowerBound = sentAt.addingTimeInterval(-2)
     guard
-      let rowID = try store.latestUnjoinedSentMessageRowID(
+      let rowID = try? store.latestUnjoinedSentMessageRowID(
         matchingTargetHandles: handles,
         since: lowerBound
       )

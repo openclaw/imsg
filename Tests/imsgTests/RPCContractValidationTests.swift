@@ -69,7 +69,10 @@ func rpcRejectsUnknownKeysAcrossHandlerFamilies() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in sent = true },
+    sendMessage: { options in
+      sent = true
+      return options
+    },
     invokeBridge: { _, _ in
       bridgeCalls += 1
       return [:]
@@ -138,7 +141,10 @@ func rpcRejectsConflictingTargetsBeforeMutations() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in sent = true },
+    sendMessage: { options in
+      sent = true
+      return options
+    },
     invokeBridge: { _, _ in
       bridgeCalls += 1
       return [:]
@@ -283,7 +289,10 @@ func rpcRejectsConflictingAliasesBeforeSideEffects() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in sendCalls += 1 },
+    sendMessage: { options in
+      sendCalls += 1
+      return options
+    },
     invokeBridge: { _, _ in
       bridgeCalls += 1
       return [:]

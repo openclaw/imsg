@@ -25,7 +25,10 @@ func rpcTrackedSendForwardsCallerOwnedGuidAndReturnsExactIdentity() async throws
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in appleScriptCalled = true },
+    sendMessage: { options in
+      appleScriptCalled = true
+      return options
+    },
     resolveSentMessage: { _, _, _, _ in nil },
     invokeBridge: { action, params in
       capturedActions.append(action)
@@ -65,7 +68,10 @@ func rpcTrackedSendRejectsBeforeDispatchWithoutCurrentHelperCapability() async t
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in appleScriptCalled = true },
+    sendMessage: { options in
+      appleScriptCalled = true
+      return options
+    },
     resolveSentMessage: { _, _, _, _ in nil },
     invokeBridge: { action, _ in
       capturedActions.append(action)
@@ -99,7 +105,10 @@ func rpcTrackedSendRejectsExistingGuidCaseInsensitivelyBeforeBridgeIO() async th
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in appleScriptCalled = true },
+    sendMessage: { options in
+      appleScriptCalled = true
+      return options
+    },
     invokeBridge: { _, _ in
       bridgeCalled = true
       return [:]
@@ -128,7 +137,10 @@ func rpcTrackedSendNeverFallsBackAfterUncertainBridgeDispatch() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in appleScriptCalled = true },
+    sendMessage: { options in
+      appleScriptCalled = true
+      return options
+    },
     invokeBridge: { action, _ in
       actions.append(action)
       if action == .status {

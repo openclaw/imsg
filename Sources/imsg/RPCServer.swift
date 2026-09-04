@@ -52,7 +52,7 @@ final class RPCServer: @unchecked Sendable {
   let output: RPCOutput
   let subscriptions: SubscriptionStore
   let verbose: Bool
-  let sendMessage: (MessageSendOptions) throws -> Void
+  let sendMessage: (MessageSendOptions) throws -> MessageSendOptions
   let resolveSentMessage: SentMessageResolver
   let bridgeInvoker: BridgeInvoker
   let captionVerifier: CaptionVerifier
@@ -79,7 +79,9 @@ final class RPCServer: @unchecked Sendable {
     store: MessageStore,
     verbose: Bool,
     output: RPCOutput = RPCWriter(),
-    sendMessage: @escaping (MessageSendOptions) throws -> Void = { try MessageSender().send($0) },
+    sendMessage: @escaping (MessageSendOptions) throws -> MessageSendOptions = {
+      try MessageSender().sendResolvingRoute($0)
+    },
     resolveSentMessage: @escaping SentMessageResolver = RPCServer.resolveSentMessage,
     invokeBridge: @escaping BridgeInvoker = { action, params in
       try await IMsgBridgeClient.shared.invokeWithoutLaunching(action: action, params: params)
@@ -149,7 +151,9 @@ final class RPCServer: @unchecked Sendable {
     verbose: Bool,
     output: RPCOutput = RPCWriter(),
     storeFactory: @escaping RPCMessageStoreFactory = { try MessageStore(path: $0) },
-    sendMessage: @escaping (MessageSendOptions) throws -> Void = { try MessageSender().send($0) },
+    sendMessage: @escaping (MessageSendOptions) throws -> MessageSendOptions = {
+      try MessageSender().sendResolvingRoute($0)
+    },
     resolveSentMessage: @escaping SentMessageResolver = RPCServer.resolveSentMessage,
     invokeBridge: @escaping BridgeInvoker = { action, params in
       try await IMsgBridgeClient.shared.invokeWithoutLaunching(action: action, params: params)

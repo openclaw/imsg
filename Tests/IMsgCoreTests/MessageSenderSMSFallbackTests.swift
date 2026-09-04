@@ -7,6 +7,7 @@ import Testing
   private final class RunnerSpy: @unchecked Sendable {
     private(set) var services: [String] = []
     private(set) var useChatFlags: [String] = []
+    private(set) var recipients: [String] = []
     var firstFailure: DeliveryDisposition?
 
     func run(_ source: String, _ arguments: [String]) throws {
@@ -14,6 +15,7 @@ import Testing
       let service = arguments[2]
       services.append(service)
       useChatFlags.append(arguments[6])
+      recipients.append(arguments[0])
       if let firstFailure, services.count == 1 {
         throw DeliveryFailure(
           disposition: firstFailure,
@@ -47,18 +49,24 @@ import Testing
     spy.firstFailure = .notStarted
     let sender = MessageSender(runner: spy.run)
 
-    try sender.send(
+    let route = try sender.sendResolvingRoute(
       MessageSendOptions(
-        recipient: "+15551234567",
+        recipient: "07700 900000",
         text: "hi",
         service: .auto,
-        chatGUID: "any;-;+15551234567",
+        region: "GB",
+        chatGUID: "any;-;+447700900000",
         allowSMSFallback: true
       )
     )
 
     #expect(spy.services == ["auto", "sms"])
     #expect(spy.useChatFlags == ["1", "0"])
+    #expect(spy.recipients == ["+447700900000", "+447700900000"])
+    #expect(route.recipient == "+447700900000")
+    #expect(route.service == .sms)
+    #expect(route.chatGUID.isEmpty && route.chatIdentifier.isEmpty)
+    #expect(route.directParticipantTarget == nil)
   }
 
   @Test

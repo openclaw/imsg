@@ -8,7 +8,7 @@ import Testing
 private enum ValidationTestError: Error { case workStarted }
 
 @Test(arguments: ["not-a-number", "9223372036854775808", "", "0"])
-func numericReadOptionsRejectInvalidValuesBeforeOpeningDatabase(raw: String) async {
+func numericReadOptionsRejectInvalidValuesBeforeOpeningDatabase(raw: String) throws {
   let cases: [(arguments: [String], option: String)] = [
     (["chats", "--limit", raw], "limit"),
     (["history", "--chat-id", raw], "chat-id"),
@@ -21,12 +21,11 @@ func numericReadOptionsRejectInvalidValuesBeforeOpeningDatabase(raw: String) asy
     (["scheduled", "list", "--limit", raw], "limit"),
   ]
   for testCase in cases where raw != "0" || testCase.option != "since-rowid" {
-    let (output, status) = await StdoutCapture.capture {
-      await CommandRouter().run(
-        argv: ["imsg"] + testCase.arguments + ["--db", "/nonexistent/imsg-validation.db"])
-    }
-    #expect(status == 1)
-    #expect(output.contains("Invalid value for option: --\(testCase.option)"))
+    let result = try runIMsgProcess(
+      testCase.arguments + ["--db", "/nonexistent/imsg-validation.db"])
+    #expect(result.status == 1)
+    #expect(result.output.isEmpty)
+    #expect(result.error.contains("Invalid value for option: --\(testCase.option)"))
   }
 }
 
@@ -47,7 +46,11 @@ func malformedChatIDCannotFallBackToRecipient(command: String) async throws {
     switch command {
     case "send":
       try await SendCommand.run(
-        values: values, runtime: runtime, sendMessage: { _ in didWork = true },
+        values: values, runtime: runtime,
+        sendMessage: { options in
+          didWork = true
+          return options
+        },
         storeFactory: store)
     case "read":
       try await ReadCommand.run(

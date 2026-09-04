@@ -29,14 +29,10 @@ func chatsUnreadOnlyFlagFiltersToUnreadChats() async throws {
 }
 
 @Test
-func chatsUnreadOnlyRejectsDatabaseWithoutReadState() async throws {
+func chatsUnreadOnlyRejectsDatabaseWithoutReadState() throws {
   let dbPath = try CommandTestDatabase.makePath()
-  let router = CommandRouter()
-
-  let (output, status) = await StdoutCapture.capture {
-    await router.run(argv: ["imsg", "chats", "--db", dbPath, "--unread-only", "--json"])
-  }
-
-  #expect(status == 1)
-  #expect(output.contains("Unread filtering is unavailable"))
+  let result = try runIMsgProcess(["chats", "--db", dbPath, "--unread-only", "--json"])
+  #expect(result.status == 1)
+  #expect(result.output.isEmpty)
+  #expect(result.error.contains("Unread filtering is unavailable"))
 }

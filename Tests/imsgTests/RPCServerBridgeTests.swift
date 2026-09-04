@@ -16,7 +16,10 @@ func rpcSendUsesBridgeWhenReadyAndExistingDirectChatResolves() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in appleScriptCalled = true },
+    sendMessage: { options in
+      appleScriptCalled = true
+      return options
+    },
     resolveSentMessage: { _, _, _, _ in nil },
     invokeBridge: { action, params in
       capturedAction = action
@@ -52,7 +55,10 @@ func rpcSendForwardsReplyTargetAliasesToBridge() async throws {
       store: store,
       verbose: false,
       output: output,
-      sendMessage: { _ in appleScriptCalled = true },
+      sendMessage: { options in
+        appleScriptCalled = true
+        return options
+      },
       resolveSentMessage: { _, _, _, _ in nil },
       invokeBridge: { action, params in
         capturedAction = action
@@ -88,7 +94,10 @@ func rpcSendForwardsCaptionedAttachmentReplyToBridge() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in appleScriptCalled = true },
+    sendMessage: { options in
+      appleScriptCalled = true
+      return options
+    },
     resolveSentMessage: { _, _, _, _ in nil },
     invokeBridge: { action, params in
       capturedActions.append(action)
@@ -141,7 +150,10 @@ func rpcSendReplyAttachmentRejectsStaleBridge() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in appleScriptCalled = true },
+    sendMessage: { options in
+      appleScriptCalled = true
+      return options
+    },
     resolveSentMessage: { _, _, _, _ in nil },
     invokeBridge: { action, _ in
       capturedActions.append(action)
@@ -175,7 +187,7 @@ func rpcSendThreadsTextFormattingToBridge() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in },
+    sendMessage: { $0 },
     resolveSentMessage: { _, _, _, _ in nil },
     invokeBridge: { _, params in
       capturedParams = params
@@ -207,7 +219,7 @@ func rpcSendWithoutFormattingOmitsTextFormatting() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in },
+    sendMessage: { $0 },
     resolveSentMessage: { _, _, _, _ in nil },
     invokeBridge: { _, params in
       capturedParams = params
@@ -256,7 +268,10 @@ func rpcSendAutoSMSDetectionKeepsAnyPrefixBridgeLookup() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in appleScriptCalled = true },
+    sendMessage: { options in
+      appleScriptCalled = true
+      return options
+    },
     resolveSentMessage: { _, _, _, _ in nil },
     invokeBridge: { action, params in
       capturedAction = action
@@ -290,7 +305,7 @@ func rpcSendAutoSMSDetectionDoesNotUseIMessageBridgeChat() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in },
+    sendMessage: { $0 },
     resolveSentMessage: { _, _, _, _ in nil },
     invokeBridge: { _, _ in
       bridgeCalled = true
@@ -317,7 +332,10 @@ func rpcSendDoesNotFallbackWhenBridgeFailureIsUncertain() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { options in captured = options },
+    sendMessage: { options in
+      captured = options
+      return options
+    },
     resolveSentMessage: { _, _, _, _ in nil },
     invokeBridge: { _, _ in throw IMsgBridgeError.dylibReturnedError("nope") },
     isBridgeReady: { true }
@@ -346,7 +364,10 @@ func rpcSendReplyTargetRejectsAppleScriptFallbackWhenBridgeUnavailable() async t
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in appleScriptCalled = true },
+    sendMessage: { options in
+      appleScriptCalled = true
+      return options
+    },
     resolveSentMessage: { _, _, _, _ in nil },
     invokeBridge: { _, _ in
       bridgeCalled = true
@@ -378,7 +399,10 @@ func rpcSendReplyTargetDoesNotFallbackToAppleScriptWhenBridgeFails() async throw
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in appleScriptCalled = true },
+    sendMessage: { options in
+      appleScriptCalled = true
+      return options
+    },
     resolveSentMessage: { _, _, _, _ in nil },
     invokeBridge: { _, _ in
       bridgeCalled = true

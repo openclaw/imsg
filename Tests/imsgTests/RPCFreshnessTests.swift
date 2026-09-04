@@ -102,7 +102,10 @@ func deletedWarmChatIDRejectsBeforeSendOrBridgeDispatch() async throws {
     store: fixture.store,
     verbose: false,
     output: output,
-    sendMessage: { _ in sendCount += 1 },
+    sendMessage: { options in
+      sendCount += 1
+      return options
+    },
     invokeBridge: { _, _ in
       bridgeCount += 1
       return [:]

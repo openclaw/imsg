@@ -3,7 +3,7 @@ title: Attachments
 description: "Attachment metadata, resolved paths, and optional model-friendly conversion for CAF audio and GIF images."
 ---
 
-`imsg` reports attachment metadata only. It never copies, modifies, or uploads the underlying files. Optional conversion exposes cached, model-friendly variants for CAF audio and GIF images.
+Reading attachments reports metadata and paths without modifying the originals. Optional conversion creates cached variants for CAF audio and GIF images. Sending stages a private copy for Messages to read, as described below.
 
 ## Reading attachments
 

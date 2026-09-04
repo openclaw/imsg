@@ -280,7 +280,10 @@ func sendCommandResolvesUniqueContactName() async throws {
     try await SendCommand.run(
       values: values,
       runtime: runtime,
-      sendMessage: { options in captured = options },
+      sendMessage: { options in
+        captured = options
+        return options
+      },
       resolveSentMessage: resolvedSentMessageFixture,
       storeFactory: { _ in try CommandTestDatabase.makeStoreForRPC() },
       contactResolverFactory: { _ in resolver }
@@ -307,7 +310,7 @@ func sendCommandRejectsAmbiguousContactName() async {
     try await SendCommand.run(
       values: values,
       runtime: runtime,
-      sendMessage: { _ in },
+      sendMessage: { $0 },
       resolveSentMessage: { _, _, _, _ in nil },
       contactResolverFactory: { _ in resolver }
     )
@@ -334,6 +337,7 @@ func sendCommandRunsWithStubSender() async throws {
       runtime: runtime,
       sendMessage: { options in
         captured = options
+        return options
       },
       resolveSentMessage: resolvedSentMessageFixture,
       storeFactory: { _ in try CommandTestDatabase.makeStoreForRPC() }
@@ -359,6 +363,7 @@ func sendCommandResolvesChatID() async throws {
       runtime: runtime,
       sendMessage: { options in
         captured = options
+        return options
       },
       resolveSentMessage: resolvedSentMessageFixture
     )
@@ -382,7 +387,7 @@ func sendCommandJsonIncludesResolvedMessageGuidForChatTarget() async throws {
     try await SendCommand.run(
       values: values,
       runtime: runtime,
-      sendMessage: { _ in },
+      sendMessage: { $0 },
       resolveSentMessage: { _, options, chatID, _ in
         Message(
           rowID: 42,
@@ -421,7 +426,7 @@ func sendCommandRejectsMisroutedChatGhost() async throws {
     try await SendCommand.run(
       values: values,
       runtime: runtime,
-      sendMessage: { _ in
+      sendMessage: { options in
         let db = try Connection(path)
         try db.run("INSERT INTO handle(ROWID, id) VALUES (99, 'iMessage;+;chat123')")
         try db.run(
@@ -431,6 +436,7 @@ func sendCommandRejectsMisroutedChatGhost() async throws {
           """,
           CommandTestDatabase.appleEpoch(Date())
         )
+        return options
       },
       resolveSentMessage: { _, _, _, _ in nil }
     )
@@ -458,7 +464,10 @@ func sendCommandAutoResolvesToSMSWhenDetected() async throws {
     try await SendCommand.run(
       values: values,
       runtime: runtime,
-      sendMessage: { options in captured = options },
+      sendMessage: { options in
+        captured = options
+        return options
+      },
       resolveSentMessage: resolvedSentMessageFixture,
       storeFactory: { _ in try CommandTestDatabase.makeStoreForRPC() },
       resolveService: { _, _, _ in .sms }
@@ -480,7 +489,10 @@ func sendCommandAutoResolvesUnknownToIMessage() async throws {
     try await SendCommand.run(
       values: values,
       runtime: runtime,
-      sendMessage: { options in captured = options },
+      sendMessage: { options in
+        captured = options
+        return options
+      },
       resolveSentMessage: resolvedSentMessageFixture,
       storeFactory: { _ in try CommandTestDatabase.makeStoreForRPC() },
       resolveService: { _, _, _ in .unknown }
@@ -503,7 +515,10 @@ func sendCommandHonorsNoSMSFallbackFlag() async throws {
     try await SendCommand.run(
       values: values,
       runtime: runtime,
-      sendMessage: { options in captured = options },
+      sendMessage: { options in
+        captured = options
+        return options
+      },
       resolveSentMessage: resolvedSentMessageFixture,
       storeFactory: { _ in try CommandTestDatabase.makeStoreForRPC() },
       resolveService: { _, _, _ in .imessage }
@@ -525,7 +540,10 @@ func sendCommandDisablesSMSFallbackForAttachments() async throws {
     try await SendCommand.run(
       values: values,
       runtime: runtime,
-      sendMessage: { options in captured = options },
+      sendMessage: { options in
+        captured = options
+        return options
+      },
       resolveSentMessage: resolvedSentMessageFixture,
       storeFactory: { _ in try CommandTestDatabase.makeStoreForRPC() },
       resolveService: { _, _, _ in .imessage }
@@ -549,7 +567,10 @@ func sendCommandExplicitServiceSkipsDetection() async throws {
     try await SendCommand.run(
       values: values,
       runtime: runtime,
-      sendMessage: { options in captured = options },
+      sendMessage: { options in
+        captured = options
+        return options
+      },
       resolveSentMessage: resolvedSentMessageFixture,
       storeFactory: { _ in try CommandTestDatabase.makeStoreForRPC() },
       resolveService: { _, _, _ in

@@ -81,32 +81,35 @@ struct CommandRouter {
       guard let commandName = invocation.path.last,
         let spec = specs.first(where: { $0.name == commandName })
       else {
-        StdoutWriter.writeLine("Unknown command")
-        HelpPrinter.printRoot(version: version, rootName: rootName, commands: specs)
+        writeDiagnostic("Unknown command")
+        writeDiagnostic(
+          HelpPrinter.renderRoot(version: version, rootName: rootName, commands: specs).joined(
+            separator: "\n"))
         return 1
       }
       let runtime = RuntimeOptions(parsedValues: invocation.parsedValues)
-      do {
-        try await spec.run(invocation.parsedValues, runtime)
-        return 0
-      } catch is BridgeOutput.EmittedError {
-        return 1
-      } catch is CommandOutputEmittedError {
-        return 1
-      } catch {
-        StdoutWriter.writeLine(String(describing: error))
-        return 1
-      }
+      try await spec.run(invocation.parsedValues, runtime)
+      return 0
+    } catch is BridgeOutput.EmittedError {
+      return 1
+    } catch is CommandOutputEmittedError {
+      return 1
     } catch let error as CommanderProgramError {
-      StdoutWriter.writeLine(error.description)
+      writeDiagnostic(error.description)
       if case .missingSubcommand = error {
-        HelpPrinter.printRoot(version: version, rootName: rootName, commands: specs)
+        writeDiagnostic(
+          HelpPrinter.renderRoot(version: version, rootName: rootName, commands: specs).joined(
+            separator: "\n"))
       }
       return 1
     } catch {
-      StdoutWriter.writeLine(String(describing: error))
+      writeDiagnostic(String(describing: error))
       return 1
     }
+  }
+
+  private func writeDiagnostic(_ message: String) {
+    FileHandle.standardError.write(Data((message + "\n").utf8))
   }
 
   private func normalizeArguments(_ argv: [String]) -> [String] {

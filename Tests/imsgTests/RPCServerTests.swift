@@ -145,7 +145,10 @@ func rpcSendResolvesChatID() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { options in captured = options },
+    sendMessage: { options in
+      captured = options
+      return options
+    },
     resolveSentMessage: resolvedSentMessageFixture
   )
 
@@ -170,7 +173,10 @@ func rpcSendResolvesUniqueContactName() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { options in captured = options },
+    sendMessage: { options in
+      captured = options
+      return options
+    },
     resolveSentMessage: resolvedSentMessageFixture,
     contactResolver: resolver
   )
@@ -211,7 +217,10 @@ func rpcSendRejectsContactNameWhenContactsAreUnavailable() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in didSend = true },
+    sendMessage: { options in
+      didSend = true
+      return options
+    },
     contactResolver: resolver
   )
 
@@ -231,7 +240,7 @@ func rpcSendReturnsSentMessageIdentifiersWhenResolved() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in },
+    sendMessage: { $0 },
     resolveSentMessage: { _, options, chatID, _ in
       Message(
         rowID: 1_979,
@@ -268,7 +277,7 @@ func rpcAttachmentOnlyKeepsOkResponseWithoutTextVerification() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in },
+    sendMessage: { $0 },
     resolveSentMessage: { _, _, _, _ in nil }
   )
 
@@ -292,7 +301,7 @@ func rpcSendReportsMisroutedChatGhost() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in
+    sendMessage: { options in
       try store.withConnection { db in
         try db.run("INSERT INTO handle(ROWID, id) VALUES (99, 'iMessage;+;chat123')")
         try db.run(
@@ -303,6 +312,7 @@ func rpcSendReportsMisroutedChatGhost() async throws {
           CommandTestDatabase.appleEpoch(Date())
         )
       }
+      return options
     },
     resolveSentMessage: { _, _, _, _ in nil }
   )

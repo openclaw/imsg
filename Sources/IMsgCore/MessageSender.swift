@@ -67,6 +67,15 @@ public struct MessageSender {
   }
 
   public func send(_ options: MessageSendOptions) throws {
+    _ = try sendResolvingRoute(options)
+  }
+
+  public func normalizedRecipient(_ recipient: String, region: String) -> String {
+    normalizer.normalize(recipient, region: region.isEmpty ? "US" : region)
+  }
+
+  /// Returns the effective destination after normalization and any safe SMS fallback.
+  public func sendResolvingRoute(_ options: MessageSendOptions) throws -> MessageSendOptions {
     #if !os(macOS)
       _ = options
       throw IMsgError.appleScriptFailure(
@@ -76,9 +85,10 @@ public struct MessageSender {
       let requestedService = resolved.service
       let chatTarget = resolveChatTarget(&resolved)
       let useChat = !chatTarget.isEmpty
+      resolved.recipient = normalizedRecipient(resolved.recipient, region: resolved.region)
       if useChat == false {
-        if resolved.region.isEmpty { resolved.region = "US" }
-        resolved.recipient = normalizer.normalize(resolved.recipient, region: resolved.region)
+        resolved.chatIdentifier = ""
+        resolved.directParticipantTarget = nil
         if resolved.service == .auto { resolved.service = .imessage }
       }
 
@@ -95,7 +105,7 @@ public struct MessageSender {
         && !resolved.text.isEmpty
         && recipientIsPhoneNumber(resolved.recipient)
 
-      try sendViaAppleScript(
+      return try sendViaAppleScript(
         resolved,
         chatTarget: chatTarget,
         useChat: useChat,
@@ -160,7 +170,7 @@ public struct MessageSender {
     chatTarget: String,
     useChat: Bool,
     smsFallbackEligible: Bool
-  ) throws {
+  ) throws -> MessageSendOptions {
     let script = appleScript()
     let directTarget = resolved.directParticipantTarget.flatMap {
       $0.chatGUID == chatTarget ? $0 : nil
@@ -182,13 +192,16 @@ public struct MessageSender {
 
     do {
       try runner(script, arguments(forService: resolved.service))
+      return resolved
     } catch let failure as DeliveryFailure {
       guard smsFallbackEligible, failure.retrySafe else { throw failure }
       try runner(script, arguments(forService: .sms, forceBuddy: true))
-    } catch {
-      // Production runners always emit DeliveryFailure. An injected or future
-      // untyped error has no authoritative dispatch fact and is never retried.
-      throw error
+      var fallback = resolved
+      fallback.service = .sms
+      fallback.chatGUID = ""
+      fallback.chatIdentifier = ""
+      fallback.directParticipantTarget = nil
+      return fallback
     }
   }
 

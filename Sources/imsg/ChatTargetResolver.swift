@@ -108,12 +108,16 @@ enum ChatTargetResolver {
     if includeAnyForSMS, !trimmed.isEmpty {
       candidates = ["SMS;-;\(trimmed)", "any;-;\(trimmed)", "any;+;\(trimmed)"]
     }
+    let services = service == .sms ? ["SMS"] : ["iMessage", "iMessageLite"]
     for candidate in candidates {
       let info =
         includeAnyForSMS
-        ? try store.chatInfo(matchingExactTarget: candidate)
-        : try store.chatInfo(matchingTarget: candidate)
-      if let info { return info }
+        ? try store.chatInfo(matchingExactTarget: candidate, preferredServices: services)
+        : try store.chatInfo(matchingTarget: candidate, preferredServices: services)
+      // Auto-detected SMS can use a neutral "any" chat with older service metadata.
+      if let info, includeAnyForSMS || service == .auto || services.contains(info.service) {
+        return info
+      }
     }
     return nil
   }

@@ -43,7 +43,9 @@ enum SendCommand {
   static func run(
     values: ParsedValues,
     runtime: RuntimeOptions,
-    sendMessage: @escaping (MessageSendOptions) throws -> Void = { try MessageSender().send($0) },
+    sendMessage: @escaping (MessageSendOptions) throws -> MessageSendOptions = {
+      try MessageSender().sendResolvingRoute($0)
+    },
     resolveSentMessage:
       @escaping (
         MessageStore,
@@ -73,13 +75,16 @@ enum SendCommand {
       mixedTargetError: ParsedValuesError.invalidOption("to"),
       missingRecipientError: ParsedValuesError.missingOption("to")
     )
-    let recipient: String
+    let resolvedRecipient: String
     if !rawInput.hasChatTarget && ChatTargetResolver.looksLikeContactName(rawRecipient) {
       let contacts = await contactResolverFactory(region)
-      recipient = try ChatTargetResolver.resolveRecipientName(rawRecipient, contacts: contacts)
+      resolvedRecipient = try ChatTargetResolver.resolveRecipientName(
+        rawRecipient, contacts: contacts)
     } else {
-      recipient = rawRecipient
+      resolvedRecipient = rawRecipient
     }
+
+    let recipient = MessageSender().normalizedRecipient(resolvedRecipient, region: region)
 
     let input = ChatTargetInput(
       recipient: recipient,
@@ -165,19 +170,15 @@ enum SendCommand {
         store: store, resolvedTarget: resolvedTarget, directChatInfo: directChatInfo)
     )
     let sentAt = Date()
-    try sendMessage(options)
+    let sentOptions = try sendMessage(options)
 
     var sentMessage: Message?
     if let store, input.hasChatTarget || !text.isEmpty {
-      let verificationChatID =
-        input.chatID
-        ?? (input.hasChatTarget ? resolvedTarget.preferredIdentifier : nil).flatMap {
-          try? store.chatInfo(matchingTarget: $0)?.id
-        }
-        ?? directChatInfo?.id
+      let verificationChatID = try? SentMessageVerifier.verificationChatID(
+        store: store, options: sentOptions)
       sentMessage = try await SentMessageVerifier.verifyAppleScriptSend(
         store: store,
-        options: options,
+        options: sentOptions,
         chatID: verificationChatID,
         sentAt: sentAt,
         resolve: resolveSentMessage

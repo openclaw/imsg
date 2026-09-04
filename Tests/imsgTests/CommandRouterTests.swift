@@ -27,13 +27,12 @@ func commandRouterPrintsHelp() async {
 }
 
 @Test
-func commandRouterHonorsOptionTerminator() async {
+func commandRouterHonorsOptionTerminator() throws {
   for flag in ["--version", "-V", "--help", "-h"] {
-    let (output, status) = await StdoutCapture.capture {
-      await CommandRouter().run(argv: ["imsg", "completions", "--", flag])
-    }
-    #expect(status == 1)
-    #expect(output.contains("Unknown shell"))
+    let result = try runIMsgProcess(["completions", "--", flag])
+    #expect(result.status == 1)
+    #expect(result.output.isEmpty)
+    #expect(result.error.contains("Unknown shell"))
   }
 }
 
@@ -54,7 +53,7 @@ func executableWrapperPropagatesRouterStatus() throws {
 
   let invalid = try runIMsgProcess(["nope"])
   #expect(invalid.status == 1)
-  #expect(invalid.output.contains("nope") || invalid.output.contains("Unknown command"))
+  #expect(invalid.error.contains("nope") || invalid.error.contains("Unknown command"))
 }
 
 @Test
@@ -70,7 +69,7 @@ func stickerCommandRejectsFIFOWithoutWaitingForAWriter() throws {
     "send-sticker", "--chat", "iMessage;-;+15550000000", "--file", fifo.path,
   ])
   #expect(result.status == 1)
-  #expect(result.output.contains("sticker must be a regular file"))
+  #expect(result.error.contains("sticker must be a regular file"))
 }
 
 @Test
@@ -79,10 +78,10 @@ func commandRouterIncludesGroupCommand() {
   #expect(router.specs.contains { $0.name == "group" })
 }
 
-private func runIMsgProcess(
+func runIMsgProcess(
   _ arguments: [String],
   environment extraEnvironment: [String: String] = [:]
-) throws -> (status: Int32, output: String) {
+) throws -> (status: Int32, output: String, error: String) {
   let executable = try imsgExecutableURL()
   let process = Process()
   process.executableURL = executable
@@ -96,12 +95,18 @@ private func runIMsgProcess(
 
   let output = Pipe()
   process.standardOutput = output
-  process.standardError = output
+  let error = Pipe()
+  process.standardError = error
   try process.run()
   output.fileHandleForWriting.closeFile()
+  error.fileHandleForWriting.closeFile()
   #expect(!ProcessTimeout.waitUntilExit(process, timeout: 3))
   let data = output.fileHandleForReading.readDataToEndOfFile()
-  return (process.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+  let errorData = error.fileHandleForReading.readDataToEndOfFile()
+  return (
+    process.terminationStatus, String(decoding: data, as: UTF8.self),
+    String(decoding: errorData, as: UTF8.self)
+  )
 }
 
 private func imsgExecutableURL() throws -> URL {
@@ -168,4 +173,16 @@ func completionsCommandRunsThroughRouter() async {
   }
   #expect(status == 0)
   #expect(output.contains("complete -c imsg"))
+}
+
+@Test(arguments: [
+  ["nope", "--json"],
+  ["search", "--query", "synthetic", "--match", "invalid", "--json"],
+  ["history", "--chat-id", "1", "--db", "/nonexistent/imsg-synthetic.db", "--json"],
+])
+func commandRouterKeepsDiagnosticsOffStdout(arguments: [String]) throws {
+  let result = try runIMsgProcess(arguments)
+  #expect(result.status == 1)
+  #expect(result.output.isEmpty)
+  #expect(!result.error.isEmpty)
 }

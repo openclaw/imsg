@@ -16,7 +16,10 @@ func sendCommandSuppliesVerifiedParticipantRoute(target: String) async throws {
   _ = try await StdoutCapture.capture {
     try await SendCommand.run(
       values: values, runtime: RuntimeOptions(parsedValues: values),
-      sendMessage: { captured = $0 }, resolveSentMessage: resolvedSentMessageFixture)
+      sendMessage: {
+        captured = $0
+        return $0
+      }, resolveSentMessage: resolvedSentMessageFixture)
   }
   #expect(captured?.directParticipantTarget?.chatGUID == "iMessage;-;+123")
   #expect(captured?.directParticipantTarget?.recipient == "+123")
@@ -32,7 +35,10 @@ func rpcSuppliesVerifiedParticipantRoute(target: String) async throws {
   var captured: MessageSendOptions?
   let server = RPCServer(
     store: store, verbose: false, output: output,
-    sendMessage: { captured = $0 }, resolveSentMessage: resolvedSentMessageFixture)
+    sendMessage: {
+      captured = $0
+      return $0
+    }, resolveSentMessage: resolvedSentMessageFixture)
   let targetValue: Any = target == "to" ? "+123" : (target == "chat_id" ? 1 : "iMessage;-;+123")
   let request: [String: Any] = [
     "jsonrpc": "2.0", "id": 1, "method": "send",

@@ -27,7 +27,10 @@ func sendCommandDirectSendDoesNotRequireMessagesDatabase() async throws {
     try await SendCommand.run(
       values: values,
       runtime: runtime,
-      sendMessage: { options in captured = options },
+      sendMessage: { options in
+        captured = options
+        return options
+      },
       resolveSentMessage: { _, _, _, _ in nil },
       storeFactory: { _ in throw SendCommandServiceDetectionTestError.unavailable }
     )
@@ -69,7 +72,10 @@ func sendCommandAutoDetectionUsesRegionNormalizedRecipient() async throws {
     try await SendCommand.run(
       values: values,
       runtime: runtime,
-      sendMessage: { options in captured = options },
+      sendMessage: { options in
+        captured = options
+        return options
+      },
       resolveSentMessage: { _, _, _, _ in nil }
     )
   }

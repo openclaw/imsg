@@ -13,7 +13,10 @@ func rpcSendFallsBackOnlyWhenBridgeProvesNotStarted() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { options in captured = options },
+    sendMessage: { options in
+      captured = options
+      return options
+    },
     resolveSentMessage: resolvedSentMessageFixture,
     invokeBridge: { action, _ in
       throw DeliveryFailure(
@@ -77,7 +80,10 @@ func rpcSendFallsBackWhenBridgeIsNotReady() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { _ in appleScriptCalled = true },
+    sendMessage: { options in
+      appleScriptCalled = true
+      return options
+    },
     resolveSentMessage: resolvedSentMessageFixture,
     invokeBridge: { _, _ in
       bridgeCalled = true

@@ -80,7 +80,7 @@ func rpcStatusMethods(_ snapshot: [String: Any]) -> Set<String> {
 func makeUnavailableRPCStatusServer(
   output: TestRPCOutput,
   bridgeReady: Bool = false,
-  sendMessage: @escaping (MessageSendOptions) throws -> Void = { _ in },
+  sendMessage: @escaping (MessageSendOptions) throws -> MessageSendOptions = { $0 },
   invokeBridge: @escaping BridgeInvoker = { _, _ in [:] }
 ) -> RPCServer {
   RPCServer(

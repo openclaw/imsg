@@ -14,7 +14,10 @@ func rpcSendEnablesSMSFallbackForAutoTextDirectSend() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { options in captured = options },
+    sendMessage: { options in
+      captured = options
+      return options
+    },
     resolveSentMessage: resolvedSentMessageFixture
   )
 
@@ -36,7 +39,10 @@ func rpcSendCanDisableOtherwiseEligibleSMSFallbackWithoutChangingAutoService() a
       store: store,
       verbose: false,
       output: output,
-      sendMessage: { captured = $0 },
+      sendMessage: {
+        captured = $0
+        return $0
+      },
       resolveSentMessage: resolvedSentMessageFixture
     )
 
@@ -71,7 +77,10 @@ func rpcSendAutoUsesLocalSMSHistoryForAttachmentSend() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { options in captured = options },
+    sendMessage: { options in
+      captured = options
+      return options
+    },
     resolveSentMessage: resolvedSentMessageFixture
   )
 
@@ -103,7 +112,10 @@ func rpcSendAutoDetectionUsesRegionNormalizedRecipient() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { options in captured = options },
+    sendMessage: { options in
+      captured = options
+      return options
+    },
     resolveSentMessage: { _, _, _, _ in nil }
   )
 
@@ -124,7 +136,10 @@ func rpcSendDisablesSMSFallbackForExplicitService() async throws {
     store: store,
     verbose: false,
     output: output,
-    sendMessage: { options in captured = options },
+    sendMessage: { options in
+      captured = options
+      return options
+    },
     resolveSentMessage: resolvedSentMessageFixture
   )
 

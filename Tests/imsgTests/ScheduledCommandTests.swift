@@ -35,11 +35,10 @@ func scheduledCommandPlainOutputAndLimitValidation() async throws {
   #expect(output.contains("scheduled-one"))
   #expect(output.contains("later one"))
 
-  let (badOutput, badStatus) = await StdoutCapture.capture {
-    await router.run(argv: ["imsg", "scheduled", "list", "--db", path, "--limit", "0"])
-  }
-  #expect(badStatus == 1)
-  #expect(badOutput.contains("--limit"))
+  let invalid = try runIMsgProcess(["scheduled", "list", "--db", path, "--limit", "0"])
+  #expect(invalid.status == 1)
+  #expect(invalid.output.isEmpty)
+  #expect(invalid.error.contains("--limit"))
 }
 
 @Test

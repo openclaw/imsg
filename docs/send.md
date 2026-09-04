@@ -23,7 +23,7 @@ imsg send --to "Jane Appleseed" --text "hi"
 For unambiguous routing, prefer phone numbers in E.164 form.
 
 When `chat.db` is readable and the recipient already has a direct chat, `imsg`
-targets that chat's GUID instead of constructing a new buddy send. New
+targets a compatible chat's GUID instead of constructing a new buddy send. Explicit `sms` and `imessage` selection never reuse a chat on the opposite service. New
 recipients still use the existing buddy-send behavior.
 
 If that GUID is absent from Messages.app's live chats, `imsg` recovers from
@@ -93,7 +93,7 @@ state, not wording inferred from an error message.
 imsg send --to "415-555-1212" --text "hi" --region US
 ```
 
-Defaults to `US`. Pass an ISO 3166-1 alpha-2 country code to normalize locally-formatted numbers. `--service auto` uses the same normalized phone number when checking local Messages history, so SMS-only history is detected for local-format numbers outside the US too.
+Defaults to `US`. Pass an ISO 3166-1 alpha-2 country code to normalize locally-formatted numbers. Chat selection, service detection, dispatch, and verification use the same normalized recipient, including local-format numbers outside the US.
 
 ## Confirming what was sent
 
@@ -102,8 +102,7 @@ Default text mode prints `sent` on success. JSON mode emits `{"status":"sent"}`.
 When `chat.db` is readable, every AppleScript text send waits up to eight
 seconds for the matching outgoing row. If Messages reports success but no row
 appears, `imsg` returns `may_have_completed` with no-retry guidance instead of
-reporting success. The lookup uses the known chat rowid when available and a
-bounded global text lookup for a new recipient. Direct sends still retain the
+reporting success. The lookup is scoped to the actual send route; after a safe SMS fallback, it verifies the SMS chat and reports that message's ID and service. A new recipient's chat must become visible before its text can be confirmed. Direct sends still retain the
 previous accepted behavior when the database is unavailable. Attachment-only
 verification is unchanged.
 

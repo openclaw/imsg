@@ -42,12 +42,11 @@ func injectedHelperReportsAuthoritativeMultipartCapability() throws {
 }
 
 @Test
-func bridgeMessagingCommandsExposeChatRequirement() async {
+func bridgeMessagingCommandsExposeChatRequirement() throws {
   // Each new bridge messaging command requires a `--chat` option (the chat
   // guid is the universal addressing key in v2). Ensure missing args bubble
   // up as a parse-time error rather than dropping into the bridge with empty
   // strings.
-  let router = CommandRouter()
   let cases: [(name: String, args: [String])] = [
     ("send-rich", ["--text", "hello"]),
     ("poll", ["send", "--question", "Dinner?", "--option", "A", "--option", "B"]),
@@ -58,11 +57,10 @@ func bridgeMessagingCommandsExposeChatRequirement() async {
     ("send-sticker", ["--file", "~/Desktop/sticker.png"]),
   ]
   for testCase in cases {
-    let (output, status) = await StdoutCapture.capture {
-      await router.run(argv: ["imsg", testCase.name] + testCase.args)
-    }
-    #expect(status == 1, "\(testCase.name) should require --chat")
-    #expect(output.contains("Missing required option: --chat"))
+    let result = try runIMsgProcess([testCase.name] + testCase.args)
+    #expect(result.status == 1, "\(testCase.name) should require --chat")
+    #expect(result.output.isEmpty)
+    #expect(result.error.contains("Missing required option: --chat"))
   }
 }
 
@@ -496,15 +494,13 @@ private func functionBody(named name: String, in source: String) -> String? {
 }
 
 @Test
-func chatMarkRejectsConflictingFlags() async {
-  let router = CommandRouter()
-  let (output, status) = await StdoutCapture.capture {
-    await router.run(argv: [
-      "imsg", "chat-mark", "--chat", "iMessage;-;+15551234567", "--read", "--unread",
-    ])
-  }
-  #expect(status == 1)
-  #expect(output.contains("Invalid value for option: --read"))
+func chatMarkRejectsConflictingFlags() throws {
+  let result = try runIMsgProcess([
+    "chat-mark", "--chat", "iMessage;-;+15551234567", "--read", "--unread",
+  ])
+  #expect(result.status == 1)
+  #expect(result.output.isEmpty)
+  #expect(result.error.contains("Invalid value for option: --read"))
 }
 
 @Test
