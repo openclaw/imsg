@@ -59,8 +59,7 @@ enum BridgeOutput {
     }
   }
 
-  /// Invoke a bridge action and emit the result. Returns the data dict on
-  /// success or nil on failure (after emitting an error message).
+  /// Invoke a bridge action and emit the result; emit then throw on failure.
   ///
   /// `finalize` runs after the action succeeds but before anything is emitted,
   /// so a command that performs follow-up work can fold that work's outcome

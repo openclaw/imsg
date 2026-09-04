@@ -1,29 +1,8 @@
 import Foundation
 import IMsgCore
 
-/// Delivery status for the plain caption message that carries a poll's question.
-///
-/// Messages never renders a poll's title on the balloon, so the caption *is* the
-/// question as far as recipients are concerned. The caption is sent after the
-/// poll and is deliberately best-effort — the poll already landed, and retrying
-/// the pair would duplicate the balloon. Best-effort must not mean silent: a
-/// dropped caption leaves a question-less poll on screen while the caller sees
-/// nothing but success, so `poll send` reports the outcome in its result
-/// payload instead of leaving it on stderr where machine callers never look.
-///
-/// Shape (`comment` key on both the CLI JSON object and the RPC result):
-/// - `requested` — whether a caption was supposed to be sent at all.
-/// - `sent` — whether it landed: `true`, `false`, or `null` when delivery is
-///   unknown.
-/// - `error` — redacted failure text when delivery failed or is unresolved.
-/// - `disposition` / `retry_safe` — from ``DeliveryFailure`` when the transport
-///   reported one, or conservatively synthesized when verification expires.
-///   Callers decide re-send safety from these fields rather than by matching
-///   the message.
-/// - `verified` — present when the caption row was looked for in the target
-///   chat. A bridge acknowledgement only proves the transport accepted the
-///   send, so `sent` is not reported true on an acknowledgement alone when the
-///   row can be checked. Absent means the check could not run at all.
+/// The balloon and its question caption are separate sends. Keep caption failure
+/// or uncertainty separate so callers never retry an already-created poll.
 enum PollCaptionStatus {
   enum VerificationOutcome: Equatable, Sendable {
     case delivered
@@ -32,27 +11,16 @@ enum PollCaptionStatus {
     case unavailable
   }
 
-  /// No caption was requested (`--no-comment` / `suppress_comment: true`).
   static var suppressed: [String: Any] { ["requested": false, "sent": false] }
 
-  /// The caption was requested and the transport accepted it, but the row
-  /// could not be checked (no readable database, or the bridge returned no
-  /// GUID to look for). `sent` is null and `verified` is absent: we did not
-  /// look, so we do not claim either way.
   static var verificationUnavailable: [String: Any] {
     ["requested": true, "sent": NSNull()]
   }
 
-  /// The caption was accepted and Messages recorded it as delivered in the
-  /// target chat.
   static var sentVerified: [String: Any] {
     ["requested": true, "sent": true, "verified": true]
   }
 
-  /// The transport accepted the caption, but its row was absent or still
-  /// pending when verification expired. This is explicitly unknown: Messages
-  /// can persist or deliver the row after the deadline, so retrying could
-  /// duplicate the caption.
   static var deliveryUnknown: [String: Any] {
     [
       "requested": true,
@@ -65,7 +33,6 @@ enum PollCaptionStatus {
     ]
   }
 
-  /// Messages recorded the accepted caption row as failed.
   static var deliveryFailed: [String: Any] {
     [
       "requested": true,
@@ -103,35 +70,9 @@ enum PollCaptionStatus {
     (status["requested"] as? Bool) == true && status["sent"] is NSNull
   }
 
-  /// Waits for a caption row to appear in the target chat.
-  ///
-  /// Mirrors ``SentMessageVerifier``: poll the database until the row shows up
-  /// or the deadline passes, because Messages persists an accepted send
-  /// asynchronously. Returns `.unavailable` when the check cannot run. A
-  /// missing store or empty GUID is "we did not look", never "it did not arrive".
-  /// Bound for the JSON-RPC surface. Mutations there are drained by a single
-  /// worker, so a caption that never lands would otherwise hold the lane for
-  /// the full CLI deadline and stall every mutation queued behind it. Rows
-  /// normally appear well inside a second; timing out here reports
-  /// `may_have_completed`, which tells callers not to retry, so a pessimistic
-  /// bound costs honesty about certainty rather than causing duplicate sends.
+  // RPC mutations share one lane. Bound the extra verification wait so an
+  // offline recipient does not hold every queued mutation for the CLI deadline.
   static let rpcVerifyTimeout: TimeInterval = 2
-
-  /// Reads a caption row's send state. A row existing is not delivery: Messages
-  /// records failed and still-pending sends as rows too, and reporting either
-  /// as a delivered caption would recreate exactly the false success this
-  /// status object exists to remove.
-  ///
-  /// - Returns: `.delivered` once Messages reports remote delivery, `.failed`
-  ///   when it recorded a failure, and `.unknown` while the row is pending or
-  ///   only locally sent and may yet flip either way.
-  static func captionOutcome(for state: MessageSendState) -> VerificationOutcome {
-    switch state {
-    case .delivered: return .delivered
-    case .failed: return .failed
-    case .pending, .sent: return .unknown
-    }
-  }
 
   static func verifyCaption(
     captionGUID: String,
@@ -140,7 +81,8 @@ enum PollCaptionStatus {
     timeout: TimeInterval = 8
   ) async -> VerificationOutcome {
     guard let store, !captionGUID.isEmpty, !chatGUID.isEmpty else { return .unavailable }
-    let deadline = Date().addingTimeInterval(timeout)
+    let clock = ContinuousClock()
+    let deadline = clock.now + .seconds(max(0, timeout))
     repeat {
       if Task.isCancelled { return .unavailable }
       do {
@@ -151,8 +93,11 @@ enum PollCaptionStatus {
         if let status = try store.messageSendStatus(guid: captionGUID) {
           let rowGUID = status.guid.isEmpty ? captionGUID : status.guid
           if try store.messageBelongsToChat(messageGUID: rowGUID, chatGUID: chatGUID) {
-            let outcome = captionOutcome(for: status.state)
-            if outcome != .unknown { return outcome }
+            switch status.state {
+            case .delivered: return .delivered
+            case .failed: return .failed
+            case .pending, .sent: break
+            }
           }
         }
       } catch {
@@ -161,28 +106,28 @@ enum PollCaptionStatus {
         // a delivery verdict this code did not earn.
         return .unavailable
       }
-      try? await Task.sleep(nanoseconds: 100_000_000)
-    } while Date() < deadline
+      let nextPoll = clock.now + .milliseconds(100)
+      try? await clock.sleep(until: min(nextPoll, deadline))
+    } while clock.now < deadline
     return .unknown
   }
 
   /// Maps a verification outcome onto the reported status.
-  static func status(forVerification outcome: VerificationOutcome) -> [String: Any] {
+  static func status(
+    forVerification outcome: VerificationOutcome, messageGUID: String
+  ) -> [String: Any] {
+    var status: [String: Any]
     switch outcome {
-    case .delivered: return sentVerified
-    case .failed: return deliveryFailed
-    case .unknown: return deliveryUnknown
-    case .unavailable: return verificationUnavailable
+    case .delivered: status = sentVerified
+    case .failed: status = deliveryFailed
+    case .unknown: status = deliveryUnknown
+    case .unavailable: status = verificationUnavailable
     }
+    if !messageGUID.isEmpty { status["message_guid"] = messageGUID }
+    return status
   }
 
-  /// Sends the caption that carries a poll's question and folds the outcome into
-  /// the poll payload under `comment`. Pass `comment: nil` when it is suppressed.
-  ///
-  /// Best-effort, mirroring the RPC path: the poll already delivered, so a
-  /// caption failure must not fail the command — re-sending would duplicate the
-  /// balloon. Best-effort is not the same as silent, though, so the outcome
-  /// rides along in the emitted object; stderr keeps the human-facing note.
+  /// Finishes the caption before CLI output; the successful poll remains successful.
   static func sendCaption(
     after data: [String: Any],
     chat: String,
@@ -203,7 +148,7 @@ enum PollCaptionStatus {
         ])
       let captionGUID = (response["messageGuid"] as? String) ?? ""
       let outcome = await verify?(captionGUID) ?? .unavailable
-      status = self.status(forVerification: outcome)
+      status = self.status(forVerification: outcome, messageGUID: captionGUID)
       if outcome == .unknown {
         FileHandle.standardError.write(
           Data(

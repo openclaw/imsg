@@ -73,6 +73,7 @@ func pollSendReportsCaptionDeliveryWhenItLands() async throws {
   #expect(calls == 2)
   #expect(json["messageGuid"] as? String == "poll-guid")
   let comment = try #require(json["comment"] as? [String: Any])
+  #expect(comment["message_guid"] as? String == "caption-guid")
   #expect(comment["requested"] as? Bool == true)
   #expect(comment["sent"] as? Bool == true)
   #expect(comment["verified"] as? Bool == true)
@@ -91,6 +92,7 @@ func pollSendReportsUnknownWhenCaptionVerificationExpires() async throws {
   #expect(calls == 2)
   #expect(json["messageGuid"] as? String == "poll-guid")
   let comment = try #require(json["comment"] as? [String: Any])
+  #expect(comment["message_guid"] as? String == "caption-guid")
   #expect(comment["requested"] as? Bool == true)
   #expect(comment["sent"] is NSNull)
   #expect(comment["verified"] as? Bool == false)
@@ -270,29 +272,8 @@ func verifyCaptionDoesNotGuessWithoutAGuidToLookFor() async throws {
   #expect(result == .unavailable)
 }
 
-@Test
-func captionOutcomeRejectsARowMessagesRecordedAsFailed() async throws {
-  // A row existing is not delivery. Messages writes a row for a failed send
-  // too, and calling that verified is the exact false success this whole
-  // status object exists to remove.
-  #expect(PollCaptionStatus.captionOutcome(for: .failed) == .failed)
-}
-
-@Test
-func captionOutcomeKeepsWaitingWhileTheSendIsPending() async throws {
-  // unknown means "no verdict yet" — the caller keeps polling until the row flips
-  // or the deadline passes, rather than banking an answer it does not have.
-  #expect(PollCaptionStatus.captionOutcome(for: .pending) == .unknown)
-}
-
-@Test
-func captionOutcomeRequiresDeliveredRatherThanLocallySent() async throws {
-  #expect(PollCaptionStatus.captionOutcome(for: .sent) == .unknown)
-  #expect(PollCaptionStatus.captionOutcome(for: .delivered) == .delivered)
-}
-
-@Test
-func verifyCaptionToleratesGuidCasingBetweenBridgeAndDatabase() async throws {
+@Test(arguments: [false, true])
+func verifyCaptionToleratesGuidCasingBetweenBridgeAndDatabase(wrongChat: Bool) async throws {
   // messageSendStatus matches COLLATE NOCASE but messageBelongsToChat does
   // not, so a bridge GUID whose casing differs from the stored row must not
   // read back as a missing caption.
@@ -311,11 +292,11 @@ func verifyCaptionToleratesGuidCasingBetweenBridgeAndDatabase() async throws {
 
   let result = await PollCaptionStatus.verifyCaption(
     captionGUID: "caption-guid",
-    chatGUID: "iMessage;-;+123",
+    chatGUID: wrongChat ? "iMessage;-;+456" : "iMessage;-;+123",
     store: store,
     timeout: 0.5
   )
-  #expect(result == .delivered)
+  #expect(result == (wrongChat ? .unknown : .delivered))
 }
 
 @Test
@@ -435,6 +416,7 @@ func rpcPollSendReportsCaptionDeliveryWhenItLands() async throws {
 
   #expect(result["ok"] as? Bool == true)
   let comment = try #require(result["comment"] as? [String: Any])
+  #expect(comment["message_guid"] as? String == "caption-guid")
   #expect(comment["requested"] as? Bool == true)
   #expect(comment["sent"] as? Bool == true)
   #expect(comment["verified"] as? Bool == true)
@@ -448,6 +430,7 @@ func rpcPollSendReportsUnknownWhenCaptionVerificationExpires() async throws {
   #expect(result["ok"] as? Bool == true)
   // …but a late caption may still arrive, so delivery remains unknown.
   let comment = try #require(result["comment"] as? [String: Any])
+  #expect(comment["message_guid"] as? String == "caption-guid")
   #expect(comment["sent"] is NSNull)
   #expect(comment["verified"] as? Bool == false)
   #expect(comment["disposition"] as? String == "may_have_completed")

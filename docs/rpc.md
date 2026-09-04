@@ -714,12 +714,15 @@ Because the balloon shows no question without it, the caption's outcome is repor
 
 | Field | Meaning |
 | --- | --- |
+| `message_guid` | Caption message GUID when returned by the bridge; use it with `message.send_status` to check again later. Omitted when unavailable. |
 | `requested` | Whether a caption was supposed to be sent (`false` for `suppress_comment: true`). |
 | `sent` | Tri-state delivery result: `true` means delivered, `false` means confirmed not delivered, and `null` means delivery is unknown. A bare bridge acknowledgement is never reported as `true`. |
 | `verified` | Whether Messages recorded the caption as delivered in the target chat. `false` can mean a recorded failure or a row that was absent, pending, or only locally sent at the deadline; use `sent` to distinguish confirmed failure from unknown delivery. Absent when the check could not run at all. |
 | `error` | Failure or unresolved-delivery diagnostic. Typed transport failures are redacted. |
 | `disposition` | `not_started`, `may_have_completed`, or `still_in_flight`. Transport failures supply this directly; verification timeout conservatively synthesizes `may_have_completed`. |
 | `retry_safe` | Whether re-sending the caption is safe. Transport failures supply this directly; verification timeout synthesizes `false`. Never infer it by matching `error`. |
+
+After the caption bridge call completes, RPC polls its delivery for up to two seconds while holding the serialized mutation lane. Database work is additional to that polling bound. Unknown delivery retains the caption GUID when available so a later `message.send_status` query can resolve it without another send. Captions are plain messages, not threaded replies to the poll.
 
 Retry the caption text only when `retry_safe` is `true`, which means the transport proved the operation did not start. `sent: null` is delivery-unknown: the caption may still arrive, so do not retry automatically. Never re-run `poll.send` to recover a caption because that would duplicate the poll balloon.
 

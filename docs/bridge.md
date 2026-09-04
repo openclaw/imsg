@@ -106,6 +106,10 @@ A bridge acknowledgement only proves the transport accepted the send, so `poll s
 - `sent: false, retry_safe: true`: the transport proved the caption operation did not start. Re-send only the caption text, never the poll.
 - `sent: null, retry_safe: false`: the transport reported an uncertain or still-running operation. Do not retry automatically.
 
+When the bridge returns a caption GUID, `comment.message_guid` identifies that separate message. Use RPC `message.send_status` with this GUID to check an unresolved caption later; do not use the poll GUID or assume the caption is a threaded reply.
+
+CLI output waits for the caption send attempt (the existing bridge send timeout is 150 seconds), then polls delivery for up to eight seconds. These are separate waits, not an end-to-end deadline. A slow or offline recipient can leave delivery unknown at the deadline.
+
 Only `retry_safe: true` authorizes a caption retry. Never infer retry safety from `sent`, `verified`, or human-readable `error` text.
 
 Vote or remove a vote with one option selector:

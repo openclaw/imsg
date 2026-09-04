@@ -291,7 +291,8 @@ extension RPCServer {
         let captionGUID = (captionData["messageGuid"] as? String) ?? ""
         let outcome = await captionVerifier(
           captionGUID, chatGUID, await databaseResources.available()?.store)
-        result["comment"] = PollCaptionStatus.status(forVerification: outcome)
+        result["comment"] = PollCaptionStatus.status(
+          forVerification: outcome, messageGUID: captionGUID)
         if outcome == .unknown {
           FileHandle.standardError.write(
             Data(
