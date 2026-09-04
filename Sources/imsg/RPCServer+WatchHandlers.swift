@@ -148,10 +148,7 @@ extension RPCServer {
     guard subID > 0 else {
       throw RPCError.invalidParams("subscription must be a positive integer")
     }
-    if let task = await subscriptions.removeForCancellation(subID) {
-      task.cancel()
-      await task.value
-    }
+    await subscriptions.cancel(subID)
     // Awaiting the task makes this response the final output for the subscription.
     respond(id: id, result: ["ok": true])
   }

@@ -208,13 +208,9 @@ actor SubscriptionStore {
     return .activated
   }
 
-  func removeForCancellation(_ id: Int) -> Task<Void, Never>? {
-    guard let entry = entries.removeValue(forKey: id) else { return nil }
-    resumeEmptyWaitersIfNeeded()
-    if case .active(_, let task) = entry {
-      return task
-    }
-    return nil
+  func cancel(_ id: Int) async {
+    guard let entry = entries[id] else { return }
+    await cancelEntries([id: entry])
   }
 
   func complete(_ reservation: Reservation) {
@@ -233,17 +229,24 @@ actor SubscriptionStore {
   func cancelAll() async {
     accepting = false
     resumeClosedWaiters()
-    let tasks = entries.values.compactMap { entry -> Task<Void, Never>? in
-      guard case .active(_, let task) = entry else { return nil }
-      return task
+    await cancelEntries(entries)
+  }
+
+  private func cancelEntries(_ snapshot: [Int: Entry]) async {
+    var tasks: [(Reservation, Task<Void, Never>)] = []
+    for (id, entry) in snapshot {
+      switch entry {
+      case .pending(let generation):
+        complete(Reservation(id: id, generation: generation))
+      case .active(let generation, let task):
+        task.cancel()
+        tasks.append((Reservation(id: id, generation: generation), task))
+      }
     }
-    entries.removeAll()
-    resumeEmptyWaitersIfNeeded()
-    for task in tasks {
-      task.cancel()
-    }
-    for task in tasks {
+    // Keep ownership while awaiting cleanup so overlapping callers drain the same tasks.
+    for (reservation, task) in tasks {
       await task.value
+      complete(reservation)
     }
   }
 

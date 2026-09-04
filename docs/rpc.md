@@ -115,6 +115,7 @@ Closing stdin stops admission, cancels and awaits every watch subscription,
 then drains all already accepted requests and flushes stdout before `run()`
 returns. Parent-task cancellation cancels subscriptions plus read/control work,
 but never cancels an already-started mutation or claims it did not execute.
+Overlapping shutdown and unsubscribe requests await the same subscription cleanup.
 Accepted mutations, including those not yet started, conservatively drain in
 FIFO order during normal EOF or parent cancellation; the server never invents
 a retry-safe result for work it already admitted.
