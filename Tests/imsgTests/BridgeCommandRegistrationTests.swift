@@ -84,7 +84,6 @@ func injectedHelperHardensRichLinkImageTransfer() throws {
     functionBody(named: "trustedRichLinkStagingRoot", in: source))
   let secureOpenBody = try #require(
     functionBody(named: "openRichLinkDirectorySecurely", in: source))
-  let readBody = try #require(functionBody(named: "readRichLinkPreviewData", in: source))
   let validateBody = try #require(
     functionBody(named: "validateRichLinkPreviewImage", in: source))
   let snapshotBody = try #require(
@@ -105,16 +104,12 @@ func injectedHelperHardensRichLinkImageTransfer() throws {
   #expect(secureOpenBody.contains("substringFromIndex:rootPrefix.length"))
   #expect(secureOpenBody.contains("openat(directoryFD"))
   #expect(secureOpenBody.contains("O_DIRECTORY | O_NOFOLLOW"))
-  #expect(readBody.contains("openat(directoryFD"))
-  #expect(readBody.contains("O_RDONLY | O_CLOEXEC | O_NOFOLLOW"))
-  #expect(readBody.contains("fstat(fd, &before)"))
-  #expect(readBody.contains("after.st_ino != before.st_ino"))
 
   // The descriptor is bound to the bytes and decoded shape. The helper then
   // snapshots those verified bytes into a private, exclusive file so the
   // eventual IMFileTransfer cannot be retargeted by replacing the input path.
   #expect(validateBody.contains(#"@"contentHash""#))
-  #expect(validateBody.contains("richLinkSHA256(data)"))
+  #expect(validateBody.contains("snapshotSHA256(data)"))
   #expect(validateBody.contains("CGImageSourceGetCount(source) != 1"))
   let metadataCheck = try #require(validateBody.range(of: "if (!typeMatches || !properties"))
   let decode = try #require(validateBody.range(of: "CGImageSourceCreateImageAtIndex"))

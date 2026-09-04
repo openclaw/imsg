@@ -3382,7 +3382,7 @@ static int openRichLinkDirectorySecurely(NSString *directoryPath) {
     return directoryFD;
 }
 
-static NSString *richLinkSHA256(NSData *data) {
+static NSString *snapshotSHA256(NSData *data) {
     unsigned char digest[CC_SHA256_DIGEST_LENGTH];
     CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
     NSMutableString *hex = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
@@ -3398,6 +3398,64 @@ static BOOL richLinkIntegerNumber(NSNumber *number) {
     return !CFNumberIsFloatType((__bridge CFNumberRef)number);
 }
 
+// The caller owns the directory; this reader owns only the leaf descriptor.
+static NSData *readSnapshotAt(int directoryFD, NSString *filename,
+                              unsigned long long maximumBytes, NSNumber *expectedBytes,
+                              NSString **outErr) {
+    // O_NONBLOCK must precede fstat: opening a FIFO otherwise blocks Messages itself.
+    int fd = openat(directoryFD, filename.fileSystemRepresentation,
+                    O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if (fd < 0) {
+        if (outErr) *outErr = @"Could not securely open image snapshot";
+        return nil;
+    }
+    @try {
+        struct stat before = {0};
+        if (fstat(fd, &before) != 0 || !S_ISREG(before.st_mode) || before.st_nlink != 1) {
+            if (outErr) *outErr = @"Image snapshot must be a single-link regular file";
+            return nil;
+        }
+        if (before.st_size <= 0 || (unsigned long long)before.st_size > maximumBytes) {
+            if (outErr) *outErr = [NSString stringWithFormat:
+                @"Image snapshot must be between 1 byte and %llu bytes", maximumBytes];
+            return nil;
+        }
+        if (expectedBytes && (unsigned long long)before.st_size != expectedBytes.unsignedLongLongValue) {
+            if (outErr) *outErr = @"Image snapshot size does not match its descriptor";
+            return nil;
+        }
+        NSUInteger size = (NSUInteger)before.st_size;
+        NSMutableData *data = [NSMutableData dataWithCapacity:size];
+        unsigned char buffer[64 * 1024];
+        while (data.length < size) {
+            ssize_t count = read(fd, buffer, MIN(sizeof(buffer), size - data.length));
+            if (count == 0) break;
+            if (count < 0) {
+                if (errno == EINTR) continue;
+                if (outErr) *outErr = @"Could not read image snapshot";
+                return nil;
+            }
+            [data appendBytes:buffer length:(NSUInteger)count];
+        }
+        struct stat after = {0};
+        BOOL changed = fstat(fd, &after) != 0
+            || after.st_dev != before.st_dev
+            || after.st_ino != before.st_ino
+            || after.st_size != before.st_size
+            || after.st_mtimespec.tv_sec != before.st_mtimespec.tv_sec
+            || after.st_mtimespec.tv_nsec != before.st_mtimespec.tv_nsec
+            || after.st_ctimespec.tv_sec != before.st_ctimespec.tv_sec
+            || after.st_ctimespec.tv_nsec != before.st_ctimespec.tv_nsec;
+        if (changed || data.length != size) {
+            if (outErr) *outErr = @"Image snapshot changed while being read";
+            return nil;
+        }
+        return data;
+    } @finally {
+        close(fd);
+    }
+}
+
 static NSData *readRichLinkPreviewData(NSString *path,
                                        unsigned long long expectedSize,
                                        NSString **outErr) {
@@ -3405,60 +3463,14 @@ static NSData *readRichLinkPreviewData(NSString *path,
         if (outErr) *outErr = @"Rich-link image path is outside the secure staging directory";
         return nil;
     }
-    NSString *directory = path.stringByDeletingLastPathComponent;
-    int directoryFD = openRichLinkDirectorySecurely(directory);
+    int directoryFD = openRichLinkDirectorySecurely(path.stringByDeletingLastPathComponent);
     if (directoryFD < 0) {
         if (outErr) *outErr = @"Could not securely open rich-link image directory";
         return nil;
     }
-    int fd = openat(directoryFD, path.lastPathComponent.fileSystemRepresentation,
-                    O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    NSData *data = readSnapshotAt(directoryFD, path.lastPathComponent,
+                                 2ULL * 1024ULL * 1024ULL, @(expectedSize), outErr);
     close(directoryFD);
-    if (fd < 0) {
-        if (outErr) *outErr = @"Could not securely open rich-link image";
-        return nil;
-    }
-    struct stat before = {0};
-    if (fstat(fd, &before) != 0 || !S_ISREG(before.st_mode) || before.st_nlink != 1 ||
-        before.st_size <= 0 || (unsigned long long)before.st_size != expectedSize ||
-        expectedSize > 2ULL * 1024ULL * 1024ULL) {
-        close(fd);
-        if (outErr) *outErr = @"Rich-link image file does not match its descriptor";
-        return nil;
-    }
-
-    NSMutableData *data = [NSMutableData dataWithCapacity:(NSUInteger)before.st_size];
-    unsigned char buffer[64 * 1024];
-    while (YES) {
-        ssize_t count = read(fd, buffer, sizeof(buffer));
-        if (count == 0) break;
-        if (count < 0) {
-            if (errno == EINTR) continue;
-            close(fd);
-            if (outErr) *outErr = @"Could not read rich-link image";
-            return nil;
-        }
-        if ((unsigned long long)data.length + (unsigned long long)count > expectedSize) {
-            close(fd);
-            if (outErr) *outErr = @"Rich-link image changed while being read";
-            return nil;
-        }
-        [data appendBytes:buffer length:(NSUInteger)count];
-    }
-    struct stat after = {0};
-    BOOL changed = fstat(fd, &after) != 0
-        || after.st_dev != before.st_dev
-        || after.st_ino != before.st_ino
-        || after.st_size != before.st_size
-        || after.st_mtimespec.tv_sec != before.st_mtimespec.tv_sec
-        || after.st_mtimespec.tv_nsec != before.st_mtimespec.tv_nsec
-        || after.st_ctimespec.tv_sec != before.st_ctimespec.tv_sec
-        || after.st_ctimespec.tv_nsec != before.st_ctimespec.tv_nsec;
-    close(fd);
-    if (changed || data.length != (NSUInteger)expectedSize) {
-        if (outErr) *outErr = @"Rich-link image changed while being read";
-        return nil;
-    }
     return data;
 }
 
@@ -3591,7 +3603,7 @@ static BOOL validateRichLinkPreviewImage(NSDictionary *image,
     NSData *data = readRichLinkPreviewData(filePath.stringByStandardizingPath,
         byteCount.unsignedLongLongValue, outErr);
     if (!data) return NO;
-    if (![[richLinkSHA256(data) lowercaseString] isEqualToString:contentHash]) {
+    if (![[snapshotSHA256(data) lowercaseString] isEqualToString:contentHash]) {
         if (outErr) *outErr = @"Rich-link image hash does not match its descriptor";
         return NO;
     }
@@ -4496,78 +4508,14 @@ static int openStickerTransferDirectorySecurely(NSString *directoryPath) {
 }
 
 static NSData *readStickerSnapshot(NSString *path, NSString **outErr) {
-    NSString *directory = [path stringByDeletingLastPathComponent];
-    int directoryFD = openStickerDirectorySecurely(directory);
+    int directoryFD = openStickerDirectorySecurely(path.stringByDeletingLastPathComponent);
     if (directoryFD < 0) {
         if (outErr) *outErr = @"Could not securely open sticker directory";
         return nil;
     }
-    int fd = openat(directoryFD, path.lastPathComponent.fileSystemRepresentation,
-                    O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    NSData *data = readSnapshotAt(directoryFD, path.lastPathComponent, kMaxStickerBytes, nil, outErr);
     close(directoryFD);
-    if (fd < 0) {
-        if (outErr) *outErr = @"Could not securely open sticker image";
-        return nil;
-    }
-    struct stat before = {0};
-    if (fstat(fd, &before) != 0 || !S_ISREG(before.st_mode) || before.st_nlink != 1) {
-        close(fd);
-        if (outErr) *outErr = @"Sticker must be a single-link regular file";
-        return nil;
-    }
-    if (before.st_size <= 0 || (unsigned long long)before.st_size > kMaxStickerBytes) {
-        close(fd);
-        if (outErr) {
-            *outErr = [NSString stringWithFormat:
-                @"Sticker image must be between 1 byte and %llu bytes", kMaxStickerBytes];
-        }
-        return nil;
-    }
-
-    NSMutableData *data = [NSMutableData dataWithCapacity:(NSUInteger)before.st_size];
-    unsigned char buffer[64 * 1024];
-    while (YES) {
-        ssize_t count = read(fd, buffer, sizeof(buffer));
-        if (count == 0) break;
-        if (count < 0) {
-            if (errno == EINTR) continue;
-            close(fd);
-            if (outErr) *outErr = @"Could not read sticker image";
-            return nil;
-        }
-        if ((unsigned long long)data.length + (unsigned long long)count
-            > kMaxStickerBytes) {
-            close(fd);
-            if (outErr) *outErr = @"Sticker image exceeded the size limit while reading";
-            return nil;
-        }
-        [data appendBytes:buffer length:(NSUInteger)count];
-    }
-    struct stat after = {0};
-    BOOL changed = fstat(fd, &after) != 0
-        || after.st_dev != before.st_dev
-        || after.st_ino != before.st_ino
-        || after.st_size != before.st_size
-        || after.st_mtimespec.tv_sec != before.st_mtimespec.tv_sec
-        || after.st_mtimespec.tv_nsec != before.st_mtimespec.tv_nsec
-        || after.st_ctimespec.tv_sec != before.st_ctimespec.tv_sec
-        || after.st_ctimespec.tv_nsec != before.st_ctimespec.tv_nsec;
-    close(fd);
-    if (changed || data.length != (NSUInteger)before.st_size) {
-        if (outErr) *outErr = @"Sticker file changed while it was being read";
-        return nil;
-    }
     return data;
-}
-
-static NSString *stickerSHA256(NSData *data) {
-    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
-    CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
-    NSMutableString *hex = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
-    for (NSUInteger index = 0; index < CC_SHA256_DIGEST_LENGTH; index++) {
-        [hex appendFormat:@"%02x", digest[index]];
-    }
-    return hex;
 }
 
 static NSString *stickerMD5(NSData *data) {
@@ -4682,7 +4630,7 @@ static NSDictionary *stickerAssetMetadata(NSString *path, NSString **outErr) {
         CGImageRelease(frame);
     }
     CFRelease(source);
-    NSString *hash = stickerSHA256(data);
+    NSString *hash = snapshotSHA256(data);
     NSString *md5 = stickerMD5(data);
     NSString *extension = [uti isEqualToString:@"public.png"] ? @"png"
         : ([uti isEqualToString:@"public.jpeg"] ? @"jpg" : @"gif");

@@ -66,6 +66,8 @@ imsg send-sticker --chat 'iMessage;-;+15551234567' \
 
 Stickers are iMessage-only. They accept PNG/APNG, GIF, or JPEG images up to 500 KiB, 618×618 pixels, 100 frames, and 25 million decoded pixels. Standalone sends require `selectors.stickerSend`; attached stickers also require `selectors.stickerAttach`.
 
+For stickers and rich-link images, the bridge rejects pipes, symlinks, and files with extra hard links before reading them. If an image changes during the read, the command reports an error; finish writing the image before retrying.
+
 Bridge tapbacks support removal and custom emoji in addition to the standard reactions exposed by `imsg react`:
 
 ```bash

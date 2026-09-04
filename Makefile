@@ -31,10 +31,12 @@ test:
 test-helper:
 ifeq ($(shell uname -s),Darwin)
 	@mkdir -p .build/helper-tests
-	clang -fobjc-arc -Wno-arc-performSelector-leaks -Wno-incomplete-implementation \
-		-framework Foundation -framework AppKit -framework ImageIO -framework LinkPresentation \
-		Tests/IMsgHelperTests/ChatCreateTests.m -o .build/helper-tests/chat-create
-	.build/helper-tests/chat-create
+	@for source in Tests/IMsgHelperTests/*Tests.m; do \
+		binary=".build/helper-tests/$$(basename "$$source" .m)"; \
+		clang -fobjc-arc -Wno-arc-performSelector-leaks -Wno-incomplete-implementation \
+			-framework Foundation -framework AppKit -framework ImageIO -framework LinkPresentation \
+			"$$source" -o "$$binary" && "$$binary" || exit $$?; \
+	done
 else
 	@echo "Skipping native bridge tests (macOS only)."
 endif
