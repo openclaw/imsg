@@ -30,14 +30,26 @@ extension ParsedValues {
     options[label] ?? []
   }
 
-  func optionInt(_ label: String) -> Int? {
-    guard let value = option(label) else { return nil }
-    return Int(value)
+  func optionInt(_ label: String, name: String? = nil, minimum: Int? = nil) throws -> Int? {
+    try integerOption(label, name: name, minimum: minimum)
   }
 
-  func optionInt64(_ label: String) -> Int64? {
-    guard let value = option(label) else { return nil }
-    return Int64(value)
+  func optionInt64(_ label: String, name: String? = nil, minimum: Int64? = nil) throws -> Int64? {
+    try integerOption(label, name: name, minimum: minimum)
+  }
+
+  func optionChatID() throws -> Int64? {
+    try optionInt64("chatID", name: "chat-id", minimum: 1)
+  }
+
+  private func integerOption<T: FixedWidthInteger>(
+    _ label: String, name: String?, minimum: T?
+  ) throws -> T? {
+    guard let raw = option(label) else { return nil }
+    guard let value = T(raw), minimum.map({ value >= $0 }) ?? true else {
+      throw ParsedValuesError.invalidOption(name ?? label)
+    }
+    return value
   }
 
   func optionRequired(_ label: String) throws -> String {

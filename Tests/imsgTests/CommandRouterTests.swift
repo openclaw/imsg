@@ -27,6 +27,17 @@ func commandRouterPrintsHelp() async {
 }
 
 @Test
+func commandRouterHonorsOptionTerminator() async {
+  for flag in ["--version", "-V", "--help", "-h"] {
+    let (output, status) = await StdoutCapture.capture {
+      await CommandRouter().run(argv: ["imsg", "completions", "--", flag])
+    }
+    #expect(status == 1)
+    #expect(output.contains("Unknown shell"))
+  }
+}
+
+@Test
 func commandRouterUnknownCommand() async {
   let router = CommandRouter()
   let (_, status) = await StdoutCapture.capture {

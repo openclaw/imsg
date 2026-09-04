@@ -86,12 +86,12 @@ enum WatchCommand {
       }
   ) async throws {
     let dbPath = values.option("db") ?? MessageStore.defaultPath
-    let chatID = values.optionInt64("chatID")
+    let chatID = try values.optionChatID()
     let debounceString = values.option("debounce") ?? "250ms"
     guard let debounceInterval = DurationParser.parse(debounceString) else {
       throw ParsedValuesError.invalidOption("debounce")
     }
-    let sinceRowID = values.optionInt64("sinceRowID")
+    let sinceRowID = try values.optionInt64("sinceRowID", name: "since-rowid")
     let showAttachments = values.flag("attachments")
     let attachmentOptions = AttachmentQueryOptions(
       convertUnsupported: values.flag("convertAttachments"))

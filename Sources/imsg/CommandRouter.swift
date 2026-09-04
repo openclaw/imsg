@@ -66,11 +66,12 @@ struct CommandRouter {
 
   func run(argv: [String]) async -> Int32 {
     let argv = normalizeArguments(argv)
-    if argv.contains("--version") || argv.contains("-V") {
+    let options = argv.prefix { $0 != "--" }
+    if options.contains("--version") || options.contains("-V") {
       StdoutWriter.writeLine(version)
       return 0
     }
-    if argv.count <= 1 || argv.contains("--help") || argv.contains("-h") {
+    if argv.count <= 1 || options.contains("--help") || options.contains("-h") {
       printHelp(for: argv)
       return 0
     }

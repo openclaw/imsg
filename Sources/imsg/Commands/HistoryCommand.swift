@@ -44,11 +44,11 @@ enum HistoryCommand {
       await ContactResolver.create(accessPolicy: .skipIfNotDetermined)
     }
   ) async throws {
-    guard let chatID = values.optionInt64("chatID") else {
+    guard let chatID = try values.optionChatID() else {
       throw ParsedValuesError.missingOption("chat-id")
     }
     let dbPath = values.option("db") ?? MessageStore.defaultPath
-    let limit = values.optionInt("limit") ?? 50
+    let limit = try values.optionInt("limit", minimum: 1) ?? 50
     let showAttachments = values.flag("attachments")
     let attachmentOptions = AttachmentQueryOptions(
       convertUnsupported: values.flag("convertAttachments"))

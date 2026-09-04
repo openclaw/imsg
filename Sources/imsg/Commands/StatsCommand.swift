@@ -31,15 +31,7 @@ enum StatsCommand {
 
   static func run(values: ParsedValues, runtime: RuntimeOptions) async throws {
     let dbPath = values.option("db") ?? MessageStore.defaultPath
-    let chatID: Int64?
-    if let rawChatID = values.option("chatID") {
-      guard let parsed = Int64(rawChatID) else {
-        throw ParsedValuesError.invalidOption("chat-id")
-      }
-      chatID = parsed
-    } else {
-      chatID = nil
-    }
+    let chatID = try values.optionChatID()
     let includeMedia = values.flag("media")
     let store = try MessageStore(path: dbPath)
     let stats = try store.messageStats(

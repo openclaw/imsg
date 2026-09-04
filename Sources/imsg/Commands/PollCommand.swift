@@ -267,7 +267,7 @@ enum PollCommand {
   /// Resolve exactly one option selector against the poll's stable options.
   private static func validateOptionSelector(_ values: ParsedValues) throws {
     let directID = values.option("optionID")?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let indexValue = values.optionInt64("optionIndex")
+    let indexValue = try values.optionInt64("optionIndex", name: "option-index", minimum: 1)
     let textValue = values.option("option")?.trimmingCharacters(in: .whitespacesAndNewlines)
     let selectors = [directID?.isEmpty == false, indexValue != nil, textValue?.isEmpty == false]
     guard selectors.contains(true) else {
@@ -285,7 +285,7 @@ enum PollCommand {
     store: MessageStore
   ) throws -> (id: String, text: String?) {
     let directID = values.option("optionID")?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let indexValue = values.optionInt64("optionIndex")
+    let indexValue = try values.optionInt64("optionIndex", name: "option-index", minimum: 1)
     let textValue = values.option("option")?.trimmingCharacters(in: .whitespacesAndNewlines)
     try validateOptionSelector(values)
     let options = try store.pollOptions(guid: pollGuid)
@@ -324,7 +324,7 @@ enum PollCommand {
     storeFactory: (String) throws -> MessageStore
   ) throws -> String {
     let chatValue = values.option("chat")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    let chatID = values.optionInt64("chatID") ?? Int64(chatValue)
+    let chatID = try values.optionChatID() ?? Int64(chatValue)
     if let chatID {
       let dbPath = values.option("db") ?? MessageStore.defaultPath
       let store = try storeFactory(dbPath)

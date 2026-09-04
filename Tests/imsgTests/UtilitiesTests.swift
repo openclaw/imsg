@@ -12,7 +12,18 @@ func durationParserHandlesUnits() {
   #expect(DurationParser.parse("3m") == 180)
   #expect(DurationParser.parse("1h") == 3600)
   #expect(DurationParser.parse("5") == 5)
+  #expect(DurationParser.parse("2s500ms") == 2.5)
+  #expect(DurationParser.parse("1h30m") == 5400)
+  #expect(DurationParser.parse(".5s250ms") == 0.75)
+  #expect(DurationParser.parse("1e3ms") == 1)
   #expect(DurationParser.parse("bad") == nil)
+}
+
+@Test
+func durationParserRejectsNonfiniteOrUnrepresentableIntervals() {
+  for raw in ["nan", "inf", "-inf", "1e999s", "1e300h", "-1s", "1s-1ms"] {
+    #expect(DurationParser.parse(raw) == nil, "\(raw) must not reach a timer")
+  }
 }
 
 @Test
@@ -259,14 +270,21 @@ func cliISO8601MatchesFoundationFormatterConcurrently() async {
 func parsedValuesHelpers() throws {
   let values = ParsedValues(
     positional: ["first"],
-    options: ["limit": ["5", "9"], "name": ["bob"], "logLevel": ["debug"]],
+    options: [
+      "limit": ["5", "9"], "name": ["bob"], "logLevel": ["debug"],
+      "part": ["0"], "sinceRowID": ["-1"],
+    ],
     flags: ["jsonOutput", "verbose"]
   )
   #expect(values.flag("jsonOutput") == true)
   #expect(values.option("name") == "bob")
   #expect(values.optionValues("limit").count == 2)
-  #expect(values.optionInt("limit") == 9)
-  #expect(values.optionInt64("limit") == 9)
+  #expect(try values.optionInt("limit") == 9)
+  #expect(try values.optionInt64("limit") == 9)
+  #expect(try values.optionInt("part", minimum: 0) == 0)
+  #expect(try values.optionInt64("sinceRowID") == -1)
+  #expect(try values.optionChatID() == nil)
+  #expect(try values.optionInt("missing") == nil)
   #expect(values.argument(0) == "first")
   do {
     _ = try values.optionRequired("missing")

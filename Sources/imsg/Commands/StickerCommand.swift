@@ -74,6 +74,11 @@ enum StickerCommand {
     guard let file = values.option("file"), !file.isEmpty else {
       throw ParsedValuesError.missingOption("file")
     }
+    let explicitPart = try values.optionInt("targetPart", name: "target-part", minimum: 0)
+    let target = try StickerSendTarget.resolve(
+      rawTarget: values.option("attachTo"),
+      explicitPart: explicitPart
+    )
     let dbPath = values.option("db") ?? MessageStore.defaultPath
     let chatGUID: String
     if let directGUID = directStickerChatGUID(chat) {
@@ -87,19 +92,6 @@ enum StickerCommand {
       throw StickerSendValidationError.iMessageRequired
     }
 
-    let explicitPart: Int?
-    if let rawPart = values.option("targetPart") {
-      guard let parsed = Int(rawPart) else {
-        throw ParsedValuesError.invalidOption("target-part")
-      }
-      explicitPart = parsed
-    } else {
-      explicitPart = nil
-    }
-    let target = try StickerSendTarget.resolve(
-      rawTarget: values.option("attachTo"),
-      explicitPart: explicitPart
-    )
     if let target {
       guard try messageBelongsToChat(target.messageGUID, chatGUID, dbPath) else {
         throw StickerSendValidationError.targetNotInChat

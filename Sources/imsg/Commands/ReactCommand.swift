@@ -47,7 +47,7 @@ enum ReactCommand {
       try runAppleScript(source, arguments: arguments)
     }
   ) async throws {
-    guard let chatID = values.optionInt64("chatID") else {
+    guard let chatID = try values.optionChatID() else {
       throw ParsedValuesError.missingOption("chat-id")
     }
     guard let reactionString = values.option("reaction") else {

@@ -48,7 +48,7 @@ enum SearchCommand {
       throw ParsedValuesError.invalidOption("match")
     }
     let dbPath = values.option("db") ?? MessageStore.defaultPath
-    let limit = values.optionInt("limit") ?? 50
+    let limit = try values.optionInt("limit", minimum: 1) ?? 50
     let store = try MessageStore(path: dbPath)
     let messages = try store.searchMessages(query: q, match: match, limit: limit)
     let contacts = await contactResolverFactory()

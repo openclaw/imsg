@@ -3,6 +3,26 @@ import Testing
 
 @testable import IMsgCore
 
+@Test(arguments: [Double.nan, .infinity, -.infinity, -1, .greatestFiniteMagnitude])
+func typingIndicatorRejectsInvalidDurationBeforeStarting(duration: Double) async {
+  var didStart = false
+  do {
+    try await TypingIndicator.typeForDuration(
+      chatIdentifier: "fixture-chat", duration: duration,
+      startTyping: { _ in
+        didStart = true
+        throw CancellationError()
+      },
+      stopTyping: { _ in Issue.record("Invalid duration must not stop typing") },
+      sleep: { _ in Issue.record("Invalid duration must not start a timer") })
+    Issue.record("Expected an invalid duration error")
+  } catch IMsgError.typingIndicatorFailed {
+  } catch {
+    Issue.record("Expected duration validation before starting, got \(error)")
+  }
+  #expect(!didStart)
+}
+
 @Test
 func typingIndicatorStopsOnCancellation() async {
   var events: [String] = []

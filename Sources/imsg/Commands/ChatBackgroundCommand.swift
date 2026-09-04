@@ -33,9 +33,8 @@ enum ChatBackgroundCommand {
     guard values.argument(0) == "status" else {
       throw ParsedValuesError.invalidOption("action")
     }
-    let rawChatID = try values.optionRequired("chatID")
-    guard let chatID = Int64(rawChatID), chatID > 0 else {
-      throw ParsedValuesError.invalidOption("chat-id")
+    guard let chatID = try values.optionChatID() else {
+      throw ParsedValuesError.missingOption("chat-id")
     }
 
     let dbPath = values.option("db") ?? MessageStore.defaultPath

@@ -36,7 +36,7 @@ enum ChatsCommand {
     }
   ) async throws {
     let dbPath = values.option("db") ?? MessageStore.defaultPath
-    let limit = values.optionInt("limit") ?? 20
+    let limit = try values.optionInt("limit", minimum: 1) ?? 20
     let unreadOnly = values.flag("unread-only")
     let store = try MessageStore(path: dbPath)
     let chats = try store.listChats(limit: limit, unreadOnly: unreadOnly)

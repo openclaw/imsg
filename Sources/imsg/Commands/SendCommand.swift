@@ -64,7 +64,7 @@ enum SendCommand {
     let rawRecipient = values.option("to") ?? ""
     let rawInput = ChatTargetInput(
       recipient: rawRecipient,
-      chatID: values.optionInt64("chatID"),
+      chatID: try values.optionChatID(),
       chatIdentifier: values.option("chatIdentifier") ?? "",
       chatGUID: values.option("chatGUID") ?? ""
     )

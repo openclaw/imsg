@@ -43,15 +43,7 @@ enum ScheduledCommand {
     storeFactory: (String) throws -> MessageStore
   ) throws {
     let dbPath = values.option("db") ?? MessageStore.defaultPath
-    let limit: Int
-    if let rawLimit = values.option("limit") {
-      guard let parsed = Int(rawLimit), parsed > 0 else {
-        throw ParsedValuesError.invalidOption("limit")
-      }
-      limit = parsed
-    } else {
-      limit = 50
-    }
+    let limit = try values.optionInt("limit", minimum: 1) ?? 50
     let messages = try storeFactory(dbPath).scheduledMessages(limit: limit)
     if runtime.jsonOutput {
       for message in messages {

@@ -98,7 +98,7 @@ could look like a direct message.
 
 Lower the debounce if you need lower latency and can tolerate occasional duplicate emissions during database churn. Raise it if downstream consumers can't keep up.
 
-`--debounce` accepts Go-style durations: `100ms`, `1s`, `2s500ms`.
+`--debounce` accepts non-negative durations in `ms`, `s`, `m`, and `h`, including compounds such as `2s500ms`. Bare numbers are seconds. Invalid, non-finite, and out-of-range values are rejected.
 
 ## RPC backpressure and overflow
 

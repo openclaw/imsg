@@ -20,7 +20,7 @@ enum GroupCommand {
       "imsg group --chat-id 1 --json",
     ]
   ) { values, runtime in
-    guard let chatID = values.optionInt64("chatID") else {
+    guard let chatID = try values.optionChatID() else {
       throw ParsedValuesError.missingOption("chat-id")
     }
     let dbPath = values.option("db") ?? MessageStore.defaultPath

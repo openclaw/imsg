@@ -167,6 +167,7 @@ enum SendRichCommand {
     guard let chat = values.option("chat"), !chat.isEmpty else {
       throw ParsedValuesError.missingOption("chat")
     }
+    let part = try values.optionInt("part", minimum: 0) ?? 0
     let text = values.option("text") ?? ""
     let file = values.option("file") ?? ""
     let richLinkURL = values.option("url")
@@ -191,7 +192,7 @@ enum SendRichCommand {
     var params: [String: Any] = [
       "chatGuid": chat,
       "message": effectiveText,
-      "partIndex": preparedRichLink == nil ? Int(values.option("part") ?? "0") ?? 0 : 0,
+      "partIndex": preparedRichLink == nil ? part : 0,
       "ddScan": preparedRichLink == nil ? !values.flag("noDDScan") : true,
     ]
     if let preparedRichLink {
@@ -381,7 +382,7 @@ enum BridgeReactCommand {
       "chatGuid": chat,
       "selectedMessageGuid": message,
       "reactionType": prefixed,
-      "partIndex": Int(values.option("part") ?? "0") ?? 0,
+      "partIndex": try values.optionInt("part", minimum: 0) ?? 0,
     ]
     _ = try await BridgeOutput.invokeAndEmit(
       action: .sendReaction, params: params, runtime: runtime
@@ -430,7 +431,7 @@ enum EditCommand {
       "messageGuid": message,
       "editedMessage": newText,
       "backwardsCompatibilityMessage": values.option("bcText") ?? newText,
-      "partIndex": Int(values.option("part") ?? "0") ?? 0,
+      "partIndex": try values.optionInt("part", minimum: 0) ?? 0,
     ]
     _ = try await BridgeOutput.invokeAndEmit(
       action: .editMessage, params: params, runtime: runtime
@@ -469,7 +470,7 @@ enum UnsendCommand {
     let params: [String: Any] = [
       "chatGuid": chat,
       "messageGuid": message,
-      "partIndex": Int(values.option("part") ?? "0") ?? 0,
+      "partIndex": try values.optionInt("part", minimum: 0) ?? 0,
     ]
     _ = try await BridgeOutput.invokeAndEmit(
       action: .unsendMessage, params: params, runtime: runtime

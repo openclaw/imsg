@@ -72,6 +72,8 @@ For SMS, enable Text Message Forwarding on the paired iPhone. `imsg send` uses M
 
 `--json` emits one JSON object per line. Human progress and warnings stay on stderr, so stdout remains safe to stream. Pipe finite commands through `jq -s` when you want one array.
 
+Numeric selectors are validated before work starts: chat IDs, limits, and poll option indices must be positive integers; message-part indices can also be zero. Malformed or overflowing values produce an error instead of selecting a default target. Defaults apply only when an option is omitted.
+
 ```bash
 imsg chats --json | jq -s
 imsg rpc

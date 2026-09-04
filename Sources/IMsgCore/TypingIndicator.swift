@@ -133,6 +133,12 @@ import Foundation
       stopTyping: (String) throws -> Void,
       sleep: (UInt64) async throws -> Void
     ) async throws {
+      guard duration >= 0,
+        let nanoseconds = UInt64(exactly: (duration * 1_000_000_000).rounded(.towardZero))
+      else {
+        throw IMsgError.typingIndicatorFailed(
+          "Duration must be a finite, non-negative interval representable in nanoseconds")
+      }
       try startTyping(chatIdentifier)
       var stopped = false
       defer {
@@ -140,7 +146,7 @@ import Foundation
           try? stopTyping(chatIdentifier)
         }
       }
-      try await sleep(UInt64(duration * 1_000_000_000))
+      try await sleep(nanoseconds)
       try stopTyping(chatIdentifier)
       stopped = true
     }

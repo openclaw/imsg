@@ -58,7 +58,7 @@ enum TypingCommand {
     let dbPath = values.option("db") ?? MessageStore.defaultPath
     let input = ChatTargetInput(
       recipient: values.option("to") ?? "",
-      chatID: values.optionInt64("chatID"),
+      chatID: try values.optionChatID(),
       chatIdentifier: values.option("chatIdentifier") ?? "",
       chatGUID: values.option("chatGUID") ?? ""
     )
