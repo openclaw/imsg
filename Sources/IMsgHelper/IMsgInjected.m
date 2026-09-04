@@ -1911,27 +1911,7 @@ static id normalizeFoundMessageItem(id object) {
     return normalizeFoundMessageItemWithChatContext(object, nil);
 }
 
-static id chatItemWithPartIndex(id candidate, NSInteger partIndex) {
-    if ([candidate isKindOfClass:[NSArray class]]) {
-        for (id item in (NSArray *)candidate) {
-            id match = chatItemWithPartIndex(item, partIndex);
-            if (match) return match;
-        }
-        return nil;
-    }
-    id aggregate = safelyReadObjectSelector(
-        candidate, @selector(aggregateAttachmentParts));
-    id aggregateMatch = chatItemWithPartIndex(aggregate, partIndex);
-    if (aggregateMatch) return aggregateMatch;
-    if ([candidate respondsToSelector:@selector(index)]
-        && [(IMMessagePartChatItem *)candidate index] == partIndex) {
-        return candidate;
-    }
-    return nil;
-}
-
-static id loadParentChatItem(NSString *parentGuid, NSNumber *partIndex,
-                             id *outParentMessage) {
+static id loadParentFirstChatItem(NSString *parentGuid, id *outParentMessage) {
     if (outParentMessage) *outParentMessage = nil;
     if (parentGuid.length == 0) return nil;
 
@@ -1962,14 +1942,7 @@ static id loadParentChatItem(NSString *parentGuid, NSNumber *partIndex,
     }
     if (!parent) return nil;
     if (outParentMessage) *outParentMessage = parent;
-    id parentItem = safelyReadObjectSelector(parent, @selector(_imMessageItem));
-    id items = safelyReadObjectSelector(parentItem, @selector(_newChatItems));
-    if (partIndex) return chatItemWithPartIndex(items, partIndex.integerValue);
     return normalizeFoundMessageItem(parent);
-}
-
-static id loadParentFirstChatItem(NSString *parentGuid, id *outParentMessage) {
-    return loadParentChatItem(parentGuid, nil, outParentMessage);
 }
 
 /// Dispatch a built IMMessage into the chat after installing the same
@@ -3249,16 +3222,26 @@ static id findMessagePart(IMChat *chat, NSString *messageGuid, NSInteger partInd
     return findMessagePartInObject(parts ?: item, partIndex);
 }
 
-/// Best-effort messageGuid extractor for transactional sends. Returns the
-/// guid of `chat.lastSentMessage` after a brief grace period for the message
-/// to register, or nil if unavailable.
-static NSString *lastSentMessageGuid(IMChat *chat) {
-    if (!chat || ![chat respondsToSelector:@selector(lastSentMessage)]) return nil;
-    id msg = [chat performSelector:@selector(lastSentMessage)];
-    if (msg && [msg respondsToSelector:@selector(guid)]) {
-        return [msg performSelector:@selector(guid)];
+static BOOL resolveMessagePartTarget(NSString *rawGUID, NSString **guid, NSInteger *partIndex) {
+    *guid = rawGUID;
+    if ([rawGUID hasPrefix:@"p:"]) {
+        NSRange slash = [rawGUID rangeOfString:@"/"];
+        if (slash.location == NSNotFound || slash.location <= 2
+            || slash.location + 1 >= rawGUID.length) return NO;
+        NSString *digits = [rawGUID substringWithRange:NSMakeRange(2, slash.location - 2)];
+        if ([digits rangeOfCharacterFromSet:
+                [[NSCharacterSet decimalDigitCharacterSet] invertedSet]].location != NSNotFound) return NO;
+        NSScanner *scanner = [NSScanner scannerWithString:digits];
+        if (![scanner scanInteger:partIndex] || !scanner.isAtEnd || *partIndex < 0) return NO;
+        *guid = [rawGUID substringFromIndex:slash.location + 1];
     }
-    return nil;
+    return *partIndex >= 0 && ![*guid containsString:@"/"];
+}
+
+// Chat history can still point at the previous send, especially before deferred dispatch.
+static NSString *outgoingMessageGuid(id message) {
+    id guid = safelyReadObjectSelector(message, @selector(guid));
+    return [guid isKindOfClass:[NSString class]] && [guid length] ? guid : nil;
 }
 
 #pragma mark - v2 Response Helpers
@@ -3916,10 +3899,9 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
             dispatchIMMessageInChat(chat, imMessage, threadIdentifier, parentItem);
         }
 
-        // Best-effort messageGuid; not always available immediately.
         NSString *guid = clientMessageGuid.length
             ? clientMessageGuid
-            : lastSentMessageGuid(chat);
+            : outgoingMessageGuid(imMessage);
         NSMutableDictionary *response = [@{
             @"chatGuid": chatGuid,
             @"messageGuid": guid ?: @"",
@@ -4041,7 +4023,7 @@ static NSDictionary *handleSendPoll(NSInteger requestId, NSDictionary *params) {
                                        selectedMessageGuid,
                                        threadOriginatorPart);
         dispatchIMMessageInChat(chat, imMessage, threadIdentifier, parentItem);
-        NSString *guid = lastSentMessageGuid(chat);
+        NSString *guid = outgoingMessageGuid(imMessage);
 
         NSMutableArray *optionPayloads = [NSMutableArray array];
         for (NSUInteger i = 0; i < options.count; i++) {
@@ -4271,7 +4253,7 @@ static NSDictionary *handleSendPollVoteMutation(NSInteger requestId,
             return errorResponse(requestId, @"Could not construct vote IMMessage");
         }
         [chat performSelector:@selector(sendMessage:) withObject:imMessage];
-        NSString *guid = lastSentMessageGuid(chat);
+        NSString *guid = outgoingMessageGuid(imMessage);
         return successResponse(requestId, @{
             @"chatGuid": chatGuid,
             @"messageGuid": guid ?: @"",
@@ -4380,7 +4362,7 @@ static NSDictionary *handleSendMultipart(NSInteger requestId, NSDictionary *para
                             withObject:threadIdentifier];
         }
         dispatchIMMessageInChat(chat, imMessage, threadIdentifier, parentItem);
-        NSString *guid = lastSentMessageGuid(chat);
+        NSString *guid = outgoingMessageGuid(imMessage);
         return successResponse(requestId, @{
             @"chatGuid": chatGuid,
             @"messageGuid": guid ?: @"",
@@ -5244,7 +5226,7 @@ static NSDictionary *handleSendAttachment(NSInteger requestId, NSDictionary *par
                 registerErr.length ? registerErr : @"Could not register attachment transfer");
         }
         dispatchIMMessageInChat(chat, imMessage, threadIdentifier, parentItem);
-        NSString *guid = lastSentMessageGuid(chat);
+        NSString *guid = outgoingMessageGuid(imMessage);
         return successResponse(requestId, @{
             @"chatGuid": chatGuid,
             @"messageGuid": guid ?: @"",
@@ -5313,33 +5295,13 @@ static NSDictionary *handleSendSticker(NSInteger requestId, NSDictionary *params
     if (targetPartIndex < 0) {
         return errorResponse(requestId, @"targetPartIndex must be non-negative");
     }
-    NSString *selectedMessageGuid = rawSelectedMessageGuid;
-    if ([rawSelectedMessageGuid hasPrefix:@"p:"]) {
-        NSRange slash = [rawSelectedMessageGuid rangeOfString:@"/"];
-        if (slash.location == NSNotFound || slash.location <= 2
-            || slash.location + 1 >= rawSelectedMessageGuid.length) {
-            return errorResponse(requestId, @"Malformed sticker target");
-        }
-        NSString *embeddedPartText = [rawSelectedMessageGuid substringWithRange:
-            NSMakeRange(2, slash.location - 2)];
-        if ([embeddedPartText rangeOfCharacterFromSet:
-                [[NSCharacterSet decimalDigitCharacterSet] invertedSet]].location
-            != NSNotFound) {
-            return errorResponse(requestId, @"Malformed sticker target part");
-        }
-        NSScanner *scanner = [NSScanner scannerWithString:embeddedPartText];
-        NSInteger embeddedPart = -1;
-        if (![scanner scanInteger:&embeddedPart] || !scanner.isAtEnd || embeddedPart < 0) {
-            return errorResponse(requestId, @"Malformed sticker target part");
-        }
-        if (partIndexNum && targetPartIndex != embeddedPart) {
-            return errorResponse(requestId, @"Conflicting sticker target parts");
-        }
-        targetPartIndex = embeddedPart;
-        selectedMessageGuid = [rawSelectedMessageGuid substringFromIndex:slash.location + 1];
+    NSString *selectedMessageGuid = nil;
+    NSInteger requestedPartIndex = targetPartIndex;
+    if (!resolveMessagePartTarget(rawSelectedMessageGuid, &selectedMessageGuid, &targetPartIndex)) {
+        return errorResponse(requestId, @"Malformed sticker target");
     }
-    if ([selectedMessageGuid containsString:@"/"]) {
-        return errorResponse(requestId, @"Malformed sticker target guid");
+    if (partIndexNum && requestedPartIndex != targetPartIndex) {
+        return errorResponse(requestId, @"Conflicting sticker target parts");
     }
     if (!selectedMessageGuid.length && targetPartIndex != 0) {
         return errorResponse(requestId, @"targetPartIndex requires selectedMessageGuid");
@@ -5472,7 +5434,7 @@ static NSDictionary *handleSendSticker(NSInteger requestId, NSDictionary *params
         }
         dispatchAttempted = YES;
         [chat performSelector:@selector(sendMessage:) withObject:imMessage];
-        NSString *guid = lastSentMessageGuid(chat);
+        NSString *guid = outgoingMessageGuid(imMessage);
         return successResponse(requestId, @{
             @"chatGuid": chatGuid,
             @"messageGuid": guid ?: @"",
@@ -5521,13 +5483,12 @@ static NSDictionary *handleSendReaction(NSInteger requestId, NSDictionary *param
             [NSString stringWithFormat:@"Unknown reactionType: %@", reactionType]);
     }
 
-    // BlueBubblesHelper-verified format for tapbacks:
-    // associatedMessageGUID = `p:<partIndex>/<parent-guid>`. Without the
-    // prefix the receiver doesn't render the heart on the parent message.
-    NSString *associatedRef = [selectedMessageGuid hasPrefix:@"p:"]
-        ? selectedMessageGuid
-        : [NSString stringWithFormat:@"p:%ld/%@",
-                                     (long)partIndex, selectedMessageGuid];
+    NSString *targetGUID = nil;
+    // Embedded parts already take precedence over the wrappers' default partIndex=0.
+    if (!resolveMessagePartTarget(selectedMessageGuid, &targetGUID, &partIndex)) {
+        return errorResponse(requestId, @"Malformed reaction target");
+    }
+    NSString *associatedRef = [NSString stringWithFormat:@"p:%ld/%@", (long)partIndex, targetGUID];
 
     // Reaction body needs the verb-style summary text — `Loved "parent
     // text"` — not an empty string. imagent silently drops reactions with
@@ -5554,20 +5515,14 @@ static NSDictionary *handleSendReaction(NSInteger requestId, NSDictionary *param
         }
         verb = removed;
     }
-    id parentMsg = nil;
-    id parentChatItem = loadParentFirstChatItem(selectedMessageGuid, &parentMsg);
-    NSString *parentText = nil;
-    if (parentMsg && [parentMsg respondsToSelector:@selector(text)]) {
-        id t = [parentMsg performSelector:@selector(text)];
-        if ([t isKindOfClass:[NSAttributedString class]]) {
-            parentText = [(NSAttributedString *)t string];
-        }
+    id parentChatItem = findMessagePart(chat, targetGUID, partIndex);
+    if (!parentChatItem && partIndex != 0) {
+        return errorResponse(requestId, @"Reaction message part not found");
     }
-    // BB-verified: derive `associatedMessageRange` from the parent's first
-    // chat item — `[item messagePartRange]`. Hardcoding `{0,1}` (what we did
-    // before) targets the wrong part on multipart parents (e.g. tapback on
-    // the second image of a photo grid). For non-text parts (attachments)
-    // BB substitutes "an attachment" for the quoted text.
+    id text = safelyReadObjectSelector(parentChatItem, @selector(text));
+    NSString *parentText = [text isKindOfClass:[NSAttributedString class]]
+        ? [text string] : ([text isKindOfClass:[NSString class]] ? text : nil);
+    // The reference and range must identify the same part, including attachment grids.
     NSRange targetRange = NSMakeRange(0, 1);
     if (parentChatItem
         && [parentChatItem respondsToSelector:@selector(messagePartRange)]) {
@@ -5592,48 +5547,6 @@ static NSDictionary *handleSendReaction(NSInteger requestId, NSDictionary *param
              (unsigned long)targetRange.location, (unsigned long)targetRange.length,
              quoted);
 
-    // One-shot probe: list every IMMessage class method that mentions
-    // "associated" or "instant" so we can see what reaction constructors
-    // macOS 26 actually exposes. This is intentionally noisy — gates itself
-    // off after the first call. Also dumps IMDPersistentAttachmentController
-    // methods so we can see what attachment-staging selectors are exposed.
-    static dispatch_once_t probeOnce;
-    dispatch_once(&probeOnce, ^{
-        Class pac = NSClassFromString(@"IMDPersistentAttachmentController");
-        unsigned int pn = 0;
-        Method *pm = class_copyMethodList(pac, &pn);
-        for (unsigned int i = 0; i < pn; i++) {
-            const char *name = sel_getName(method_getName(pm[i]));
-            if (strstr(name, "ersistent") || strstr(name, "ttachment")
-                || strstr(name, "ransfer") || strstr(name, "ath")) {
-                debugLog(@"  -[IMDPersistentAttachmentController %s]", name);
-            }
-        }
-        if (pm) free(pm);
-        Class c = NSClassFromString(@"IMMessage");
-        unsigned int n = 0;
-        Method *m = class_copyMethodList(object_getClass(c), &n);
-        for (unsigned int i = 0; i < n; i++) {
-            const char *name = sel_getName(method_getName(m[i]));
-            if (strstr(name, "ssociated") || strstr(name, "nstantMessage")
-                || strstr(name, "eaction") || strstr(name, "knowledgment")) {
-                debugLog(@"  +[IMMessage %s]", name);
-            }
-        }
-        if (m) free(m);
-
-        Class ic = NSClassFromString(@"IMMessageItem");
-        n = 0;
-        Method *im = class_copyMethodList(ic, &n);
-        for (unsigned int i = 0; i < n; i++) {
-            const char *name = sel_getName(method_getName(im[i]));
-            if (strstr(name, "ssociated") || strstr(name, "ummary")
-                || strstr(name, "ssociatedMessage")) {
-                debugLog(@"  -[IMMessageItem %s]", name);
-            }
-        }
-        if (im) free(im);
-    });
     @try {
         id imMessage = buildIMMessage(body, nil, nil, nil,
                                       nil,
@@ -5647,7 +5560,7 @@ static NSDictionary *handleSendReaction(NSInteger requestId, NSDictionary *param
         }
         [chat performSelector:@selector(sendMessage:) withObject:imMessage];
         debugLog(@"handleSendReaction: dispatched");
-        NSString *guid = lastSentMessageGuid(chat);
+        NSString *guid = outgoingMessageGuid(imMessage);
         return successResponse(requestId, @{
             @"chatGuid": chatGuid,
             @"selectedMessageGuid": selectedMessageGuid,
@@ -6233,7 +6146,7 @@ static NSDictionary *handleCreateChat(NSInteger requestId, NSDictionary *params)
                                           nil, @[], NO, NO, nil);
             if (imMessage) {
                 dispatchIMMessageInChat(chat, imMessage, nil, nil);
-                messageGuid = lastSentMessageGuid(chat);
+                messageGuid = outgoingMessageGuid(imMessage);
             }
         } @catch (__unused NSException *ex) {}
     }

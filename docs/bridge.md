@@ -68,7 +68,7 @@ Stickers are iMessage-only. They accept PNG/APNG, GIF, or JPEG images up to 500 
 
 For stickers and rich-link images, the bridge rejects pipes, symlinks, and files with extra hard links before reading them. If an image changes during the read, the command reports an error; finish writing the image before retrying.
 
-Bridge tapbacks support removal and custom emoji in addition to the standard reactions exposed by `imsg react`:
+Bridge tapbacks send and remove the six standard reaction kinds. Use `--part 1` to target the second part of a multipart message, or pass `p:1/<message-guid>` as the message target:
 
 ```bash
 imsg tapback --chat 'iMessage;-;+15551234567' \
@@ -76,6 +76,8 @@ imsg tapback --chat 'iMessage;-;+15551234567' \
 imsg tapback --chat 'iMessage;-;+15551234567' \
   --message <message-guid> --kind love --remove
 ```
+
+Bridge send responses identify the newly constructed message even when dispatch is queued. A returned GUID is an acknowledgment, not proof of delivery; an unavailable GUID is returned as an empty string.
 
 ## Native polls
 

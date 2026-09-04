@@ -212,9 +212,6 @@ func injectedHelperFindsNestedThreadReplyItems() throws {
   let lookupBody = try #require(
     functionBody(named: "findMessageItem", in: source)
   )
-  let loadBody = try #require(
-    functionBody(named: "loadParentChatItem", in: source)
-  )
 
   #expect(recursiveBody.contains("depth > 8"))
   #expect(recursiveBody.contains("valueWithNonretainedObject"))
@@ -234,7 +231,6 @@ func injectedHelperFindsNestedThreadReplyItems() throws {
   #expect(lookupBody.contains("normalizeFoundMessageItemWithChatContext"))
   #expect(safeSelectorBody.contains("@catch"))
   #expect(recursiveBody.contains("safelyReadObjectSelector"))
-  #expect(loadBody.contains("normalizeFoundMessageItem(parent)"))
   #expect(lookupBody.contains("findMessageItemInObject"))
 }
 
