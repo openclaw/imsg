@@ -44,21 +44,25 @@
       if lookup.contains("@") {
         return state.catalog.emailToName[lookup.lowercased()]
       }
-      let normalized = PhoneNumberNormalizer().normalize(lookup, region: region)
+      // Reuse parsed phone metadata under the catalog's lock, including concurrent lookups.
+      condition.lock()
+      defer { condition.unlock() }
+      let normalized = normalizer.normalize(lookup, region: region)
       return state.catalog.phoneToName[normalized]
     }
 
     func displayNames(for handles: [String], region: String) -> [String: String] {
       let state = snapshot(region: region)
       guard !state.unavailable else { return [:] }
-      let lookupNormalizer = PhoneNumberNormalizer()
+      condition.lock()
+      defer { condition.unlock() }
       var resolved: [String: String] = [:]
       for handle in handles {
         let lookup = Self.normalizedLookupHandle(handle)
         let name =
           lookup.contains("@")
           ? state.catalog.emailToName[lookup.lowercased()]
-          : state.catalog.phoneToName[lookupNormalizer.normalize(lookup, region: region)]
+          : state.catalog.phoneToName[normalizer.normalize(lookup, region: region)]
         if let name { resolved[handle] = name }
       }
       return resolved

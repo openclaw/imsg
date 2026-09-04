@@ -255,6 +255,8 @@ func noOpContactResolverCanRepresentUnavailableContacts() {
         entered.signal()
         let name = resolver.displayName(for: "+15551234567")
         #expect(name == (changingSource ? "Bob" : "Alice"))
+        let names = resolver.displayNames(for: ["+15551234567", "absent@example.test"])
+        #expect(names == ["+15551234567": changingSource ? "Bob" : "Alice"])
         group.leave()
       }
     }
@@ -284,6 +286,23 @@ func noOpContactResolverCanRepresentUnavailableContacts() {
     _ = resolver.resolver(region: "FR").searchByName("Alice")
 
     #expect(resolver.cachedRegionCount == 2)
+    #expect(source.loadCount == 1)
+  }
+
+  @Test
+  func contactCatalogKeepsConcurrentRegionalLookupsIndependent() {
+    let source = ContactSourceHarness(records: [
+      contactRecord(name: "UK contact", phone: "+447700900000"),
+      contactRecord(name: "US contact", phone: "+16502530000"),
+    ])
+    let resolver = ContactResolver(region: "US", source: source.source)
+    let british = resolver.resolver(region: "GB")
+    DispatchQueue.concurrentPerform(iterations: 8) { _ in
+      #expect(british.displayName(for: "07700 900000") == "UK contact")
+      #expect(resolver.displayName(for: "650 253 0000") == "US contact")
+      #expect(british.displayNames(for: ["07700 900000"]) == ["07700 900000": "UK contact"])
+      #expect(resolver.displayNames(for: ["650 253 0000"]) == ["650 253 0000": "US contact"])
+    }
     #expect(source.loadCount == 1)
   }
 #endif

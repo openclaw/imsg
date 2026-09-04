@@ -61,6 +61,8 @@ SSH sessions can use the read-only database path described below.
 
 When neither Contacts source is readable, JSON output leaves resolved name fields empty. A long-running `imsg rpc` child observes Contacts changes and periodically rechecks authorization, so grants and contact edits become visible without restarting. Revocation clears cached names; a transient Contacts read failure retains the last successful catalog until the next refresh.
 
+Phone-number matching reuses the resolver's parsed phone metadata across single, batch, and regional lookups. Repeated message-name resolution does not reload that metadata for each message; the same reuse applies to Contacts over SSH.
+
 On Macs with CardDAV accounts such as Google or Yahoo, Apple's Contacts framework may periodically write `Could not fetch group … :ABGroup` reconciliation messages to stderr. These messages are benign and do not come from `imsg`; a parent process that captures `imsg rpc --json` stderr should not report this specific framework message as an `imsg` error.
 
 ## Contacts over SSH
