@@ -96,9 +96,17 @@ numbers and chat GUIDs out of public test reports.
    never created; the operator must confirm the latter.
 2. With the old helper, run the command below before touching either address in
    Messages. The reported regression returns `Could not vend handles for any address`.
-3. Build this checkout with `make build` and launch `./bin/imsg launch` so the new
-   sibling helper is injected. Check `./bin/imsg status --json` again. Do not type
-   the addresses in Messages between the old and new runs.
+3. Build this checkout with `make build`, then explicitly reload the helper:
+
+   ```bash
+   ./bin/imsg launch --kill-only
+   ./bin/imsg launch --dylib "$(pwd)/bin/imsg-bridge-helper.dylib"
+   ./bin/imsg status --json
+   ```
+
+   `launch` alone reuses a ready bridge; stopping it first ensures the rebuilt
+   helper is loaded. Do not type the addresses in Messages between the old and
+   new runs.
 4. Repeat using the newly built CLI:
 
    ```bash
