@@ -52,7 +52,7 @@ import Foundation
       "/System/Applications/Messages.app/Contents/MacOS/Messages"
     private let queue = DispatchQueue(label: "imsg.messages.launcher")
     private let commandLock = NSLock()
-    private let launchCoordinator = BridgeLaunchCoordinator()
+    private let launchCoordinator: BridgeLaunchCoordinator
     private let containerPathOverride: String?
     private let readyCheckOverride: (() -> Bool)?
     private let injectedReadyCheckOverride: (() -> Bool)?
@@ -71,6 +71,10 @@ import Foundation
       self.readyCheckOverride = readyCheck
       self.injectedReadyCheckOverride = injectedReadyCheck
       self.launchOverride = launch
+      self.launchCoordinator = BridgeLaunchCoordinator(
+        lockFilePath: (containerPath
+          ?? NSHomeDirectory() + "/Library/Containers/com.apple.MobileSMS/Data")
+          + "/.imsg-launch.lock")
       if let path = BridgeHelperLocator.resolve() {
         self.dylibPath = path
       }

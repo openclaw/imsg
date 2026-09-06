@@ -325,6 +325,7 @@ struct IMsgBridgeClientQueueTests {
     let state = LaunchAttemptState()
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let launcher = MessagesLauncher(
       containerPath: root.path,
       readyCheck: { state.checkReady() },
@@ -354,10 +355,65 @@ struct IMsgBridgeClientQueueTests {
     #expect(try await second.value != nil)
     #expect(state.attemptCount == 1)
   }
+
+  @Test
+  func independentLaunchersShareOneLaunchAttempt() async throws {
+    let state = LaunchAttemptState()
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+    let makeLauncher = {
+      MessagesLauncher(
+        containerPath: root.path,
+        readyCheck: { state.checkReady() },
+        launch: { state.launch() })
+    }
+    let firstLauncher = makeLauncher()
+    let secondLauncher = makeLauncher()
+
+    let first = Task.detached { try await firstLauncher.ensureLaunched() }
+    await state.launchStarted.wait()
+    let second = Task.detached {
+      state.secondTaskScheduled.signal()
+      try await secondLauncher.ensureLaunched()
+    }
+    await state.secondTaskScheduled.wait()
+    state.allowLaunch()
+
+    try await first.value
+    try await second.value
+    #expect(state.attemptCount == 1)
+  }
+
+  @Test
+  func launchFailureReleasesSharedLock() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+    let failingLauncher = MessagesLauncher(
+      containerPath: root.path,
+      readyCheck: { false },
+      launch: { throw BridgeClientTestError.launchFailed })
+    #expect(throws: BridgeClientTestError.launchFailed) {
+      try failingLauncher.ensureLaunched()
+    }
+
+    let state = LaunchAttemptState()
+    let recoveringLauncher = MessagesLauncher(
+      containerPath: root.path,
+      readyCheck: { state.checkReady() },
+      launch: { state.markReady() })
+    try recoveringLauncher.ensureLaunched()
+
+    #expect(state.attemptCount == 1)
+  }
 }
 
-private enum BridgeClientTestError: Error {
+private enum BridgeClientTestError: Error, Equatable {
   case expectedDeliveryFailure
+  case launchFailed
 }
 
 private func deliveryFailure(
@@ -439,9 +495,12 @@ private final class LaunchAttemptState: @unchecked Sendable {
   func launch() {
     lock.lock()
     attempts += 1
+    let shouldWait = attempts == 1
     lock.unlock()
     launchStarted.signal()
-    launchGate.wait()
+    if shouldWait {
+      launchGate.wait()
+    }
     lock.lock()
     ready = true
     lock.unlock()
@@ -449,6 +508,13 @@ private final class LaunchAttemptState: @unchecked Sendable {
 
   func allowLaunch() {
     launchGate.signal()
+  }
+
+  func markReady() {
+    lock.lock()
+    attempts += 1
+    ready = true
+    lock.unlock()
   }
 
   func nextID() -> String {
