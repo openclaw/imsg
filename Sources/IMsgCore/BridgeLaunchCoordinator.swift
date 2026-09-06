@@ -59,6 +59,21 @@ final class BridgeLaunchCoordinator: @unchecked Sendable {
     }
 
     #if os(macOS)
+      let parentDirectory = (lockFilePath as NSString).deletingLastPathComponent
+      if SecurePath.hasSymlinkComponent(parentDirectory) {
+        throw MessagesLauncherError.socketError(
+          "launch lock path traverses a symlink: \(lockFilePath)")
+      }
+      do {
+        try FileManager.default.createDirectory(
+          atPath: parentDirectory,
+          withIntermediateDirectories: true,
+          attributes: [.posixPermissions: 0o700])
+      } catch {
+        throw MessagesLauncherError.socketError(
+          "could not create launch lock directory \(parentDirectory): "
+            + error.localizedDescription)
+      }
       if SecurePath.hasSymlinkComponent(lockFilePath) {
         throw MessagesLauncherError.socketError(
           "launch lock path traverses a symlink: \(lockFilePath)")

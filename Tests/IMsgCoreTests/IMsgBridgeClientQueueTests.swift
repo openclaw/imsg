@@ -325,7 +325,6 @@ struct IMsgBridgeClientQueueTests {
     let state = LaunchAttemptState()
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let launcher = MessagesLauncher(
       containerPath: root.path,
       readyCheck: { state.checkReady() },
@@ -361,7 +360,6 @@ struct IMsgBridgeClientQueueTests {
     let state = LaunchAttemptState()
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
     let makeLauncher = {
       MessagesLauncher(
@@ -384,13 +382,13 @@ struct IMsgBridgeClientQueueTests {
     try await first.value
     try await second.value
     #expect(state.attemptCount == 1)
+    #expect(FileManager.default.fileExists(atPath: root.path))
   }
 
   @Test
   func launchFailureReleasesSharedLock() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
     let failingLauncher = MessagesLauncher(
       containerPath: root.path,
