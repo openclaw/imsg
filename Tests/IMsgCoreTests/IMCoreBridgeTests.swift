@@ -52,6 +52,78 @@ func messagesLauncherErrorDescriptions() {
 }
 
 @Test
+func readinessTimeoutFallsBackToDefaultWithoutOverride() {
+  #expect(
+    LaunchReadinessTimeout.resolve(environment: [:])
+      == LaunchReadinessTimeout.defaultSeconds)
+}
+
+@Test
+func readinessTimeoutHonorsEnvironmentOverride() {
+  #expect(
+    LaunchReadinessTimeout.resolve(
+      environment: ["IMSG_LAUNCH_READY_TIMEOUT": "45"]) == 45)
+  #expect(
+    LaunchReadinessTimeout.resolve(
+      environment: ["IMSG_LAUNCH_READY_TIMEOUT": " 30.5 "]) == 30.5)
+}
+
+@Test
+func readinessTimeoutRejectsUnusableOverrides() {
+  for raw in ["", "abc", "0", "-5", "nan"] {
+    #expect(
+      LaunchReadinessTimeout.resolve(
+        environment: ["IMSG_LAUNCH_READY_TIMEOUT": raw])
+        == LaunchReadinessTimeout.defaultSeconds,
+      "unusable override \(raw) should fall back to the default")
+  }
+}
+
+@Test
+func readinessTimeoutIsClampedToAnUpperBound() {
+  #expect(
+    LaunchReadinessTimeout.resolve(
+      environment: ["IMSG_LAUNCH_READY_TIMEOUT": "99999"]) == 600)
+}
+
+@Test
+func socketTimeoutDescriptionReportsTheTimeoutAndOverride() {
+  let description = MessagesLauncherError.socketTimeout.description
+  #expect(description.contains("\(String(format: "%g", LaunchReadinessTimeout.resolve()))s"))
+  #expect(description.contains(LaunchReadinessTimeout.environmentKey))
+  // The old text blamed SIP/permissions first; the cause is usually a slow start.
+  #expect(description.contains("still be starting"))
+}
+
+/// Source-compatibility fixture.
+///
+/// `MessagesLauncherError` is public API in an exported library, so external
+/// callers construct and match `.socketTimeout` without a payload. These are the
+/// shapes such a caller uses; if the case ever gains a required associated
+/// value this stops compiling, which is the point.
+@Test
+func socketTimeoutKeepsPayloadFreePublicConstruction() {
+  let viaMemberSyntax: MessagesLauncherError = .socketTimeout
+  let viaFullyQualified = MessagesLauncherError.socketTimeout
+  let inCollection: [MessagesLauncherError] = [.socketTimeout]
+
+  func classify(_ error: MessagesLauncherError) -> String {
+    switch error {
+    case .socketTimeout: return "timeout"
+    default: return "other"
+    }
+  }
+
+  #expect(classify(viaMemberSyntax) == "timeout")
+  #expect(classify(viaFullyQualified) == "timeout")
+  #expect(classify(inCollection[0]) == "timeout")
+
+  // `throw` / `catch` is the other shape external callers rely on.
+  func thrower() throws { throw MessagesLauncherError.socketTimeout }
+  #expect(throws: MessagesLauncherError.self) { try thrower() }
+}
+
+@Test
 func imCoreBridgeErrorDescriptions() {
   let errors: [IMCoreBridgeError] = [
     .dylibNotFound,

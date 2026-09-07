@@ -156,7 +156,7 @@ import Foundation
       try cleanQueueDirectory(bridgeOutboxDirectory)
 
       try launchWithInjection()
-      try waitForReady(timeout: 15.0)
+      try waitForReady(timeout: LaunchReadinessTimeout.resolve())
     }
 
     private func ensureSecureQueueDirectory(_ path: String) throws {
@@ -326,6 +326,13 @@ import Foundation
         Thread.sleep(forTimeInterval: 0.5)
       }
 
+      // Readiness can land in the gap between the last poll and the deadline.
+      // Without this check a launch that actually succeeded is reported as a
+      // failure, which invites a caller to launch a second time.
+      if FileManager.default.fileExists(atPath: lockFile) {
+        return
+      }
+
       throw MessagesLauncherError.socketTimeout
     }
 
@@ -485,9 +492,17 @@ public enum MessagesLauncherError: Error, CustomStringConvertible {
         + "Refusing to inject into Messages.app. "
         + "Details: \(details)"
     case .socketTimeout:
+      // Resolved rather than stored: the case stays payload-free so external
+      // `.socketTimeout` construction keeps compiling, and `waitForReady` is
+      // only ever called with this same resolved value.
+      let seconds = LaunchReadinessTimeout.resolve()
       return
-        "Timeout waiting for Messages.app to initialize. "
-        + "Ensure SIP is disabled and Messages.app has necessary permissions."
+        "Messages.app did not report the bridge ready within "
+        + "\(String(format: "%g", seconds))s. It may still be starting; re-check "
+        + "with `imsg status` before relaunching, and raise "
+        + "\(LaunchReadinessTimeout.environmentKey) if this host is consistently "
+        + "slower. If it never becomes ready, verify SIP is disabled and "
+        + "Messages.app has the necessary permissions."
     case .socketError(let reason):
       return "IPC error: \(reason)"
     case .invalidResponse:
