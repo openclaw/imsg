@@ -41,7 +41,7 @@ func messagesLauncherErrorDescriptions() {
   let errors: [MessagesLauncherError] = [
     .dylibNotFound("/fake/path"),
     .launchFailed("test reason"),
-    .socketTimeout(seconds: 15),
+    .socketTimeout,
     .socketError("test error"),
     .invalidResponse,
   ]
@@ -87,10 +87,40 @@ func readinessTimeoutIsClampedToAnUpperBound() {
 }
 
 @Test
-func socketTimeoutDescriptionReportsTheTimeoutUsed() {
-  let description = MessagesLauncherError.socketTimeout(seconds: 15).description
-  #expect(description.contains("15s"))
-  #expect(description.contains("IMSG_LAUNCH_READY_TIMEOUT"))
+func socketTimeoutDescriptionReportsTheTimeoutAndOverride() {
+  let description = MessagesLauncherError.socketTimeout.description
+  #expect(description.contains("\(String(format: "%g", LaunchReadinessTimeout.resolve()))s"))
+  #expect(description.contains(LaunchReadinessTimeout.environmentKey))
+  // The old text blamed SIP/permissions first; the cause is usually a slow start.
+  #expect(description.contains("still be starting"))
+}
+
+/// Source-compatibility fixture.
+///
+/// `MessagesLauncherError` is public API in an exported library, so external
+/// callers construct and match `.socketTimeout` without a payload. These are the
+/// shapes such a caller uses; if the case ever gains a required associated
+/// value this stops compiling, which is the point.
+@Test
+func socketTimeoutKeepsPayloadFreePublicConstruction() {
+  let viaMemberSyntax: MessagesLauncherError = .socketTimeout
+  let viaFullyQualified = MessagesLauncherError.socketTimeout
+  let inCollection: [MessagesLauncherError] = [.socketTimeout]
+
+  func classify(_ error: MessagesLauncherError) -> String {
+    switch error {
+    case .socketTimeout: return "timeout"
+    default: return "other"
+    }
+  }
+
+  #expect(classify(viaMemberSyntax) == "timeout")
+  #expect(classify(viaFullyQualified) == "timeout")
+  #expect(classify(inCollection[0]) == "timeout")
+
+  // `throw` / `catch` is the other shape external callers rely on.
+  func thrower() throws { throw MessagesLauncherError.socketTimeout }
+  #expect(throws: MessagesLauncherError.self) { try thrower() }
 }
 
 @Test
