@@ -61,7 +61,8 @@ let package = Package(
           name: "IMsgCoreTests",
           dependencies: [
             "IMsgCore"
-          ]
+          ],
+          resources: [.copy("Fixtures")]
         ),
         .testTarget(
           name: "imsgTests",

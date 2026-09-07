@@ -57,6 +57,7 @@ final class RPCServer: @unchecked Sendable {
   let bridgeInvoker: BridgeInvoker
   let captionVerifier: CaptionVerifier
   let stageAttachment: AttachmentStager
+  let stageAudioAttachment: AttachmentStager
   let stageSticker: StickerStager
   let prepareRichLink: RichLinkPrepare
   let isBridgeReady: () -> Bool
@@ -92,6 +93,7 @@ final class RPCServer: @unchecked Sendable {
         timeout: PollCaptionStatus.rpcVerifyTimeout)
     },
     stageAttachment: @escaping AttachmentStager = MessageSender.stageAttachmentForMessagesApp,
+    stageAudioAttachment: @escaping AttachmentStager = AudioMessagePreparer.prepare,
     stageSticker: @escaping StickerStager = {
       try StickerAssetPreparer.prepare(at: $0)
     },
@@ -133,6 +135,7 @@ final class RPCServer: @unchecked Sendable {
     self.bridgeInvoker = invokeBridge
     self.captionVerifier = verifyCaption
     self.stageAttachment = stageAttachment
+    self.stageAudioAttachment = stageAudioAttachment
     self.stageSticker = stageSticker
     self.prepareRichLink = prepareRichLink
     self.isBridgeReady = isBridgeReady
@@ -164,6 +167,7 @@ final class RPCServer: @unchecked Sendable {
         timeout: PollCaptionStatus.rpcVerifyTimeout)
     },
     stageAttachment: @escaping AttachmentStager = MessageSender.stageAttachmentForMessagesApp,
+    stageAudioAttachment: @escaping AttachmentStager = AudioMessagePreparer.prepare,
     stageSticker: @escaping StickerStager = { try StickerAssetPreparer.prepare(at: $0) },
     prepareRichLink: @escaping RichLinkPrepare = { try await RichLinkPreparer.prepare($0) },
     isBridgeReady: @escaping () -> Bool = { IMsgBridgeClient.shared.isReady() },
@@ -201,6 +205,7 @@ final class RPCServer: @unchecked Sendable {
     self.bridgeInvoker = invokeBridge
     self.captionVerifier = verifyCaption
     self.stageAttachment = stageAttachment
+    self.stageAudioAttachment = stageAudioAttachment
     self.stageSticker = stageSticker
     self.prepareRichLink = prepareRichLink
     self.isBridgeReady = isBridgeReady
