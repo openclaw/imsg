@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+**Highlights:** Safer bridge startup for concurrent callers and slow-starting Macs, with reliable local test runs.
+
+- Serialize Messages bridge launches across processes so waiting callers reuse the ready instance without overlapping startup or shared queue cleanup (#274, thanks @goutamadwant).
+- Let slow hosts extend bridge readiness with `IMSG_LAUNCH_READY_TIMEOUT`, recheck readiness at the deadline, and explain startup timeouts while preserving the 15-second default and public error contract (#276, thanks @omarshahine).
+- Keep RPC send-result tests independent of an injected bridge by explicitly selecting their fixture transport (#277, thanks @omarshahine).
+- Drain CLI test subprocess output while commands run, preventing deadlocks from large output or constrained pipe buffers (#279).
+
 ## 0.15.1 - 2026-09-04
 
 ### Highlights
