@@ -405,9 +405,14 @@ func injectedHelperConstructorOnlySchedulesDelayedBootstrap() throws {
   let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
   let constructorBody = try #require(functionBody(named: "injectedInit", in: source))
   let bootstrapBody = try #require(functionBody(named: "bridgeBootstrap", in: source))
+  let claimBody = try #require(functionBody(named: "bridgeClaimOwnership", in: source))
+  let activateBody = try #require(functionBody(named: "bridgeActivate", in: source))
   let cleanupBody = try #require(functionBody(named: "injectedCleanup", in: source))
   let bundleGuard = try #require(bootstrapBody.range(of: "com.apple.MobileSMS"))
   let initializePaths = try #require(bootstrapBody.range(of: "initFilePaths()"))
+  let acquireOwnership = try #require(claimBody.range(of: "acquireBridgeOwnership("))
+  let markBootstrapped = try #require(claimBody.range(of: "bridgeDidBootstrap = YES"))
+  let activate = try #require(claimBody.range(of: "bridgeActivate();"))
 
   #expect(constructorBody.contains("dispatch_after"))
   #expect(constructorBody.contains("dispatch_async"))
@@ -422,12 +427,26 @@ func injectedHelperConstructorOnlySchedulesDelayedBootstrap() throws {
   #expect(bootstrapBody.contains("dispatch_once"))
   #expect(bootstrapBody.contains("@autoreleasepool"))
   #expect(bundleGuard.lowerBound < initializePaths.lowerBound)
-  #expect(bootstrapBody.contains("bridgeDidBootstrap = YES"))
-  #expect(bootstrapBody.contains("connectToDaemon"))
-  #expect(bootstrapBody.contains("startFileWatcher()"))
-  #expect(bootstrapBody.contains("startV2InboxWatcher()"))
-  #expect(bootstrapBody.contains("registerEventObservers()"))
+  #expect(bootstrapBody.contains("bridgeClaimOwnership();"))
+  #expect(!bootstrapBody.contains("startFileWatcher"))
+  #expect(!bootstrapBody.contains("startV2InboxWatcher"))
+
+  // Shared bridge state may only be touched by the process that owns the lock:
+  // nothing marks the helper bootstrapped or activates it before ownership.
+  #expect(acquireOwnership.lowerBound < markBootstrapped.lowerBound)
+  #expect(markBootstrapped.lowerBound < activate.lowerBound)
+  #expect(claimBody.contains("BridgeOwnershipHeldElsewhere"))
+  #expect(claimBody.contains("dispatch_after"))
+  #expect(!claimBody.contains("startFileWatcher"))
+  #expect(!claimBody.contains("startV2InboxWatcher"))
+
+  #expect(activateBody.contains("@autoreleasepool"))
+  #expect(activateBody.contains("connectToDaemon"))
+  #expect(activateBody.contains("startFileWatcher()"))
+  #expect(activateBody.contains("startV2InboxWatcher()"))
+  #expect(activateBody.contains("registerEventObservers()"))
   #expect(cleanupBody.contains("if (!bridgeDidBootstrap) return;"))
+  #expect(cleanupBody.contains("releaseBridgeOwnership();"))
 }
 
 private func stripObjectiveCComments(_ source: String) -> String {
