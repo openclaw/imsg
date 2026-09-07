@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.15.2 - 2026-09-07
 
 **Highlights:** Safer bridge startup for concurrent callers and slow-starting Macs, with reliable local test runs.
