@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.15.3 - 2026-09-07
 
 **Highlights:** Reliable bridge ownership when multiple injected Messages instances overlap.
 
