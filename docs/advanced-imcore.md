@@ -65,6 +65,17 @@ make build-dylib   # produces .build/release/imsg-bridge-helper.dylib (arm64e)
 
 `imsg launch` refuses to inject when SIP is enabled. There's no override.
 
+Each container has one active helper. Additional instances using the same updated
+helper wait without changing readiness or consuming requests, then take over
+when the owner exits. The owner also restores a ready marker removed during
+launcher cleanup. The `.imsg-bridge-owner.lock` file is permanent; do not delete it
+while a helper is running.
+
+Older injected helpers do not participate in ownership locking. After upgrading,
+stop the old injected Messages instance with `imsg launch --kill-only` before
+launching the updated helper. A patched helper cannot exclude an older helper
+that is still running.
+
 Launch waits up to 15 seconds for the bridge-ready file. On a host with slower
 cold starts, extend that wait for the CLI or its supervisor:
 

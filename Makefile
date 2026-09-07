@@ -37,6 +37,9 @@ ifeq ($(shell uname -s),Darwin)
 			-framework Foundation -framework AppKit -framework ImageIO -framework LinkPresentation \
 			"$$source" -o "$$binary" && "$$binary" || exit $$?; \
 	done
+	@clang -fobjc-arc -Wno-arc-performSelector-leaks -Wno-incomplete-implementation \
+		-framework Foundation -framework AppKit -framework ImageIO -framework LinkPresentation \
+		Tests/IMsgHelperTests/BridgeOwnershipHost.m -o .build/helper-tests/BridgeOwnershipHost
 else
 	@echo "Skipping native bridge tests (macOS only)."
 endif
