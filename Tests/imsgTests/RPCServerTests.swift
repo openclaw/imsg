@@ -149,7 +149,8 @@ func rpcSendResolvesChatID() async throws {
       captured = options
       return options
     },
-    resolveSentMessage: resolvedSentMessageFixture
+    resolveSentMessage: resolvedSentMessageFixture,
+    isBridgeReady: { false }
   )
 
   let line = #"{"jsonrpc":"2.0","id":"3","method":"send","params":{"chat_id":1,"text":"yo"}}"#
@@ -254,7 +255,8 @@ func rpcSendReturnsSentMessageIdentifiersWhenResolved() async throws {
         attachmentsCount: 0,
         guid: "8DF1B3D7"
       )
-    }
+    },
+    isBridgeReady: { false }
   )
 
   let line = #"{"jsonrpc":"2.0","id":"3b","method":"send","params":{"chat_id":1,"text":"yo"}}"#
@@ -314,7 +316,8 @@ func rpcSendReportsMisroutedChatGhost() async throws {
       }
       return options
     },
-    resolveSentMessage: { _, _, _, _ in nil }
+    resolveSentMessage: { _, _, _, _ in nil },
+    isBridgeReady: { false }
   )
 
   let line = #"{"jsonrpc":"2.0","id":"3d","method":"send","params":{"chat_id":1,"text":"yo"}}"#
