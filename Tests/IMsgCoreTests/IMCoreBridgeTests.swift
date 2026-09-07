@@ -41,7 +41,7 @@ func messagesLauncherErrorDescriptions() {
   let errors: [MessagesLauncherError] = [
     .dylibNotFound("/fake/path"),
     .launchFailed("test reason"),
-    .socketTimeout,
+    .socketTimeout(seconds: 15),
     .socketError("test error"),
     .invalidResponse,
   ]
@@ -49,6 +49,48 @@ func messagesLauncherErrorDescriptions() {
   for error in errors {
     #expect(!error.description.isEmpty)
   }
+}
+
+@Test
+func readinessTimeoutFallsBackToDefaultWithoutOverride() {
+  #expect(
+    LaunchReadinessTimeout.resolve(environment: [:])
+      == LaunchReadinessTimeout.defaultSeconds)
+}
+
+@Test
+func readinessTimeoutHonorsEnvironmentOverride() {
+  #expect(
+    LaunchReadinessTimeout.resolve(
+      environment: ["IMSG_LAUNCH_READY_TIMEOUT": "45"]) == 45)
+  #expect(
+    LaunchReadinessTimeout.resolve(
+      environment: ["IMSG_LAUNCH_READY_TIMEOUT": " 30.5 "]) == 30.5)
+}
+
+@Test
+func readinessTimeoutRejectsUnusableOverrides() {
+  for raw in ["", "abc", "0", "-5", "nan"] {
+    #expect(
+      LaunchReadinessTimeout.resolve(
+        environment: ["IMSG_LAUNCH_READY_TIMEOUT": raw])
+        == LaunchReadinessTimeout.defaultSeconds,
+      "unusable override \(raw) should fall back to the default")
+  }
+}
+
+@Test
+func readinessTimeoutIsClampedToAnUpperBound() {
+  #expect(
+    LaunchReadinessTimeout.resolve(
+      environment: ["IMSG_LAUNCH_READY_TIMEOUT": "99999"]) == 600)
+}
+
+@Test
+func socketTimeoutDescriptionReportsTheTimeoutUsed() {
+  let description = MessagesLauncherError.socketTimeout(seconds: 15).description
+  #expect(description.contains("15s"))
+  #expect(description.contains("IMSG_LAUNCH_READY_TIMEOUT"))
 }
 
 @Test
