@@ -167,6 +167,14 @@ int main(int argc, const char *argv[]) {
         check([contentsOf(kLockFile) isEqualToString:[NSString stringWithFormat:@"%d", getpid()]],
               @"Takeover writes its own ready marker");
         check([files fileExistsAtPath:kRpcInDir], @"Takeover provisions the queue directories");
+
+        // 8. A launcher that missed this owner on kill deletes the ready marker
+        //    before spawning a standby. The owner restores it so the launcher
+        //    sees a truthful readiness state instead of timing out.
+        check([files removeItemAtPath:kLockFile error:nil], @"Launcher removes the ready marker");
+        [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:1.5]];
+        check([contentsOf(kLockFile) isEqualToString:[NSString stringWithFormat:@"%d", getpid()]],
+              @"Owner restores its ready marker within a second");
         injectedCleanup();
         check(![files fileExistsAtPath:kLockFile] && ownerLockFd == -1, @"Cleanup after takeover releases everything");
 
