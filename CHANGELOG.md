@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+**Highlights:** Reliable bridge ownership when multiple injected Messages instances overlap.
+
+- Keep one bridge helper active per Messages container, preserve readiness when a standby exits, and automatically take over after the owner stops (#284, thanks @omarshahine).
+
 ## 0.15.2 - 2026-09-07
 
 **Highlights:** Safer bridge startup for concurrent callers and slow-starting Macs, with reliable local test runs.
