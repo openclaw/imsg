@@ -24,6 +24,7 @@
 #import <stdio.h>
 #import <string.h>
 #import <signal.h>
+#import <sys/file.h>
 #import <sys/stat.h>
 #import <dlfcn.h>
 
@@ -120,6 +121,10 @@ imCreateThreadIdentifierFn(void) {
 static NSString *kCommandFile = nil;
 static NSString *kResponseFile = nil;
 static NSString *kLockFile = nil;
+// Single-owner guard. Unlike the ready marker above, nothing ever unlinks
+// this file: flock ownership is tied to the inode, and a fresh inode would let
+// two processes each hold "the" lock.
+static NSString *kOwnerLockFile = nil; // .imsg-bridge-owner.lock
 
 // v2 queue-directory IPC paths.
 static NSString *kRpcDir = nil;       // .imsg-rpc/
@@ -141,6 +146,12 @@ static os_unfair_lock eventsLock = OS_UNFAIR_LOCK_INIT;
 static os_unfair_lock trackedMessageGuidLock = OS_UNFAIR_LOCK_INIT;
 static NSMutableSet<NSString *> *trackedMessageGuids = nil;
 static int lockFd = -1;
+static int ownerLockFd = -1;
+// Set once this process has lost the ownership race and is waiting to take
+// over. Only affects logging: the first stand-down and the eventual takeover
+// are worth a line each, the retries in between are not.
+static BOOL bridgeStandingBy = NO;
+static const NSTimeInterval kOwnershipRetryInterval = 1.0;
 
 static const NSUInteger kEventsRotateBytes = 1 * 1024 * 1024;
 static const NSTimeInterval kV2ClaimMaxAge = 10 * 60;
@@ -153,6 +164,7 @@ static void initFilePaths(void) {
         kCommandFile = [containerPath stringByAppendingPathComponent:@".imsg-command.json"];
         kResponseFile = [containerPath stringByAppendingPathComponent:@".imsg-response.json"];
         kLockFile = [containerPath stringByAppendingPathComponent:@".imsg-bridge-ready"];
+        kOwnerLockFile = [containerPath stringByAppendingPathComponent:@".imsg-bridge-owner.lock"];
         kRpcDir = [containerPath stringByAppendingPathComponent:@".imsg-rpc"];
         kRpcInDir = [kRpcDir stringByAppendingPathComponent:@"in"];
         kRpcOutDir = [kRpcDir stringByAppendingPathComponent:@"out"];
@@ -6699,6 +6711,33 @@ static void processCommandFile(void) {
     }
 }
 
+/// The ready marker tells the launcher and CLI that an injected helper is up.
+/// Only the bridge owner writes it (see acquireBridgeOwnership).
+static void writeReadyMarker(void) {
+    if (lockFd >= 0) {
+        close(lockFd);
+        lockFd = -1;
+    }
+    lockFd = open(kLockFile.UTF8String, O_CREAT | O_WRONLY | O_TRUNC | O_NOFOLLOW, 0644);
+    if (lockFd >= 0) {
+        NSString *pidStr = [NSString stringWithFormat:@"%d", getpid()];
+        write(lockFd, pidStr.UTF8String, pidStr.length);
+    }
+}
+
+/// The launcher removes the ready marker before it spawns a replacement. If
+/// this owner survived that (killall missed it), the replacement stands by and
+/// nobody would ever write a marker again: the launcher times out even though
+/// the bridge is serving. Keep readiness truthful by restoring the marker
+/// while we hold ownership; the standby takes over the moment we exit.
+static void reassertReadyMarker(void) {
+    if (ownerLockFd < 0) return;
+    if (access(kLockFile.UTF8String, F_OK) == 0) return;
+    writeReadyMarker();
+    NSLog(@"[imsg-bridge] Ready marker was removed while owning the bridge; restored it");
+    debugLog(@"ready marker restored pid=%d", getpid());
+}
+
 static void startFileWatcher(void) {
     initFilePaths();
 
@@ -6711,11 +6750,7 @@ static void startFileWatcher(void) {
     [@"" writeToFile:kResponseFile atomically:YES encoding:NSUTF8StringEncoding error:nil];
 
     // Create lock file with PID to indicate we're ready
-    lockFd = open(kLockFile.UTF8String, O_CREAT | O_WRONLY, 0644);
-    if (lockFd >= 0) {
-        NSString *pidStr = [NSString stringWithFormat:@"%d", getpid()];
-        write(lockFd, pidStr.UTF8String, pidStr.length);
-    }
+    writeReadyMarker();
 
     // Poll command file via NSTimer on the main run loop.
     // NSTimer survives reliably in injected dylib contexts (dispatch_source timers
@@ -6939,8 +6974,11 @@ static void startV2InboxWatcher(void) {
     NSLog(@"[imsg-bridge v2] Inbox: %@", kRpcInDir);
     NSLog(@"[imsg-bridge v2] Outbox: %@", kRpcOutDir);
 
+    __block NSUInteger tick = 0;
     NSTimer *timer = [NSTimer timerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *t) {
         scanV2Inbox();
+        // Once a second is plenty: this only matters during a relaunch.
+        if (++tick % 10 == 0) reassertReadyMarker();
     }];
     [[NSRunLoop mainRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
     rpcInboxTimer = timer;
@@ -6948,7 +6986,92 @@ static void startV2InboxWatcher(void) {
     NSLog(@"[imsg-bridge v2] Inbox watcher started");
 }
 
+#pragma mark - Bridge Ownership
+
+/// Exactly one injected Messages.app per container may service the bridge.
+/// The launcher serializes its own launches, but a second injected instance can
+/// still arrive another way: a manual launch with DYLD_INSERT_LIBRARIES set, a
+/// crash-restart supervisor, or a launcher that predates the launch lock. Two
+/// helpers then both clear the legacy IPC files, overwrite each other's pid in
+/// the ready marker, both claim from the same v2 inbox, and whichever exits
+/// first deletes the survivor's ready marker.
+///
+/// Ownership is a kernel flock on a dedicated file, so it dies with the process
+/// and a crashed owner never wedges the next one. On anything but Acquired,
+/// `failure` says why and shared state is left untouched.
+typedef NS_ENUM(NSInteger, BridgeOwnership) {
+    BridgeOwnershipAcquired,
+    /// A live instance holds the lock. Worth retrying: it releases on exit.
+    BridgeOwnershipHeldElsewhere,
+    /// The lock path is unusable (symlink, wrong owner, extra links, I/O error).
+    /// Retrying cannot help.
+    BridgeOwnershipUnavailable,
+};
+
+static BridgeOwnership acquireBridgeOwnership(NSString **failure) {
+    if (ownerLockFd >= 0) return BridgeOwnershipAcquired;
+
+    if (pathHasSymlinkComponent(kOwnerLockFile)) {
+        if (failure) *failure = [NSString stringWithFormat:
+            @"owner lock path traverses a symlink: %@", kOwnerLockFile];
+        return BridgeOwnershipUnavailable;
+    }
+
+    int fd = open(kOwnerLockFile.UTF8String, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0600);
+    if (fd < 0) {
+        if (failure) *failure = [NSString stringWithFormat:
+            @"could not open owner lock %@: %s", kOwnerLockFile, strerror(errno)];
+        return BridgeOwnershipUnavailable;
+    }
+
+    struct stat info;
+    if (fstat(fd, &info) != 0 || info.st_uid != geteuid() || !S_ISREG(info.st_mode) ||
+        info.st_nlink != 1 || (info.st_mode & 077) != 0) {
+        close(fd);
+        if (failure) *failure = [NSString stringWithFormat:
+            @"owner lock must be an owner-only regular file: %@", kOwnerLockFile];
+        return BridgeOwnershipUnavailable;
+    }
+
+    if (flock(fd, LOCK_EX | LOCK_NB) != 0) {
+        int lockErrno = errno;
+        pid_t owner = 0;
+        if (lockErrno == EWOULDBLOCK) {
+            char buf[32] = {0};
+            ssize_t n = pread(fd, buf, sizeof(buf) - 1, 0);
+            if (n > 0) owner = (pid_t)strtol(buf, NULL, 10);
+        }
+        close(fd);
+        if (failure) {
+            *failure = owner > 0
+                ? [NSString stringWithFormat:
+                    @"another injected instance (pid %d) already owns the bridge", (int)owner]
+                : [NSString stringWithFormat:
+                    @"could not acquire owner lock %@: %s", kOwnerLockFile, strerror(lockErrno)];
+        }
+        return lockErrno == EWOULDBLOCK ? BridgeOwnershipHeldElsewhere
+                                        : BridgeOwnershipUnavailable;
+    }
+
+    // Diagnostics only: the flock is the ownership, the pid is for humans.
+    NSString *pidStr = [NSString stringWithFormat:@"%d", getpid()];
+    if (ftruncate(fd, 0) == 0) {
+        pwrite(fd, pidStr.UTF8String, pidStr.length, 0);
+    }
+    ownerLockFd = fd;
+    return BridgeOwnershipAcquired;
+}
+
+static void releaseBridgeOwnership(void) {
+    if (ownerLockFd < 0) return;
+    flock(ownerLockFd, LOCK_UN);
+    close(ownerLockFd);
+    ownerLockFd = -1;
+}
+
 #pragma mark - Dylib Entry Point
+
+static void bridgeClaimOwnership(void);
 
 // Bridge bootstrap. Intentionally NOT run from the dylib constructor: macOS 26
 // tightened dyld initializer ordering for platform/system apps, so touching
@@ -6966,13 +7089,60 @@ static void bridgeBootstrap(void) {
                       bundleIdentifier ?: @"(none)");
                 return;
             }
-            bridgeDidBootstrap = YES;
             initFilePaths();
             NSLog(@"[imsg-bridge] Dylib injected into %@",
                   [[NSProcessInfo processInfo] processName]);
             debugLog(@"bootstrap starting in process=%@ pid=%d",
                      [[NSProcessInfo processInfo] processName], getpid());
+            bridgeClaimOwnership();
+        }
+    });
+}
 
+/// Claim the bridge before touching any shared state, then activate. A loser
+/// must not clear IPC files, rewrite the ready marker, claim requests, or (via
+/// injectedCleanup) remove the owner's ready marker on exit. It does not give
+/// up either: the launcher kills the old Messages and spawns the new one, and
+/// if the old owner is still tearing down when we bootstrap, we would otherwise
+/// lose the race once and leave this process alive with no bridge at all. So a
+/// loser stands by and retries; when the owner exits, its flock is released and
+/// the standby takes over without another relaunch.
+static void bridgeActivate(void);
+static void bridgeClaimOwnership(void) {
+    NSString *failure = nil;
+    switch (acquireBridgeOwnership(&failure)) {
+    case BridgeOwnershipAcquired:
+        if (bridgeStandingBy) {
+            bridgeStandingBy = NO;
+            NSLog(@"[imsg-bridge] Previous owner exited; taking over the bridge");
+            debugLog(@"bridge ownership taken over pid=%d", getpid());
+        } else {
+            debugLog(@"bridge ownership acquired pid=%d", getpid());
+        }
+        bridgeDidBootstrap = YES;
+        bridgeActivate();
+        return;
+    case BridgeOwnershipHeldElsewhere:
+        if (!bridgeStandingBy) {
+            bridgeStandingBy = YES;
+            NSLog(@"[imsg-bridge] Standing by: %@", failure);
+            debugLog(@"stand by pid=%d: %@", getpid(), failure);
+        }
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+                                     (int64_t)(kOwnershipRetryInterval * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            bridgeClaimOwnership();
+        });
+        return;
+    case BridgeOwnershipUnavailable:
+        NSLog(@"[imsg-bridge] Bridge disabled: %@", failure);
+        debugLog(@"bridge disabled pid=%d: %@", getpid(), failure);
+        return;
+    }
+}
+
+static void bridgeActivate(void) {
+    @autoreleasepool {
             // Connect to IMDaemon for full IMCore access
             Class daemonClass = NSClassFromString(@"IMDaemonController");
             if (daemonClass) {
@@ -7013,8 +7183,7 @@ static void bridgeBootstrap(void) {
             startV2InboxWatcher();
             registerEventObservers();
             debugLog(@"bootstrap complete");
-        }
-    });
+    }
 }
 
 __attribute__((constructor))
@@ -7053,4 +7222,6 @@ static void injectedCleanup(void) {
 
     initFilePaths();
     [[NSFileManager defaultManager] removeItemAtPath:kLockFile error:nil];
+    // Release last so the ready marker is removed while we still own the bridge.
+    releaseBridgeOwnership();
 }

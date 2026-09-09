@@ -25,19 +25,19 @@ private actor StdoutCaptureLock {
   }
 }
 
-private final class StdoutPipeReader: @unchecked Sendable {
+final class TestPipeReader: @unchecked Sendable {
   struct Result {
     let data: Data
     let errorNumber: Int32?
   }
 
   private let condition = NSCondition()
-  private let readFD: Int32
+  private let handle: FileHandle
   private var isStarted = false
   private var result: Result?
 
-  init(readFD: Int32) {
-    self.readFD = readFD
+  init(handle: FileHandle) {
+    self.handle = handle
   }
 
   func startAndWaitUntilReady() {
@@ -52,7 +52,7 @@ private final class StdoutPipeReader: @unchecked Sendable {
       var errorNumber: Int32?
       var buffer = [UInt8](repeating: 0, count: 64 * 1024)
       while true {
-        let count = read(readFD, &buffer, buffer.count)
+        let count = read(handle.fileDescriptor, &buffer, buffer.count)
         if count > 0 {
           data.append(contentsOf: buffer.prefix(count))
         } else if count == 0 {
@@ -62,7 +62,7 @@ private final class StdoutPipeReader: @unchecked Sendable {
           break
         }
       }
-      close(readFD)
+      try? handle.close()
 
       condition.lock()
       result = Result(data: data, errorNumber: errorNumber)
@@ -92,8 +92,8 @@ enum StdoutCapture {
 
   private static func finish(
     savedStdout: Int32,
-    reader: StdoutPipeReader
-  ) -> (readerResult: StdoutPipeReader.Result, restored: Bool) {
+    reader: TestPipeReader
+  ) -> (readerResult: TestPipeReader.Result, restored: Bool) {
     fflush(nil)
     let restored = dup2(savedStdout, STDOUT_FILENO) >= 0
     if !restored {
@@ -125,7 +125,7 @@ enum StdoutCapture {
       fatalError("dup(STDOUT_FILENO) failed")
     }
 
-    let reader = StdoutPipeReader(readFD: readFD)
+    let reader = TestPipeReader(handle: FileHandle(fileDescriptor: readFD, closeOnDealloc: true))
     reader.startAndWaitUntilReady()
 
     guard dup2(writeFD, STDOUT_FILENO) >= 0 else {

@@ -93,6 +93,12 @@ func runIMsgProcess(
   }
   process.environment = environment
 
+  return try captureProcessOutput(process)
+}
+
+private func captureProcessOutput(_ process: Process) throws -> (
+  status: Int32, output: String, error: String
+) {
   let output = Pipe()
   process.standardOutput = output
   let error = Pipe()
@@ -100,13 +106,30 @@ func runIMsgProcess(
   try process.run()
   output.fileHandleForWriting.closeFile()
   error.fileHandleForWriting.closeFile()
+  let outputReader = TestPipeReader(handle: output.fileHandleForReading)
+  let errorReader = TestPipeReader(handle: error.fileHandleForReading)
+  outputReader.startAndWaitUntilReady()
+  errorReader.startAndWaitUntilReady()
   #expect(!ProcessTimeout.waitUntilExit(process, timeout: 3))
-  let data = output.fileHandleForReading.readDataToEndOfFile()
-  let errorData = error.fileHandleForReading.readDataToEndOfFile()
+  let capturedOutput = outputReader.waitForResult()
+  let capturedError = errorReader.waitForResult()
+  #expect(capturedOutput.errorNumber == nil)
+  #expect(capturedError.errorNumber == nil)
   return (
-    process.terminationStatus, String(decoding: data, as: UTF8.self),
-    String(decoding: errorData, as: UTF8.self)
+    process.terminationStatus, String(decoding: capturedOutput.data, as: UTF8.self),
+    String(decoding: capturedError.data, as: UTF8.self)
   )
+}
+
+@Test
+func processCaptureDrainsBothStreamsBeforeWaitingForExit() throws {
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/bin/sh")
+  process.arguments = ["-c", "printf '%131072s' ''; printf '%131072s' '' >&2"]
+  let result = try captureProcessOutput(process)
+  #expect(result.status == 0)
+  #expect(result.output == String(repeating: " ", count: 131_072))
+  #expect(result.error == String(repeating: " ", count: 131_072))
 }
 
 private func imsgExecutableURL() throws -> URL {

@@ -65,6 +65,30 @@ make build-dylib   # produces .build/release/imsg-bridge-helper.dylib (arm64e)
 
 `imsg launch` refuses to inject when SIP is enabled. There's no override.
 
+Each container has one active helper. Additional instances using the same updated
+helper wait without changing readiness or consuming requests, then take over
+when the owner exits. The owner also restores a ready marker removed during
+launcher cleanup. The `.imsg-bridge-owner.lock` file is permanent; do not delete it
+while a helper is running.
+
+Older injected helpers do not participate in ownership locking. After upgrading,
+stop the old injected Messages instance with `imsg launch --kill-only` before
+launching the updated helper. A patched helper cannot exclude an older helper
+that is still running.
+
+Launch waits up to 15 seconds for the bridge-ready file. On a host with slower
+cold starts, extend that wait for the CLI or its supervisor:
+
+```bash
+IMSG_LAUNCH_READY_TIMEOUT=60 imsg launch --json
+```
+
+The value is a positive number of seconds, capped at 600. Invalid or non-positive
+values use the 15-second default. This also applies to library and bridge calls
+that launch Messages. A timeout still returns an error: Messages may still be
+starting, so check `imsg status` before relaunching. The timeout setting does not
+bypass the SIP or permission checks.
+
 `imsg status` is read-only. It does not auto-launch or auto-inject. Run `imsg launch` first.
 
 To revert: re-enable SIP from Recovery mode (`csrutil enable`), then reboot.
