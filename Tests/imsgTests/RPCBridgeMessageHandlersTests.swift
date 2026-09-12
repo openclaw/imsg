@@ -407,9 +407,9 @@ func rpcSendAttachmentStagesFileBeforeBridgeSend() async throws {
       capturedParams = params
       return ["messageGuid": "attachment-guid"]
     },
-    stageAttachment: { path in
+    stageAudioAttachment: { path in
       stagedInput = path
-      return "/tmp/staged-file.png"
+      return "/tmp/staged-voice.caf"
     }
   )
 
@@ -419,7 +419,7 @@ func rpcSendAttachmentStagesFileBeforeBridgeSend() async throws {
   await server.handleLineForTesting(line)
 
   #expect(stagedInput?.hasSuffix("/Desktop/file.png") == true)
-  #expect(capturedParams["filePath"] as? String == "/tmp/staged-file.png")
+  #expect(capturedParams["filePath"] as? String == "/tmp/staged-voice.caf")
   #expect(capturedParams["isAudioMessage"] as? Bool == true)
   #expect(capturedParams["selectedMessageGuid"] as? String == "parent-guid")
   #expect(capturedParams["partIndex"] as? Int == 2)

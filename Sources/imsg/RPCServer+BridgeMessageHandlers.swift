@@ -185,9 +185,11 @@ extension RPCServer {
       }
     }
     let chatGUID = try await resolveChatGUIDParam(params)
+    let stagedFile = try (audio ? stageAudioAttachment : stageAttachment)(
+      (file as NSString).expandingTildeInPath)
     var bridgeParams: [String: Any] = [
       "chatGuid": chatGUID,
-      "filePath": try stageAttachment((file as NSString).expandingTildeInPath),
+      "filePath": stagedFile,
       "isAudioMessage": audio,
     ]
     if let reply, !reply.isEmpty {

@@ -38,6 +38,7 @@ enum SendAttachmentCommand {
     },
     stageAttachment: @escaping (String) throws -> String =
       MessageSender.stageAttachmentForMessagesApp,
+    stageAudioAttachment: @escaping (String) throws -> String = AudioMessagePreparer.prepare,
     sendMessage: @escaping (MessageSendOptions) throws -> Void = {
       try MessageSender().send($0)
     }
@@ -63,7 +64,7 @@ enum SendAttachmentCommand {
     }
 
     if transport != "applescript" {
-      let staged = try stageAttachment(expanded)
+      let staged = try (audio ? stageAudioAttachment : stageAttachment)(expanded)
       var params: [String: Any] = [
         "chatGuid": chat,
         "filePath": staged,
