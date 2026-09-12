@@ -2,10 +2,6 @@
 
 ## Unreleased
 
-### Fixes
-
-- Prepare native voice attachments as CAF/Opus before sending through CLI `--audio` or RPC `send.attachment`, preventing valid MP3 audio from appearing as an unplayable `00:00` voice bubble. Ordinary attachments and original files remain unchanged.
-
 ## 0.15.3 - 2026-09-07
 
 **Highlights:** Reliable bridge ownership when multiple injected Messages instances overlap.
