@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.15.4 - 2026-09-11
 
 **Highlights:** Native voice messages that play inline in Messages.
 
