@@ -6018,6 +6018,9 @@ static NSDictionary *handleUpdateGroupPhoto(NSInteger requestId, NSDictionary *p
             return successResponse(requestId,
                 @{@"chatGuid": chatGuid, @"cleared": @YES, @"size": @0});
         }
+        if (pathHasSymlinkComponent(filePath)) {
+            return errorResponse(requestId, @"Group photo path traverses a symlink");
+        }
         NSURL *fileURL = [NSURL fileURLWithPath:filePath];
         NSString *prepErr = nil;
         IMFileTransfer *transfer = prepareOutgoingTransfer(

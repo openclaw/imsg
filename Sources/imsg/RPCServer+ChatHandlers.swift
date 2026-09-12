@@ -89,7 +89,16 @@ extension RPCServer {
     let chatGUID = try await resolveChatGUIDParam(params)
     var bridgeParams: [String: Any] = ["chatGuid": chatGUID]
     if let file, !file.isEmpty {
-      bridgeParams["filePath"] = (file as NSString).expandingTildeInPath
+      do {
+        bridgeParams["filePath"] = try stageAttachment((file as NSString).expandingTildeInPath)
+      } catch {
+        throw DeliveryFailure(
+          disposition: .notStarted,
+          transport: .bridgeV2,
+          operation: BridgeAction.updateGroupPhoto.rawValue,
+          detail: "The attachment could not be staged before bridge dispatch."
+        )
+      }
     }
     _ = try await invokeBridge(action: .updateGroupPhoto, params: bridgeParams)
     respond(id: id, result: ["ok": true])

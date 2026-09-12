@@ -121,16 +121,27 @@ enum ChatPhotoCommand {
     try await run(values: values, runtime: runtime)
   }
 
-  static func run(values: ParsedValues, runtime: RuntimeOptions) async throws {
+  static func run(
+    values: ParsedValues,
+    runtime: RuntimeOptions,
+    invokeBridge: @escaping (BridgeAction, [String: Any]) async throws -> [String: Any] = {
+      action, params in
+      try await IMsgBridgeClient.shared.invoke(action: action, params: params)
+    },
+    stageAttachment: @escaping (String) throws -> String =
+      MessageSender.stageAttachmentForMessagesApp
+  ) async throws {
     guard let chat = values.option("chat"), !chat.isEmpty else {
       throw ParsedValuesError.missingOption("chat")
     }
     var params: [String: Any] = ["chatGuid": chat]
     if let file = values.option("file"), !file.isEmpty {
-      params["filePath"] = (file as NSString).expandingTildeInPath
+      let expanded = (file as NSString).expandingTildeInPath
+      params["filePath"] = try stageAttachment(expanded)
     }
     _ = try await BridgeOutput.invokeAndEmit(
-      action: .updateGroupPhoto, params: params, runtime: runtime
+      action: .updateGroupPhoto, params: params, runtime: runtime,
+      invokeBridge: invokeBridge
     ) { _ in "chat-photo: updated" }
   }
 }
