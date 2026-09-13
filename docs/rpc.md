@@ -96,7 +96,7 @@ fallback, while read retains IMCore bridge activation. Either may activate
 Messages.app. Direct AppleScript `send` may activate it too. Bridge-oriented
 CLI commands retain their documented launch behavior.
 
-The pattern intentionally mirrors language servers and the way `imsg`'s parent gateway (Clawdis) supervises subprocesses — a single signal-style child that exits cleanly when stdin closes.
+OpenClaw supervises `imsg` as a child process that exits cleanly when stdin closes.
 
 Request execution uses three independent lanes:
 

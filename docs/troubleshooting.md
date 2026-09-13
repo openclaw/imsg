@@ -132,7 +132,7 @@ delivery failure.
 
 ## Filing issues
 
-If you've worked through the relevant section above and are stuck, open an issue at <https://github.com/steipete/imsg/issues>.
+If you've worked through the relevant section above and are stuck, open an issue at <https://github.com/openclaw/imsg/issues>.
 
 Useful context:
 

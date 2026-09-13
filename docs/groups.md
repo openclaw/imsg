@@ -40,7 +40,7 @@ Group sends use AppleScript `chat id "<handle>"` (the "Jared pattern"). Attachme
 
 On macOS 26 (Tahoe), Messages.app sometimes reports AppleScript success while writing an empty unjoined SMS row instead of delivering to the target group. `imsg send` detects that ghost row by inspecting `chat.db` after the AppleScript call and reports an error rather than success.
 
-This check is automatic for chat-target sends. Direct sends (`--to`) aren't affected.
+This check is automatic for chat-target sends, including direct `--to` sends that resolve to an existing chat. See [Send](send.md#tahoe-ghost-row-protection).
 
 ## Inbound metadata (JSON)
 

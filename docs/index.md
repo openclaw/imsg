@@ -61,4 +61,4 @@ imsg send --to "Jane Appleseed" --file ~/Desktop/voice.m4a
 
 ## Project
 
-Active development; the [changelog](https://github.com/steipete/imsg/blob/main/CHANGELOG.md) tracks what shipped recently. Released under the [MIT license](https://github.com/steipete/imsg/blob/main/LICENSE). Not affiliated with Apple.
+Active development; the [changelog](https://github.com/openclaw/imsg/blob/main/CHANGELOG.md) tracks what shipped recently. Released under the [MIT license](https://github.com/openclaw/imsg/blob/main/LICENSE). Not affiliated with Apple.
