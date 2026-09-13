@@ -49,21 +49,6 @@ func attachmentPayload(_ meta: AttachmentMeta) -> [String: Any] {
   return payload
 }
 
-func reactionPayload(_ reaction: Reaction, senderName: String? = nil) -> [String: Any] {
-  var payload: [String: Any] = [
-    "id": reaction.rowID,
-    "type": reaction.reactionType.name,
-    "emoji": reaction.reactionType.emoji,
-    "sender": reaction.sender,
-    "is_from_me": reaction.isFromMe,
-    "created_at": CLIISO8601.format(reaction.date),
-  ]
-  if let senderName {
-    payload["sender_name"] = senderName
-  }
-  return payload
-}
-
 func isGroupHandle(identifier: String, guid: String) -> Bool {
   return guid.contains(";+;") || identifier.contains(";+;")
 }
@@ -79,4 +64,47 @@ func watchDebounceIntervalParam(_ params: RPCParameters) throws -> TimeInterval 
     throw RPCError.invalidParams("debounce_ms must be a non-negative integer")
   }
   return Double(milliseconds) / 1000
+}
+
+func buildMessagePayload(
+  store: MessageStore,
+  message: Message,
+  includeAttachments: Bool,
+  includeReactions: Bool,
+  prefetchedAttachments: [AttachmentMeta]? = nil,
+  prefetchedReactions: [Reaction]? = nil,
+  attachmentOptions: AttachmentQueryOptions = .default,
+  contactResolver: any ContactResolving = NoOpContactResolver()
+) throws -> [String: Any] {
+  let chatInfo = try store.chatInfo(chatID: message.chatID)
+  let participants = try store.participants(chatID: message.chatID)
+  let attachments: [AttachmentMeta]
+  if includeAttachments {
+    attachments =
+      try prefetchedAttachments ?? store.attachments(for: message.rowID, options: attachmentOptions)
+  } else {
+    attachments = []
+  }
+  let reactions: [Reaction]
+  if includeReactions {
+    reactions = try prefetchedReactions ?? store.reactions(for: message.rowID)
+  } else {
+    reactions = []
+  }
+  let senderName = message.isFromMe ? nil : contactResolver.displayName(for: message.sender)
+  var reactionSenderNames: [Int64: String] = [:]
+  for reaction in reactions where !reaction.isFromMe {
+    if let name = contactResolver.displayName(for: reaction.sender) {
+      reactionSenderNames[reaction.rowID] = name
+    }
+  }
+  return try messagePayload(
+    message: message,
+    chatInfo: chatInfo,
+    participants: participants,
+    attachments: attachments,
+    reactions: reactions,
+    senderName: senderName,
+    reactionSenderNames: reactionSenderNames
+  )
 }

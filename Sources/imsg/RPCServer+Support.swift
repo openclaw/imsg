@@ -419,3 +419,17 @@ extension RPCServer {
     return result
   }
 }
+
+extension RPCServer {
+  func bridgeChatGUID(
+    resolvedTarget: ResolvedChatTarget?,
+    directChatInfo: ChatInfo?
+  ) -> String? {
+    if let guid = resolvedTarget?.chatGUID, !guid.isEmpty { return guid }
+    if let identifier = resolvedTarget?.chatIdentifier, !identifier.isEmpty { return identifier }
+    if let guid = directChatInfo?.guid, !guid.isEmpty { return guid }
+    if let identifier = directChatInfo?.identifier, !identifier.isEmpty { return identifier }
+    return nil
+  }
+
+}

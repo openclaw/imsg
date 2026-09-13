@@ -9,7 +9,7 @@ import Foundation
 /// The dylib is shared across CLI invocations: many concurrent `imsg`
 /// processes can drop requests at once and each gets routed back to the
 /// correct caller via the UUID. There is no global lock on the CLI side.
-public final class IMsgBridgeClient: @unchecked Sendable {
+public final class IMsgBridgeClient: Sendable {
   public static let shared = IMsgBridgeClient(launcher: MessagesLauncher.shared)
 
   private let launcher: MessagesLauncher
@@ -87,7 +87,7 @@ public final class IMsgBridgeClient: @unchecked Sendable {
     do {
       try Task.checkCancellation()
     } catch {
-      throw prepublicationError(
+      throw BridgeFailureClassifier.prepublicationError(
         action: action,
         transport: useLegacyIPC ? .bridgeLegacy : .bridgeV2,
         error: error
@@ -97,7 +97,8 @@ public final class IMsgBridgeClient: @unchecked Sendable {
       do {
         try await launcher.ensureRunning()
       } catch {
-        throw prepublicationError(action: action, transport: .bridgeLegacy, error: error)
+        throw BridgeFailureClassifier.prepublicationError(
+          action: action, transport: .bridgeLegacy, error: error)
       }
       return try await invokeLegacy(action: action, params: params, timeout: timeout)
     }
@@ -105,7 +106,8 @@ public final class IMsgBridgeClient: @unchecked Sendable {
     do {
       try await launcher.ensureLaunched()
     } catch {
-      throw prepublicationError(action: action, transport: .bridgeV2, error: error)
+      throw BridgeFailureClassifier.prepublicationError(
+        action: action, transport: .bridgeV2, error: error)
     }
     return try await invokeV2(action: action, params: params, timeout: timeout)
   }
@@ -167,7 +169,8 @@ extension IMsgBridgeClient {
       try FileManager.default.moveItem(atPath: tmp, toPath: final)
     } catch {
       try? FileManager.default.removeItem(atPath: tmp)
-      throw prepublicationError(action: action, transport: .bridgeV2, error: error)
+      throw BridgeFailureClassifier.prepublicationError(
+        action: action, transport: .bridgeV2, error: error)
     }
 
     let publication = BridgeRequestPublication(
@@ -203,7 +206,8 @@ extension IMsgBridgeClient {
           return try unwrapV2Response(response, action: action, transport: .bridgeV2)
         }
       } catch {
-        throw postpublicationError(action: action, transport: .bridgeV2, error: error)
+        throw BridgeFailureClassifier.postpublicationError(
+          action: action, transport: .bridgeV2, error: error)
       }
       // A vanished published request cannot receive a reply. Normal in-flight
       // work remains as `<id>.json` or `<id>.processing.<pid>`.
@@ -239,27 +243,27 @@ extension IMsgBridgeClient {
           response, action: publication.action, transport: .bridgeV2)
       }
     } catch {
-      throw postpublicationError(
+      throw BridgeFailureClassifier.postpublicationError(
         action: publication.action, transport: .bridgeV2, error: error)
     }
 
     switch requestQueueState(inboxDir: publication.inboxDirectory, id: publication.id) {
     case .claimed:
-      throw deliveryFailure(
+      throw BridgeFailureClassifier.deliveryFailure(
         action: publication.action,
         disposition: .stillInFlight,
         transport: .bridgeV2,
         detail: "\(reason) The bridge still owns a claimed request."
       )
     case .unreadable:
-      throw deliveryFailure(
+      throw BridgeFailureClassifier.deliveryFailure(
         action: publication.action,
         disposition: .stillInFlight,
         transport: .bridgeV2,
         detail: "\(reason) The bridge inbox could not be inspected; request files were preserved."
       )
     case .absent:
-      throw deliveryFailure(
+      throw BridgeFailureClassifier.deliveryFailure(
         action: publication.action,
         disposition: .mayHaveCompleted,
         transport: .bridgeV2,
@@ -278,20 +282,20 @@ extension IMsgBridgeClient {
             response, action: publication.action, transport: .bridgeV2)
         }
       } catch {
-        throw postpublicationError(
+        throw BridgeFailureClassifier.postpublicationError(
           action: publication.action, transport: .bridgeV2, error: error)
       }
 
       switch requestQueueState(inboxDir: publication.inboxDirectory, id: publication.id) {
       case .absent:
-        throw deliveryFailure(
+        throw BridgeFailureClassifier.deliveryFailure(
           action: publication.action,
           disposition: .notStarted,
           transport: .bridgeV2,
           detail: "\(reason) The client reclaimed and removed the unclaimed request."
         )
       case .unclaimed, .claimed, .unreadable:
-        throw deliveryFailure(
+        throw BridgeFailureClassifier.deliveryFailure(
           action: publication.action,
           disposition: .stillInFlight,
           transport: .bridgeV2,
@@ -311,20 +315,20 @@ extension IMsgBridgeClient {
           response, action: publication.action, transport: .bridgeV2)
       }
     } catch {
-      throw postpublicationError(
+      throw BridgeFailureClassifier.postpublicationError(
         action: publication.action, transport: .bridgeV2, error: error)
     }
 
     switch requestQueueState(inboxDir: publication.inboxDirectory, id: publication.id) {
     case .absent:
-      throw deliveryFailure(
+      throw BridgeFailureClassifier.deliveryFailure(
         action: publication.action,
         disposition: .mayHaveCompleted,
         transport: .bridgeV2,
         detail: "\(reason) Reclaim lost a race and no request or response remains."
       )
     case .unclaimed, .claimed, .unreadable:
-      throw deliveryFailure(
+      throw BridgeFailureClassifier.deliveryFailure(
         action: publication.action,
         disposition: .stillInFlight,
         transport: .bridgeV2,
@@ -422,76 +426,27 @@ extension IMsgBridgeClient {
     } catch let error as MessagesLauncherError {
       switch error {
       case .commandTimeout:
-        throw deliveryFailure(
+        throw BridgeFailureClassifier.deliveryFailure(
           action: action,
           disposition: .stillInFlight,
           transport: .bridgeLegacy,
           detail: "The legacy bridge command timed out without per-request claim proof."
         )
       case .invalidResponse:
-        throw deliveryFailure(
+        throw BridgeFailureClassifier.deliveryFailure(
           action: action,
           disposition: .mayHaveCompleted,
           transport: .bridgeLegacy,
           detail: error.description
         )
-      case .commandNotPublished:
-        throw prepublicationError(action: action, transport: .bridgeLegacy, error: error)
       default:
-        throw prepublicationError(action: action, transport: .bridgeLegacy, error: error)
+        throw BridgeFailureClassifier.prepublicationError(
+          action: action, transport: .bridgeLegacy, error: error)
       }
     } catch {
-      throw postpublicationError(action: action, transport: .bridgeLegacy, error: error)
+      throw BridgeFailureClassifier.postpublicationError(
+        action: action, transport: .bridgeLegacy, error: error)
     }
-  }
-
-  private func prepublicationError(
-    action: BridgeAction,
-    transport: DeliveryTransport,
-    error: Error
-  ) -> Error {
-    if !action.isMutation, error is CancellationError { return CancellationError() }
-    guard action.isMutation else {
-      return IMsgBridgeError.bridgeNotReady(String(describing: error))
-    }
-    return DeliveryFailure(
-      disposition: .notStarted,
-      transport: transport,
-      operation: action.rawValue,
-      detail: "The bridge request could not be published: \(String(describing: error))"
-    )
-  }
-
-  private func postpublicationError(
-    action: BridgeAction,
-    transport: DeliveryTransport,
-    error: Error
-  ) -> Error {
-    if let failure = error as? DeliveryFailure { return failure }
-    guard action.isMutation else { return error }
-    return DeliveryFailure(
-      disposition: .mayHaveCompleted,
-      transport: transport,
-      operation: action.rawValue,
-      detail: "The bridge response was unusable after publication: \(String(describing: error))"
-    )
-  }
-
-  private func deliveryFailure(
-    action: BridgeAction,
-    disposition: DeliveryDisposition,
-    transport: DeliveryTransport,
-    detail: String
-  ) -> Error {
-    guard action.isMutation else {
-      return IMsgBridgeError.timeout(action: action.rawValue)
-    }
-    return DeliveryFailure(
-      disposition: disposition,
-      transport: transport,
-      operation: action.rawValue,
-      detail: detail
-    )
   }
 
   private func ensureDirectory(_ path: String) throws {

@@ -26,36 +26,6 @@ extension MessageStore {
       && columns.contains("associated_message_type")
   }
 
-  static func detectReactionColumns(connection: Connection) -> Bool {
-    let columns = (try? tableColumns(connection: connection, table: "message")) ?? []
-    return reactionColumnsPresent(in: columns)
-  }
-
-  static func detectThreadOriginatorGUIDColumn(connection: Connection) -> Bool {
-    return (try? tableColumns(connection: connection, table: "message"))?
-      .contains("thread_originator_guid") == true
-  }
-
-  static func detectAttributedBody(connection: Connection) -> Bool {
-    return (try? tableColumns(connection: connection, table: "message"))?
-      .contains("attributedbody") == true
-  }
-
-  static func detectDestinationCallerID(connection: Connection) -> Bool {
-    return (try? tableColumns(connection: connection, table: "message"))?
-      .contains("destination_caller_id") == true
-  }
-
-  static func detectAudioMessageColumn(connection: Connection) -> Bool {
-    return (try? tableColumns(connection: connection, table: "message"))?
-      .contains("is_audio_message") == true
-  }
-
-  static func detectAttachmentUserInfo(connection: Connection) -> Bool {
-    return (try? tableColumns(connection: connection, table: "attachment"))?
-      .contains("user_info") == true
-  }
-
   static func enhance(error: Error, path: String) -> Error {
     let message = String(describing: error).lowercased()
     if message.contains("out of memory (14)") || message.contains("authorization denied")
