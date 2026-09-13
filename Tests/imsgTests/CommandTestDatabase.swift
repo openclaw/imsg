@@ -296,32 +296,6 @@ enum CommandTestDatabase {
     try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 1)")
   }
 
-  static func seedRPCChat(_ db: Connection) throws {
-    let now = Date()
-    try db.run(
-      """
-      INSERT INTO chat(
-        ROWID, chat_identifier, guid, display_name, service_name,
-        account_id, account_login, last_addressed_handle
-      )
-      VALUES (
-        1, 'iMessage;+;chat123', 'iMessage;+;chat123', 'Group Chat', 'iMessage',
-        'iMessage;+;me@icloud.com', 'me@icloud.com', 'me@icloud.com'
-      )
-      """
-    )
-    try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123'), (2, 'me@icloud.com')")
-    try db.run("INSERT INTO chat_handle_join(chat_id, handle_id) VALUES (1, 1), (1, 2)")
-    try db.run(
-      """
-      INSERT INTO message(ROWID, handle_id, text, date, is_from_me, service)
-      VALUES (5, 1, 'hello', ?, 0, 'iMessage')
-      """,
-      appleEpoch(now)
-    )
-    try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 5)")
-  }
-
   private static func pollPayload(jsonObject: [String: Any]) throws -> Data {
     let json = try JSONSerialization.data(withJSONObject: jsonObject, options: [.sortedKeys])
     let encoded = json.base64EncodedString()
