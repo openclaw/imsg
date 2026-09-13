@@ -20,7 +20,7 @@ imsg status                 # expect: bridge version: v2 (v2 inbox active)
 ## Pick a target chat
 
 ```bash
-imsg chats --limit 10 --json | jq -r '.[] | "\(.guid)\t\(.name // .identifier)"'
+imsg chats --limit 10 --json | jq -r '"\(.guid)\t\(.name // .identifier)"'
 export CHAT='iMessage;-;+15551234567'    # paste guid from above
 ```
 

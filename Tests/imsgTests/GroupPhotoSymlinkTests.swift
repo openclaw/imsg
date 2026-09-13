@@ -7,21 +7,8 @@ import Testing
 
 @Test
 func injectedHelperRefusesSymlinkGroupPhotoPaths() throws {
-  let testFile = URL(fileURLWithPath: #filePath)
-  let repoRoot =
-    testFile
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
-  let source = try String(contentsOf: helper, encoding: .utf8)
-  let start = try #require(source.range(of: "static NSDictionary *handleUpdateGroupPhoto"))
-  let searchFrom =
-    source.index(start.lowerBound, offsetBy: 80, limitedBy: source.endIndex) ?? source.endIndex
-  let end =
-    source.range(of: "\nstatic ", range: searchFrom..<source.endIndex)?.lowerBound
-    ?? source.endIndex
-  let photoBody = String(source[start.lowerBound..<end])
+  let source = stripObjectiveCComments(try injectedHelperSource())
+  let photoBody = try #require(bridgeFunctionBody(named: "handleUpdateGroupPhoto", in: source))
 
   let clearPhoto = try #require(photoBody.range(of: "filePath.length == 0"))
   let symlinkCheck = try #require(photoBody.range(of: "pathHasSymlinkComponent(filePath)"))

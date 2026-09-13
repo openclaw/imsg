@@ -373,3 +373,70 @@ private func insertSearchMessage(
   )
   try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, ?)", rowID)
 }
+
+@Test
+func longRepeatedPatternMessage() throws {
+  // Test the exact pattern that causes crashes: repeated "aaaaaaaaaaaa " pattern
+  // This reproduces the UInt8 overflow bug when segment.count > 256
+  let db = try Connection(.inMemory)
+  try db.execute(
+    """
+    CREATE TABLE message (
+      ROWID INTEGER PRIMARY KEY,
+      handle_id INTEGER,
+      text TEXT,
+      attributedBody BLOB,
+      date INTEGER,
+      is_from_me INTEGER,
+      service TEXT
+    );
+    """
+  )
+  try db.execute(
+    """
+    CREATE TABLE chat (
+      ROWID INTEGER PRIMARY KEY,
+      chat_identifier TEXT,
+      guid TEXT,
+      display_name TEXT,
+      service_name TEXT
+    );
+    """
+  )
+  try db.execute("CREATE TABLE handle (ROWID INTEGER PRIMARY KEY, id TEXT);")
+  try db.execute("CREATE TABLE chat_message_join (chat_id INTEGER, message_id INTEGER);")
+  try db.execute(
+    """
+    CREATE TABLE message_attachment_join (
+      message_id INTEGER,
+      attachment_id INTEGER
+    );
+    """
+  )
+
+  let now = Date()
+  let longText = String(repeating: "aaaaaaaaaaaa ", count: 100)
+  let body = Blob(bytes: Array(archivedAttributedBody(longText)))
+  try db.run(
+    """
+    INSERT INTO chat(ROWID, chat_identifier, guid, display_name, service_name)
+    VALUES (1, '+123', 'iMessage;+;chat123', 'Test Chat', 'iMessage')
+    """
+  )
+  try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
+  try db.run(
+    """
+    INSERT INTO message(ROWID, handle_id, text, attributedBody, date, is_from_me, service)
+    VALUES (1, 1, NULL, ?, ?, 0, 'iMessage')
+    """,
+    body,
+    TestDatabase.appleEpoch(now)
+  )
+  try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 1)")
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let messages = try store.messages(chatID: 1, limit: 10)
+  #expect(messages.count == 1)
+  #expect(messages.first?.text == longText)
+  #expect(messages.first?.text.count == longText.count)
+}

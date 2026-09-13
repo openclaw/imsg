@@ -96,7 +96,7 @@ fallback, while read retains IMCore bridge activation. Either may activate
 Messages.app. Direct AppleScript `send` may activate it too. Bridge-oriented
 CLI commands retain their documented launch behavior.
 
-The pattern intentionally mirrors language servers and the way `imsg`'s parent gateway (Clawdis) supervises subprocesses — a single signal-style child that exits cleanly when stdin closes.
+OpenClaw supervises `imsg` as a child process that exits cleanly when stdin closes.
 
 Request execution uses three independent lanes:
 
@@ -618,6 +618,7 @@ existing iMessage chat; ordinary `send.rich` text does not.
 
 - `send.rich` sends text with optional `effect`, `subject`, `reply_to`, `part_index`, `dd_scan`, and `text_formatting`. It also accepts `file` or `path` and securely stages the file before sending it through the attachment bridge while preserving those same caption/effect/subject/reply/part/formatting semantics. Attachment capability is checked before staging or publishing the send. Alternatively, pass only one chat target plus an HTTP(S) `url` to send an Apple URL-preview balloon. URL mode is iMessage-only and rejects text, file, and other send modifiers; metadata or image lookup failure falls back to a metadata-only card, never a plain-message send.
 - `send.attachment` sends `file` or `path`, with optional `audio` / `is_audio` / `as_voice`. Pass `reply_to` (or `replyTo`, `reply_to_guid`, or `message_guid`) to reply to an existing message. An optional non-negative integer `part_index` / `partIndex` selects that message's part and is invalid without a reply target.
+  When audio is true, imsg prepares a CAF/Opus voice message with macOS's built-in `afconvert` before dispatch. Invalid audio fails without sending; the original file is unchanged. See [native voice messages](attachments.md#native-voice-messages).
 - `send.multipart` sends 1–20 text parts. `parts` is a required array of objects containing a non-empty `text` string and optional `text_formatting` array. Top-level `effect` / `effect_id` and `subject` match `imsg send-multipart`. File, attachment, and mention parts are rejected before bridge dispatch.
 - `tapback` sends or removes a standard reaction. Params: `message_id` or `message_guid`, plus `reaction` / `kind` / `emoji`, optional `remove` and non-negative `part_index`. A `p:N/GUID` target selects its embedded part; the reference and native range always refer to that same part.
 - `message.edit` edits `message_id` / `message_guid` with `text`.
@@ -642,6 +643,10 @@ unobserved result is reported as delivery outcome unknown (`-32001`) and must
 not be retried automatically. Existing `send.rich` text/URL mode and
 `send.attachment` return `guid` / `message_id` and `chat_guid` when available.
 `send.multipart` additionally returns `parts_count`.
+
+### `group.setIcon`
+
+Updates the selected group's photo through the bridge. It accepts exactly one chat selector and an optional `file` path. Photo files are securely staged like other attachments: symlink components are rejected and the caller needs write access to Messages' attachment staging directory. Omitting `file` clears the photo without staging. A staging failure is reported as `not_started`, before bridge dispatch. See [group-photo requirements](bridge.md#message-and-chat-mutation).
 
 ### `handles.check`
 

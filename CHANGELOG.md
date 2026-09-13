@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Compatibility:** Securely stage group-photo files for CLI `chat-photo` and RPC `group.setIcon`, rejecting symlink paths before transfer; callers need write access to Messages' attachment staging directory, as with other attachments (#288, thanks @SebTardif).
+
+## 0.15.4 - 2026-09-11
+
+**Highlights:** Native voice messages that play inline in Messages.
+
+- Prepare native voice attachments as CAF/Opus for CLI `--audio` and RPC `send.attachment`, fixing unplayable `00:00` bubbles while preserving original files and ordinary attachment sends (#278, thanks @coletebou).
+- Update PhoneNumberKit to 5.0.9 with phone-number metadata 9.0.39.
+
 ## 0.15.3 - 2026-09-07
 
 **Highlights:** Reliable bridge ownership when multiple injected Messages instances overlap.

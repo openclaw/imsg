@@ -26,36 +26,6 @@ extension MessageStore {
       && columns.contains("associated_message_type")
   }
 
-  static func detectReactionColumns(connection: Connection) -> Bool {
-    let columns = (try? tableColumns(connection: connection, table: "message")) ?? []
-    return reactionColumnsPresent(in: columns)
-  }
-
-  static func detectThreadOriginatorGUIDColumn(connection: Connection) -> Bool {
-    return (try? tableColumns(connection: connection, table: "message"))?
-      .contains("thread_originator_guid") == true
-  }
-
-  static func detectAttributedBody(connection: Connection) -> Bool {
-    return (try? tableColumns(connection: connection, table: "message"))?
-      .contains("attributedbody") == true
-  }
-
-  static func detectDestinationCallerID(connection: Connection) -> Bool {
-    return (try? tableColumns(connection: connection, table: "message"))?
-      .contains("destination_caller_id") == true
-  }
-
-  static func detectAudioMessageColumn(connection: Connection) -> Bool {
-    return (try? tableColumns(connection: connection, table: "message"))?
-      .contains("is_audio_message") == true
-  }
-
-  static func detectAttachmentUserInfo(connection: Connection) -> Bool {
-    return (try? tableColumns(connection: connection, table: "attachment"))?
-      .contains("user_info") == true
-  }
-
   static func enhance(error: Error, path: String) -> Error {
     let message = String(describing: error).lowercased()
     if message.contains("out of memory (14)") || message.contains("authorization denied")
@@ -75,37 +45,6 @@ extension MessageStore {
     guard let value else { return Date(timeIntervalSince1970: MessageStore.appleEpochOffset) }
     return Date(
       timeIntervalSince1970: (Double(value) / 1_000_000_000) + MessageStore.appleEpochOffset)
-  }
-
-  func stringValue(_ binding: Binding?) -> String {
-    return binding as? String ?? ""
-  }
-
-  func int64Value(_ binding: Binding?) -> Int64? {
-    if let value = binding as? Int64 { return value }
-    if let value = binding as? Int { return Int64(value) }
-    if let value = binding as? Double { return Int64(value) }
-    return nil
-  }
-
-  func intValue(_ binding: Binding?) -> Int? {
-    if let value = binding as? Int { return value }
-    if let value = binding as? Int64 { return Int(value) }
-    if let value = binding as? Double { return Int(value) }
-    return nil
-  }
-
-  func boolValue(_ binding: Binding?) -> Bool {
-    if let value = binding as? Bool { return value }
-    if let value = intValue(binding) { return value != 0 }
-    return false
-  }
-
-  func dataValue(_ binding: Binding?) -> Data {
-    if let blob = binding as? Blob {
-      return Data(blob.bytes)
-    }
-    return Data()
   }
 
   func normalizeAssociatedGUID(_ guid: String) -> String {

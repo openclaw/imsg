@@ -128,7 +128,7 @@ public struct MessageSender {
     try Self.stageAttachment(at: path, destinationRoot: attachmentsSubdirectoryProvider())
   }
 
-  private static func stageAttachment(at path: String, destinationRoot: URL) throws -> String {
+  static func stageAttachment(at path: String, destinationRoot: URL) throws -> String {
     let sourcePath = SecurePath.absoluteLexicalPath(path)
     let sourceURL = URL(fileURLWithPath: sourcePath)
     let fileManager = FileManager.default

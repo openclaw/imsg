@@ -75,8 +75,34 @@ imsg send-attachment --chat 'iMessage;-;+15551234567' \
   --reply-to <messageGuid> --file ~/Desktop/photo.jpg
 ```
 
+### Native voice messages
+
+```bash
+imsg send-attachment --chat 'iMessage;-;+15551234567' \
+  --file ~/Desktop/speech.mp3 --audio
+```
+
+`--audio` sends a native voice message through the bridge. Before dispatch,
+imsg converts a securely staged copy to mono 24 kHz Opus in a CAF container,
+using macOS's built-in `/usr/bin/afconvert`. No ffmpeg installation is needed.
+This applies to macOS-supported audio inputs, including MP3, M4A, WAV and CAF;
+the input extension alone does not determine its codec. Invalid audio or failed
+conversion stops the send, without an AppleScript fallback.
+
+Setting the native audio-message flag on an ordinary MP3 is insufficient:
+Messages can show a `00:00` bubble that will not play inline even though the
+attachment contains valid audio. CAF/Opus preparation gives the native player
+the expected audio representation.
+
+The original file is unchanged. The prepared CAF follows the same staged-copy
+lifetime described above, because Messages may read it after bridge acknowledgment.
+Without `--audio`, audio files remain ordinary attachments and are not transcoded.
+RPC `send.attachment` uses the same preparation when `audio`, `is_audio` or
+`as_voice` is true. Native voice messages require the bridge; `--transport
+applescript` does not support them.
+
 ## Why not just copy or upload?
 
-The CLI's contract is "read what's there, send what you give it." Anything beyond that — bulk archival, cloud upload, format conversion at rest — is left to callers, who know their retention and privacy requirements. The conversion feature is the one exception, and only because some receive-side formats (CAF, animated GIF) are awkward for downstream tools to handle.
+The CLI's contract is "read what's there, send what you give it." Anything beyond that — bulk archival, cloud upload, format conversion at rest — is left to callers, who know their retention and privacy requirements. Conversion is limited to opt-in receive-side variants and the native voice-message representation requested by `--audio`; originals are never rewritten.
 
 If you want a full archive workflow, pipe `--attachments --json` through your own scripts and copy the files out of `~/Library/Messages/Attachments/` yourself.

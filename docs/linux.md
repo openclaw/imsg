@@ -69,7 +69,7 @@ avoid printing raw message output in CI logs.
 The Linux build requires Swift 6.2 or newer:
 
 ```bash
-git clone https://github.com/steipete/imsg.git
+git clone https://github.com/openclaw/imsg.git
 cd imsg
 scripts/generate-version.sh
 swift package resolve
@@ -84,7 +84,7 @@ GitHub release workflow.
 Once a release is tagged, install the archive like this:
 
 ```bash
-curl -LO https://github.com/steipete/imsg/releases/download/v0.8.0/imsg-linux-x86_64.tar.gz
+curl -LO https://github.com/openclaw/imsg/releases/latest/download/imsg-linux-x86_64.tar.gz
 tar -xzf imsg-linux-x86_64.tar.gz
 ./imsg chats --db ./chat.db --limit 5
 ```

@@ -65,7 +65,7 @@ Both `--text` and `--file` can be supplied together.
 
 Before handing the file to Messages, `imsg` stages it under `~/Library/Messages/Attachments/imsg/`. Messages reads attachments from there reliably across macOS versions; sending directly from `~/Desktop` or `~/Downloads` can hit sandbox-related send failures.
 
-Audio files (`.m4a`, `.caf`, `.aiff`, etc.) send the same way as any other file. Messages exposes them as audio messages on the receiving side.
+Audio files (`.m4a`, `.caf`, `.aiff`, etc.) send as ordinary attachments. For a native inline voice message, use bridge-backed [`send-attachment --audio`](attachments.md#native-voice-messages).
 
 ## Service selection
 

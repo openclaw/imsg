@@ -43,7 +43,7 @@ public struct MessageWatcherOverflowError: Error, Sendable, Equatable {
   }
 }
 
-public final class MessageWatcher: @unchecked Sendable {
+public final class MessageWatcher: Sendable {
   private let store: MessageStore
   private let didPoll: @Sendable () -> Void
 

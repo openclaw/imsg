@@ -4,8 +4,7 @@ import SQLite
 extension MessageStore {
   public func maxRowID() throws -> Int64 {
     return try withConnection { db in
-      let value = try db.scalar("SELECT MAX(ROWID) FROM message")
-      return int64Value(value) ?? 0
+      try db.scalar("SELECT MAX(ROWID) FROM message") as? Int64 ?? 0
     }
   }
 

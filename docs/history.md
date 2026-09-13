@@ -45,7 +45,7 @@ Match is on the message's `sender` (raw handle), not the resolved contact name. 
 
 ## Attachments
 
-`--attachments` adds an `attachments` array to each message containing filename, UTI, MIME type, byte count, and resolved on-disk path:
+JSON history always includes attachment metadata: filename, UTI, MIME type, byte count, and resolved on-disk path. `--attachments` also displays attachments in human-readable output:
 
 ```bash
 imsg history --chat-id 42 --attachments --json
@@ -126,8 +126,8 @@ imsg history --chat-id 42 --limit 5000 --json \
 
 ## Message object
 
-See [JSON output](json.md#message) for the canonical schema. Every history result has at minimum:
+See [JSON output](json.md#message) for the canonical schema. Core fields include:
 
-`id`, `chat_id`, `chat_identifier`, `chat_guid`, `chat_name`, `participants`, `is_group`, `guid`, `reply_to_guid`, `destination_caller_id`, `sender`, `sender_name`, `is_from_me`, `text`, `created_at`.
+`id`, `chat_id`, `chat_identifier`, `chat_guid`, `chat_name`, `participants`, `is_group`, `guid`, `sender`, `is_from_me`, `text`, `created_at`, and `attachments`.
 
-When `--attachments` is set, also: `attachments[]`. Native polls include `poll`. Reactions only appear in `watch --reactions` output.
+Optional fields such as `reply_to_guid`, `destination_caller_id`, and `sender_name` appear when available. Native polls include `poll`. Standalone reaction events appear in `watch --reactions`; history may include a `reactions` snapshot on the message they target.

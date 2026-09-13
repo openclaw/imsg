@@ -227,14 +227,7 @@ func rpcNamePhotoMethodsRequireNamedParamsAndChatTarget() async throws {
 
 @Test
 func injectedHelperUsesGuardedNamePhotoSelectorFamilies() throws {
-  let testFile = URL(fileURLWithPath: #filePath)
-  let repoRoot =
-    testFile
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
-  let source = try String(contentsOf: helper, encoding: .utf8)
+  let source = try injectedHelperSource()
 
   #expect(source.contains("should-offer-nickname-sharing"))
   #expect(source.contains("share-nickname"))
@@ -250,20 +243,20 @@ func injectedHelperUsesGuardedNamePhotoSelectorFamilies() throws {
   #expect(!source.contains("whitelistHandlesForNicknameSharing:forChat:"))
 
   let controllerBody = try #require(
-    objectiveCFunctionBody(named: "sharedNicknameController", in: source)
+    bridgeFunctionBody(named: "sharedNicknameController", in: source)
   )
   #expect(controllerBody.contains("@selector(sharedInstance)"))
   #expect(!controllerBody.contains("sharedController"))
 
   let senderBody = try #require(
-    objectiveCFunctionBody(named: "nicknameSenderHandleID", in: source)
+    bridgeFunctionBody(named: "nicknameSenderHandleID", in: source)
   )
   #expect(senderBody.contains("lastAddressedHandleID"))
   #expect(senderBody.contains("chat.account.loginIMHandle"))
   #expect(!senderBody.contains("activeIMessageAccount"))
 
   let statusBody = try #require(
-    objectiveCFunctionBody(named: "handleShouldOfferNicknameSharing", in: source)
+    bridgeFunctionBody(named: "handleShouldOfferNicknameSharing", in: source)
   )
   #expect(statusBody.contains("resolveChatByGuid(chatGuid)"))
   #expect(statusBody.contains("serviceNameForChat(chat, chatGuid)"))
@@ -281,7 +274,7 @@ func injectedHelperUsesGuardedNamePhotoSelectorFamilies() throws {
   #expect(!statusBody.contains(#"@"requested": @YES"#))
 
   let shareBody = try #require(
-    objectiveCFunctionBody(named: "handleShareNickname", in: source)
+    bridgeFunctionBody(named: "handleShareNickname", in: source)
   )
   #expect(shareBody.contains("resolveChatByGuid(chatGuid)"))
   #expect(shareBody.contains("serviceNameForChat(chat, chatGuid)"))
@@ -301,16 +294,9 @@ func injectedHelperUsesGuardedNamePhotoSelectorFamilies() throws {
 
 @Test
 func injectedHelperMaterializesHandleForNicknameLookup() throws {
-  let testFile = URL(fileURLWithPath: #filePath)
-  let repoRoot =
-    testFile
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
-  let source = try String(contentsOf: helper, encoding: .utf8)
+  let source = try injectedHelperSource()
   let lookupBody = try #require(
-    objectiveCFunctionBody(named: "handleGetNicknameInfo", in: source)
+    bridgeFunctionBody(named: "handleGetNicknameInfo", in: source)
   )
 
   #expect(lookupBody.contains("sharedNicknameController()"))
@@ -318,33 +304,4 @@ func injectedHelperMaterializesHandleForNicknameLookup() throws {
   #expect(lookupBody.contains("@selector(nicknameForHandle:), handle"))
   #expect(!lookupBody.contains("sharedController"))
   #expect(!lookupBody.contains("withObject:address"))
-}
-
-private func objectiveCFunctionBody(named name: String, in source: String) -> String? {
-  var searchStart = source.startIndex
-  while let nameRange = source.range(of: name, range: searchStart..<source.endIndex) {
-    guard let openBrace = source[nameRange.upperBound...].firstIndex(of: "{") else {
-      return nil
-    }
-    if let semicolon = source[nameRange.upperBound...].firstIndex(of: ";"), semicolon < openBrace {
-      searchStart = source.index(after: semicolon)
-      continue
-    }
-
-    var depth = 0
-    var index = openBrace
-    while index < source.endIndex {
-      if source[index] == "{" {
-        depth += 1
-      } else if source[index] == "}" {
-        depth -= 1
-        if depth == 0 {
-          return String(source[openBrace...index])
-        }
-      }
-      index = source.index(after: index)
-    }
-    return nil
-  }
-  return nil
 }
