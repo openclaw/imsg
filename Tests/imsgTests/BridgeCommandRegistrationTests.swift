@@ -28,15 +28,8 @@ func commandRouterIncludesAllBridgeCommands() {
 
 @Test
 func injectedHelperReportsAuthoritativeMultipartCapability() throws {
-  let testFile = URL(fileURLWithPath: #filePath)
-  let repoRoot =
-    testFile
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
-  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
-  let statusBody = try #require(functionBody(named: "handleStatus", in: source))
+  let source = stripObjectiveCComments(try injectedHelperSource())
+  let statusBody = try #require(bridgeFunctionBody(named: "handleStatus", in: source))
 
   #expect(statusBody.contains(#"@"sendMultipart": @(chatSend)"#))
 }
@@ -66,28 +59,21 @@ func bridgeMessagingCommandsExposeChatRequirement() throws {
 
 @Test
 func injectedHelperHardensRichLinkImageTransfer() throws {
-  let testFile = URL(fileURLWithPath: #filePath)
-  let repoRoot =
-    testFile
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
-  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
-  let sendBody = try #require(functionBody(named: "handleSendMessage", in: source))
-  let dispatchBody = try #require(functionBody(named: "dispatchAction", in: source))
+  let source = stripObjectiveCComments(try injectedHelperSource())
+  let sendBody = try #require(bridgeFunctionBody(named: "handleSendMessage", in: source))
+  let dispatchBody = try #require(bridgeFunctionBody(named: "dispatchAction", in: source))
   let actualHomeBody = try #require(
-    functionBody(named: "richLinkActualUserHomeDirectory", in: source))
+    bridgeFunctionBody(named: "richLinkActualUserHomeDirectory", in: source))
   let trustedRootBody = try #require(
-    functionBody(named: "trustedRichLinkStagingRoot", in: source))
+    bridgeFunctionBody(named: "trustedRichLinkStagingRoot", in: source))
   let secureOpenBody = try #require(
-    functionBody(named: "openRichLinkDirectorySecurely", in: source))
+    bridgeFunctionBody(named: "openRichLinkDirectorySecurely", in: source))
   let validateBody = try #require(
-    functionBody(named: "validateRichLinkPreviewImage", in: source))
+    bridgeFunctionBody(named: "validateRichLinkPreviewImage", in: source))
   let snapshotBody = try #require(
-    functionBody(named: "writeRichLinkPreviewSnapshot", in: source))
+    bridgeFunctionBody(named: "writeRichLinkPreviewSnapshot", in: source))
   let unregisteredBody = try #require(
-    functionBody(named: "prepareUnregisteredOutgoingTransfer", in: source))
+    bridgeFunctionBody(named: "prepareUnregisteredOutgoingTransfer", in: source))
 
   // Messages.app's sandbox home differs from the login user's home. Resolve
   // the staging root from the uid, verify that trusted root, then walk only
@@ -153,20 +139,13 @@ func injectedHelperHardensRichLinkImageTransfer() throws {
 
 @Test
 func injectedHelperPreservesCallerOwnedMessageGuid() throws {
-  let testFile = URL(fileURLWithPath: #filePath)
-  let repoRoot =
-    testFile
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
-  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
-  let statusBody = try #require(functionBody(named: "handleStatus", in: source))
-  let sendBody = try #require(functionBody(named: "handleSendMessage", in: source))
-  let reserveBody = try #require(functionBody(named: "reserveTrackedMessageGuid", in: source))
-  let v2Body = try #require(functionBody(named: "processV2Envelope", in: source))
-  let itemBody = try #require(functionBody(named: "constructIMMessageViaItem", in: source))
-  let buildBody = try #require(functionBody(named: "buildIMMessage", in: source))
+  let source = stripObjectiveCComments(try injectedHelperSource())
+  let statusBody = try #require(bridgeFunctionBody(named: "handleStatus", in: source))
+  let sendBody = try #require(bridgeFunctionBody(named: "handleSendMessage", in: source))
+  let reserveBody = try #require(bridgeFunctionBody(named: "reserveTrackedMessageGuid", in: source))
+  let v2Body = try #require(bridgeFunctionBody(named: "processV2Envelope", in: source))
+  let itemBody = try #require(bridgeFunctionBody(named: "constructIMMessageViaItem", in: source))
+  let buildBody = try #require(bridgeFunctionBody(named: "buildIMMessage", in: source))
 
   #expect(statusBody.contains(#"@"clientMessageGuid""#))
   #expect(statusBody.contains(#"@"clientMessageGuidReservation""#))
@@ -190,25 +169,18 @@ func injectedHelperPreservesCallerOwnedMessageGuid() throws {
 
 @Test
 func injectedHelperFindsNestedThreadReplyItems() throws {
-  let testFile = URL(fileURLWithPath: #filePath)
-  let repoRoot =
-    testFile
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
-  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
+  let source = stripObjectiveCComments(try injectedHelperSource())
   let recursiveBody = try #require(
-    functionBody(named: "findMessageItemInObject", in: source)
+    bridgeFunctionBody(named: "findMessageItemInObject", in: source)
   )
   let normalizationBody = try #require(
-    functionBody(named: "normalizeFoundMessageItemWithChatContext", in: source)
+    bridgeFunctionBody(named: "normalizeFoundMessageItemWithChatContext", in: source)
   )
   let safeSelectorBody = try #require(
-    functionBody(named: "safelyReadObjectSelector", in: source)
+    bridgeFunctionBody(named: "safelyReadObjectSelector", in: source)
   )
   let lookupBody = try #require(
-    functionBody(named: "findMessageItem", in: source)
+    bridgeFunctionBody(named: "findMessageItem", in: source)
   )
 
   #expect(recursiveBody.contains("depth > 8"))
@@ -234,17 +206,10 @@ func injectedHelperFindsNestedThreadReplyItems() throws {
 
 @Test
 func bridgeReplySendsKeepAssociatedMessageFallback() throws {
-  let testFile = URL(fileURLWithPath: #filePath)
-  let repoRoot =
-    testFile
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
-  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
+  let source = stripObjectiveCComments(try injectedHelperSource())
 
   for function in ["handleSendMessage", "handleSendMultipart", "handleSendAttachment"] {
-    let body = try #require(functionBody(named: function, in: source))
+    let body = try #require(bridgeFunctionBody(named: function, in: source))
     #expect(body.contains("selectedMessageGuid.length ? 100 : 0"))
     #expect(body.contains("selectedMessageGuid"))
     #expect(body.contains("associatedType"))
@@ -253,17 +218,10 @@ func bridgeReplySendsKeepAssociatedMessageFallback() throws {
 
 @Test
 func bridgeV2InboxClaimsRequestBeforeDispatch() throws {
-  let testFile = URL(fileURLWithPath: #filePath)
-  let repoRoot =
-    testFile
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
-  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
-  let processBody = try #require(functionBody(named: "processV2InboxFile", in: source))
-  let cleanupBody = try #require(functionBody(named: "cleanupOrphanedV2Claims", in: source))
-  let scanBody = try #require(functionBody(named: "scanV2Inbox", in: source))
+  let source = stripObjectiveCComments(try injectedHelperSource())
+  let processBody = try #require(bridgeFunctionBody(named: "processV2InboxFile", in: source))
+  let cleanupBody = try #require(bridgeFunctionBody(named: "cleanupOrphanedV2Claims", in: source))
+  let scanBody = try #require(bridgeFunctionBody(named: "scanV2Inbox", in: source))
   let claim = try #require(
     processBody.range(of: "rename(inPath.UTF8String, claimPath.UTF8String)"))
   let read = try #require(
@@ -284,16 +242,9 @@ func bridgeV2InboxClaimsRequestBeforeDispatch() throws {
 
 @Test
 func injectedHelperWiresNativePollSend() throws {
-  let testFile = URL(fileURLWithPath: #filePath)
-  let repoRoot =
-    testFile
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
-  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
-  let sendPollBody = try #require(functionBody(named: "handleSendPoll", in: source))
-  let buildPollBody = try #require(functionBody(named: "buildPollIMMessage", in: source))
+  let source = stripObjectiveCComments(try injectedHelperSource())
+  let sendPollBody = try #require(bridgeFunctionBody(named: "handleSendPoll", in: source))
+  let buildPollBody = try #require(bridgeFunctionBody(named: "buildPollIMMessage", in: source))
 
   #expect(source.contains("send-poll"))
   #expect(source.contains("com.apple.messages.Polls"))
@@ -334,17 +285,10 @@ func injectedHelperWiresNativePollSend() throws {
 
 @Test
 func injectedHelperBroadcastsFailClosedNativePollVoteMetadata() throws {
-  let testFile = URL(fileURLWithPath: #filePath)
-  let repoRoot =
-    testFile
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
-  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
-  let voteBody = try #require(functionBody(named: "buildPollVoteIMMessage", in: source))
+  let source = stripObjectiveCComments(try injectedHelperSource())
+  let voteBody = try #require(bridgeFunctionBody(named: "buildPollVoteIMMessage", in: source))
   let sendVoteBody = try #require(
-    functionBody(named: "handleSendPollVoteMutation", in: source))
+    bridgeFunctionBody(named: "handleSendPollVoteMutation", in: source))
 
   #expect(source.contains("send-poll-vote"))
   #expect(source.contains("send-poll-unvote"))
@@ -376,15 +320,8 @@ func injectedHelperBroadcastsFailClosedNativePollVoteMetadata() throws {
 
 @Test
 func injectedHelperFallsBackToMacOS26ChatRemovalSelector() throws {
-  let testFile = URL(fileURLWithPath: #filePath)
-  let repoRoot =
-    testFile
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
-  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
-  let deleteBody = try #require(functionBody(named: "handleDeleteChat", in: source))
+  let source = stripObjectiveCComments(try injectedHelperSource())
+  let deleteBody = try #require(bridgeFunctionBody(named: "handleDeleteChat", in: source))
 
   #expect(source.contains(#"@"deleteChat""#))
   #expect(source.contains(#"@"removeChat""#))
@@ -395,19 +332,12 @@ func injectedHelperFallsBackToMacOS26ChatRemovalSelector() throws {
 
 @Test
 func injectedHelperConstructorOnlySchedulesDelayedBootstrap() throws {
-  let testFile = URL(fileURLWithPath: #filePath)
-  let repoRoot =
-    testFile
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
-  let source = stripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
-  let constructorBody = try #require(functionBody(named: "injectedInit", in: source))
-  let bootstrapBody = try #require(functionBody(named: "bridgeBootstrap", in: source))
-  let claimBody = try #require(functionBody(named: "bridgeClaimOwnership", in: source))
-  let activateBody = try #require(functionBody(named: "bridgeActivate", in: source))
-  let cleanupBody = try #require(functionBody(named: "injectedCleanup", in: source))
+  let source = stripObjectiveCComments(try injectedHelperSource())
+  let constructorBody = try #require(bridgeFunctionBody(named: "injectedInit", in: source))
+  let bootstrapBody = try #require(bridgeFunctionBody(named: "bridgeBootstrap", in: source))
+  let claimBody = try #require(bridgeFunctionBody(named: "bridgeClaimOwnership", in: source))
+  let activateBody = try #require(bridgeFunctionBody(named: "bridgeActivate", in: source))
+  let cleanupBody = try #require(bridgeFunctionBody(named: "injectedCleanup", in: source))
   let bundleGuard = try #require(bootstrapBody.range(of: "com.apple.MobileSMS"))
   let initializePaths = try #require(bootstrapBody.range(of: "initFilePaths()"))
   let acquireOwnership = try #require(claimBody.range(of: "acquireBridgeOwnership("))
@@ -447,69 +377,6 @@ func injectedHelperConstructorOnlySchedulesDelayedBootstrap() throws {
   #expect(activateBody.contains("registerEventObservers()"))
   #expect(cleanupBody.contains("if (!bridgeDidBootstrap) return;"))
   #expect(cleanupBody.contains("releaseBridgeOwnership();"))
-}
-
-private func stripObjectiveCComments(_ source: String) -> String {
-  source
-    .replacingOccurrences(of: #"/\*[\s\S]*?\*/"#, with: "", options: .regularExpression)
-    .replacingOccurrences(of: #"//.*"#, with: "", options: .regularExpression)
-}
-
-private func functionBody(named name: String, in source: String) -> String? {
-  var searchStart = source.startIndex
-  while searchStart < source.endIndex,
-    let nameRange = source.range(
-      of: name,
-      range: searchStart..<source.endIndex)
-  {
-    searchStart = nameRange.upperBound
-    guard let openParenthesis = source[nameRange.upperBound...].firstIndex(of: "(") else {
-      return nil
-    }
-    guard source[nameRange.upperBound..<openParenthesis].allSatisfy(\.isWhitespace) else {
-      continue
-    }
-
-    var parenthesisDepth = 0
-    var index = openParenthesis
-    var closeParenthesis: String.Index?
-    while index < source.endIndex {
-      if source[index] == "(" {
-        parenthesisDepth += 1
-      } else if source[index] == ")" {
-        parenthesisDepth -= 1
-        if parenthesisDepth == 0 {
-          closeParenthesis = index
-          break
-        }
-      }
-      index = source.index(after: index)
-    }
-    guard let closeParenthesis else { return nil }
-
-    index = source.index(after: closeParenthesis)
-    while index < source.endIndex, source[index].isWhitespace {
-      index = source.index(after: index)
-    }
-    guard index < source.endIndex, source[index] == "{" else {
-      continue
-    }
-
-    let openBrace = index
-    var braceDepth = 0
-    while index < source.endIndex {
-      if source[index] == "{" {
-        braceDepth += 1
-      } else if source[index] == "}" {
-        braceDepth -= 1
-        if braceDepth == 0 {
-          return String(source[openBrace...index])
-        }
-      }
-      index = source.index(after: index)
-    }
-  }
-  return nil
 }
 
 @Test

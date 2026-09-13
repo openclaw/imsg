@@ -142,14 +142,7 @@ func sendRichURLUsesPreparedMessageBridgePreviewDescriptor() async throws {
 
 @Test
 func injectedHelperWiresURLPreviewBalloonSend() throws {
-  let testFile = URL(fileURLWithPath: #filePath)
-  let repoRoot =
-    testFile
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
-  let source = try String(contentsOf: helper, encoding: .utf8)
+  let source = try injectedHelperSource()
 
   #expect(source.contains("com.apple.messages.URLBalloonProvider"))
   #expect(source.contains("buildURLPreviewPayloadData"))

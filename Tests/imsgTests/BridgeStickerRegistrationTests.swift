@@ -3,14 +3,14 @@ import Testing
 
 @Test
 func injectedHelperWiresStickerSendAction() throws {
-  let source = try stickerBridgeSource()
-  let sendStickerBody = try #require(stickerFunctionBody(named: "handleSendSticker", in: source))
+  let source = stripObjectiveCComments(try injectedHelperSource())
+  let sendStickerBody = try #require(bridgeFunctionBody(named: "handleSendSticker", in: source))
   let secureOpenBody = try #require(
-    stickerFunctionBody(named: "openUserOwnedDirectorySecurely", in: source))
+    bridgeFunctionBody(named: "openUserOwnedDirectorySecurely", in: source))
   let cleanupBody = try #require(
-    stickerFunctionBody(named: "cleanupPreparedStickerPaths", in: source))
+    bridgeFunctionBody(named: "cleanupPreparedStickerPaths", in: source))
   let resolveChatBody = try #require(
-    stickerFunctionBody(named: "resolveChatByGuid", in: source))
+    bridgeFunctionBody(named: "resolveChatByGuid", in: source))
 
   #expect(source.contains("send-sticker"))
   #expect(source.contains("markTransferAsSticker"))
@@ -53,11 +53,11 @@ func injectedHelperWiresStickerSendAction() throws {
 
 @Test
 func bridgeAttachmentStagingUsesChatGuid() throws {
-  let source = try stickerBridgeSource()
+  let source = stripObjectiveCComments(try injectedHelperSource())
   let prepareBody = try #require(
-    stickerFunctionBody(named: "prepareOutgoingTransfer", in: source))
+    bridgeFunctionBody(named: "prepareOutgoingTransfer", in: source))
   let sendAttachmentBody = try #require(
-    stickerFunctionBody(named: "handleSendAttachment", in: source))
+    bridgeFunctionBody(named: "handleSendAttachment", in: source))
 
   #expect(source.contains("IMsgOutgoingTransferKind transferKind"))
   #expect(source.contains("NSDictionary *transferMetadata"))
@@ -71,46 +71,4 @@ func bridgeAttachmentStagingUsesChatGuid() throws {
   #expect(prepareBody.contains("pathIsWithinRoot(persistentPath"))
   #expect(prepareBody.contains("transferKind != IMsgOutgoingTransferKindSticker || retargeted"))
   #expect(sendAttachmentBody.contains("IMsgOutgoingTransferKindAttachment"))
-}
-
-private func stickerBridgeSource() throws -> String {
-  let testFile = URL(fileURLWithPath: #filePath)
-  let repoRoot =
-    testFile
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-  let helper = repoRoot.appendingPathComponent("Sources/IMsgHelper/IMsgInjected.m")
-  return stickerStripObjectiveCComments(try String(contentsOf: helper, encoding: .utf8))
-}
-
-private func stickerStripObjectiveCComments(_ source: String) -> String {
-  source.replacingOccurrences(
-    of: #"/\*[\s\S]*?\*/|//[^\n]*"#,
-    with: "",
-    options: .regularExpression)
-}
-
-private func stickerFunctionBody(named name: String, in source: String) -> String? {
-  var searchStart = source.startIndex
-  while let nameRange = source.range(of: name, range: searchStart..<source.endIndex) {
-    let suffix = source[nameRange.upperBound...]
-    guard let openBrace = suffix.firstIndex(of: "{") else { return nil }
-    if let semicolon = suffix.firstIndex(of: ";"), semicolon < openBrace {
-      searchStart = nameRange.upperBound
-      continue
-    }
-    var depth = 0
-    var index = openBrace
-    while index < source.endIndex {
-      if source[index] == "{" { depth += 1 }
-      if source[index] == "}" {
-        depth -= 1
-        if depth == 0 { return String(source[openBrace...index]) }
-      }
-      index = source.index(after: index)
-    }
-    return nil
-  }
-  return nil
 }
