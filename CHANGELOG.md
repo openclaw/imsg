@@ -3,6 +3,7 @@
 ## Unreleased
 
 - **Compatibility:** Securely stage group-photo files for CLI `chat-photo` and RPC `group.setIcon`, rejecting symlink paths before transfer; callers need write access to Messages' attachment staging directory, as with other attachments (#288, thanks @SebTardif).
+- Fix CLI and RPC date filters crashing on valid distant dates such as year 9999; compare out-of-range bounds correctly instead of overflowing the database timestamp representation.
 
 ## 0.15.4 - 2026-09-11
 

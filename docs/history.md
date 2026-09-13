@@ -23,7 +23,9 @@ imsg history --chat-id 42 \
   --json
 ```
 
-Both bounds accept ISO 8601 with explicit timezone. Either bound is optional:
+Both bounds accept ISO 8601 with explicit timezone. Either bound is optional.
+
+Dates outside the range of Messages' integer timestamps remain valid query bounds. For example, an end date in year 9999 includes all stored dates, while a start date in that year returns no messages.
 
 ```bash
 # Everything since May 1st.

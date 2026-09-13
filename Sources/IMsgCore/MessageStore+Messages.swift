@@ -18,7 +18,7 @@ extension MessageStore {
 
     return try withConnection { db in
       while true {
-        let query = ChatMessagesQuery(
+        let query = try ChatMessagesQuery(
           store: self,
           chatID: ChatID(rawValue: chatID),
           limit: physicalLimit,
@@ -259,7 +259,7 @@ extension MessageStore {
   {
     guard !text.isEmpty else { return nil }
 
-    let query = LatestSentMessageQuery(
+    let query = try LatestSentMessageQuery(
       store: self,
       text: text,
       chatID: chatID.map { ChatID(rawValue: $0) },

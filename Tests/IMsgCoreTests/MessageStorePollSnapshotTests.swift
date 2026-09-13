@@ -15,7 +15,7 @@ func messageRowSelectionGatesPollPayloadBlobs() throws {
   try MessageDatabaseFixture.createSchema(db, options: options)
 
   let store = try MessageStore(connection: db, path: ":memory:")
-  let query = ChatMessagesQuery(
+  let query = try ChatMessagesQuery(
     store: store,
     chatID: ChatID(rawValue: 1),
     limit: 10,

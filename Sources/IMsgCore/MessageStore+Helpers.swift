@@ -36,9 +36,16 @@ extension MessageStore {
     return error
   }
 
-  static func appleEpoch(_ date: Date) -> Int64 {
+  static func appleEpoch(_ date: Date) throws -> Binding {
     let seconds = date.timeIntervalSince1970 - MessageStore.appleEpochOffset
-    return Int64(seconds * 1_000_000_000)
+    let nanoseconds = (seconds * 1_000_000_000).rounded(.towardZero)
+    guard nanoseconds.isFinite else {
+      throw IMsgError.invalidISODate("non-finite timestamp")
+    }
+    if let integer = Int64(exactly: nanoseconds) { return integer }
+    // SQLite can compare a REAL bound beyond its INTEGER range without clipping
+    // a valid date or accidentally including a row at Int64.min/max.
+    return nanoseconds
   }
 
   func appleDate(from value: Int64?) -> Date {
