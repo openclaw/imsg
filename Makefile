@@ -46,8 +46,6 @@ endif
 
 build:
 	scripts/generate-version.sh
-	swift package resolve
-	scripts/patch-deps.sh
 	scripts/build-universal.sh
 
 # Build injectable dylib for Messages.app (DYLD_INSERT_LIBRARIES).
@@ -56,7 +54,7 @@ build:
 build-dylib:
 	@echo "Building imsg-bridge-helper.dylib (injectable)..."
 	@mkdir -p .build/release
-	@clang -dynamiclib -arch arm64e -fobjc-arc \
+	@clang -dynamiclib -arch arm64e -mmacosx-version-min=14.0 -fobjc-arc \
 		-Wno-arc-performSelector-leaks \
 		-install_name @rpath/imsg-bridge-helper.dylib \
 		-framework Foundation \

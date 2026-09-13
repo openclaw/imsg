@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Fix CLI and RPC date filters crashing on valid distant dates such as year 9999; compare out-of-range bounds correctly instead of overflowing the database timestamp representation.
+- Fix release executables crashing on phone metadata lookup through symlinks by applying resource patches to each architecture's actual dependency checkout.
+- Build the injected helper for the declared macOS 14 minimum instead of inheriting the build host's deployment target.
 
 ## 0.15.4 - 2026-09-11
 

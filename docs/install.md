@@ -34,6 +34,8 @@ make build
 
 `make build` runs the universal release build through Swift Package Manager and applies the required SQLite.swift and PhoneNumberKit resource patches. The binary lands at `bin/imsg`.
 
+Each architecture's dependency checkout is patched before compilation. Keep the generated resource bundles beside the executable when installing it elsewhere; invoking that executable through a symlink is supported. The CLI and helper both target macOS 14 or newer.
+
 For day-to-day development:
 
 ```bash

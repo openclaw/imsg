@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SQLITE_PACKAGE=".build/checkouts/SQLite.swift/Package.swift"
-PHONE_NUMBER_BUNDLE=".build/checkouts/PhoneNumberKit/Sources/PhoneNumberKit/Bundle+Resources.swift"
+SCRATCH_PATH="${1:-.build}"
+SQLITE_PACKAGE="$SCRATCH_PATH/checkouts/SQLite.swift/Package.swift"
+PHONE_NUMBER_BUNDLE="$SCRATCH_PATH/checkouts/PhoneNumberKit/Sources/PhoneNumberKit/Bundle+Resources.swift"
 
 # Try python3, then python, then fail
 if command -v python3 >/dev/null 2>&1; then
@@ -16,10 +17,11 @@ fi
 
 if [[ -f "$SQLITE_PACKAGE" ]]; then
   chmod u+w "$SQLITE_PACKAGE" || true
-  $PYTHON_BIN - <<'PY'
+  SQLITE_PACKAGE="$SQLITE_PACKAGE" "$PYTHON_BIN" - <<'PY'
+import os
 import sys
 from pathlib import Path
-path = Path('.build/checkouts/SQLite.swift/Package.swift')
+path = Path(os.environ["SQLITE_PACKAGE"])
 text = path.read_text()
 if 'PrivacyInfo.xcprivacy' in text:
     raise SystemExit(0)
@@ -38,7 +40,7 @@ if [[ ! -f "$PHONE_NUMBER_BUNDLE" ]]; then
 fi
 
 chmod u+w "$PHONE_NUMBER_BUNDLE" || true
-PHONE_NUMBER_BUNDLE="$PHONE_NUMBER_BUNDLE" $PYTHON_BIN - <<'PY'
+PHONE_NUMBER_BUNDLE="$PHONE_NUMBER_BUNDLE" "$PYTHON_BIN" - <<'PY'
 import os
 import sys
 from pathlib import Path

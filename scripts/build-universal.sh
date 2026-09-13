@@ -21,6 +21,8 @@ BINARIES=()
 PRODUCT_DIRS=()
 for ARCH in "${ARCH_LIST[@]}"; do
   SCRATCH_PATH="${SWIFT_SCRATCH_ROOT}/${ARCH}"
+  swift package --scratch-path "$SCRATCH_PATH" resolve
+  "$ROOT/scripts/patch-deps.sh" "$SCRATCH_PATH"
   swift build -c "$BUILD_MODE" --product "$APP_NAME" --arch "$ARCH" \
     --scratch-path "$SCRATCH_PATH"
   PRODUCT_DIR=$(swift build -c "$BUILD_MODE" --arch "$ARCH" \
@@ -37,7 +39,7 @@ HELPER_CLANG_ARCH_ARGS=()
 for ARCH in "${HELPER_ARCH_LIST[@]}"; do
   HELPER_CLANG_ARCH_ARGS+=("-arch" "$ARCH")
 done
-clang -dynamiclib "${HELPER_CLANG_ARCH_ARGS[@]}" -fobjc-arc \
+clang -dynamiclib "${HELPER_CLANG_ARCH_ARGS[@]}" -mmacosx-version-min=14.0 -fobjc-arc \
   -Wno-arc-performSelector-leaks \
   -install_name "@rpath/${HELPER_NAME}" \
   -framework Foundation \
