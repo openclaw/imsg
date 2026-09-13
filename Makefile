@@ -17,8 +17,8 @@ format:
 	swift format --in-place --recursive Sources Tests TestsLinux
 
 lint:
-	swift format lint --recursive Sources Tests TestsLinux
-	swiftlint
+	swift format lint --strict --recursive Sources Tests TestsLinux
+	swiftlint --strict
 
 test:
 	node --test scripts/build-docs-site.test.mjs
