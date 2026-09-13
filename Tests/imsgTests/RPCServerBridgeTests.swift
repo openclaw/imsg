@@ -198,7 +198,8 @@ func rpcSendThreadsTextFormattingToBridge() async throws {
 
   // The OpenClaw gateway emits format ranges under the bare `formatting` key.
   let line = #"""
-    {"jsonrpc":"2.0","id":"3fmt","method":"send","params":{"to":"+123","text":"hello world","formatting":[{"start":0,"length":5,"styles":["bold"]}]}}
+    {"jsonrpc":"2.0","id":"3fmt","method":"send",
+    "params":{"to":"+123","text":"hello world","formatting":[{"start":0,"length":5,"styles":["bold"]}]}}
     """#
   await server.handleLineForTesting(line)
 
