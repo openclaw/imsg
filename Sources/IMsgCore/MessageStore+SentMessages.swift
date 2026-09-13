@@ -158,7 +158,7 @@ extension MessageStore {
       ORDER BY m.date DESC, m.ROWID DESC
       LIMIT 1
       """
-    let bindings: [Binding?] = [MessageStore.appleEpoch(date)] + candidates
+    let bindings: [Binding?] = [try MessageStore.appleEpoch(date)] + candidates
     return try withConnection { db in
       let rows = try db.prepareRowIterator(sql, bindings: bindings)
       guard let row = try rows.failableNext() else { return nil }

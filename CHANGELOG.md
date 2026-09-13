@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix CLI and RPC date filters crashing on valid distant dates such as year 9999; compare out-of-range bounds correctly instead of overflowing the database timestamp representation.
+
 ## 0.15.4 - 2026-09-11
 
 **Highlights:** Native voice messages that play inline in Messages.

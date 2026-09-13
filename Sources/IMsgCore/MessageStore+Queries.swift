@@ -15,7 +15,7 @@ struct ChatMessagesQuery {
   let selection: MessageRowSelection
   let fallbackChatID: Int64
 
-  init(store: MessageStore, chatID: ChatID, limit: Int, filter: MessageFilter?) {
+  init(store: MessageStore, chatID: ChatID, limit: Int, filter: MessageFilter?) throws {
     self.selection = MessageRowSelection(store: store)
     let destinationCallerColumn =
       store.schema.hasDestinationCallerID ? "m.destination_caller_id" : "NULL"
@@ -35,11 +35,11 @@ struct ChatMessagesQuery {
     if let filter {
       if let startDate = filter.startDate {
         sql += " AND m.date >= ?"
-        bindings.append(MessageStore.appleEpoch(startDate))
+        bindings.append(try MessageStore.appleEpoch(startDate))
       }
       if let endDate = filter.endDate {
         sql += " AND m.date < ?"
-        bindings.append(MessageStore.appleEpoch(endDate))
+        bindings.append(try MessageStore.appleEpoch(endDate))
       }
       if !filter.participants.isEmpty {
         let placeholders = Array(repeating: "?", count: filter.participants.count).joined(
@@ -110,7 +110,7 @@ struct LatestSentMessageQuery {
   let selection: MessageRowSelection
   let fallbackChatID: Int64?
 
-  init(store: MessageStore, text: String, chatID: ChatID?, since date: Date) {
+  init(store: MessageStore, text: String, chatID: ChatID?, since date: Date) throws {
     self.selection = MessageRowSelection(
       store: store, chatIDColumn: chatID == nil ? MessageRowSelection.canonicalChatID : nil)
     let bodyColumn = store.schema.hasAttributedBody ? "m.attributedBody" : "NULL"
@@ -126,7 +126,7 @@ struct LatestSentMessageQuery {
           OR (IFNULL(m.text, '') = '' AND \(bodyColumn) IS NOT NULL)
         )
       """
-    var bindings: [Binding?] = [MessageStore.appleEpoch(date), text]
+    var bindings: [Binding?] = [try MessageStore.appleEpoch(date), text]
     if let chatID {
       sql += " AND cmj.chat_id = ?"
       bindings.append(chatID.rawValue)

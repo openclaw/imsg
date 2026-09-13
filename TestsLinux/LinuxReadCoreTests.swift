@@ -215,3 +215,16 @@ func linuxReactionSnapshotsPreserveDatabaseOrder(equalDates: Bool) throws {
   #expect(try store.reactions(for: 1).isEmpty)
   #expect(try store.reactions(for: store.messages(chatID: 1, limit: 10))[1]?.isEmpty == true)
 }
+
+@Test(arguments: ["0001-01-01T00:00:00Z", "9999-01-01T00:00:00Z"])
+func linuxHistoryComparesDistantDateBounds(iso: String) throws {
+  let databaseURL = try makeTemporaryDatabase()
+  defer { try? FileManager.default.removeItem(at: databaseURL.deletingLastPathComponent()) }
+  try seedDatabase(at: databaseURL)
+  let store = try MessageStore(path: databaseURL.path)
+  let start = try MessageFilter.fromISO(participants: [], startISO: iso, endISO: nil)
+  let end = try MessageFilter.fromISO(participants: [], startISO: nil, endISO: iso)
+  let distantPast = iso.hasPrefix("0001")
+  #expect(try store.messages(chatID: 1, limit: 10, filter: start).count == (distantPast ? 2 : 0))
+  #expect(try store.messages(chatID: 1, limit: 10, filter: end).count == (distantPast ? 0 : 2))
+}
