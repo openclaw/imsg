@@ -77,37 +77,6 @@ extension MessageStore {
       timeIntervalSince1970: (Double(value) / 1_000_000_000) + MessageStore.appleEpochOffset)
   }
 
-  func stringValue(_ binding: Binding?) -> String {
-    return binding as? String ?? ""
-  }
-
-  func int64Value(_ binding: Binding?) -> Int64? {
-    if let value = binding as? Int64 { return value }
-    if let value = binding as? Int { return Int64(value) }
-    if let value = binding as? Double { return Int64(value) }
-    return nil
-  }
-
-  func intValue(_ binding: Binding?) -> Int? {
-    if let value = binding as? Int { return value }
-    if let value = binding as? Int64 { return Int(value) }
-    if let value = binding as? Double { return Int(value) }
-    return nil
-  }
-
-  func boolValue(_ binding: Binding?) -> Bool {
-    if let value = binding as? Bool { return value }
-    if let value = intValue(binding) { return value != 0 }
-    return false
-  }
-
-  func dataValue(_ binding: Binding?) -> Data {
-    if let blob = binding as? Blob {
-      return Data(blob.bytes)
-    }
-    return Data()
-  }
-
   func normalizeAssociatedGUID(_ guid: String) -> String {
     guard !guid.isEmpty else { return "" }
     guard let slash = guid.lastIndex(of: "/") else { return guid }
