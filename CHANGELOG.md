@@ -1,10 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.15.5 - 2026-09-14
 
-- **Compatibility:** Securely stage group-photo files for CLI `chat-photo` and RPC `group.setIcon`, rejecting symlink paths before transfer; callers need write access to Messages' attachment staging directory, as with other attachments (#288, thanks @SebTardif).
-- Fix CLI and RPC date filters crashing on valid distant dates such as year 9999; compare out-of-range bounds correctly instead of overflowing the database timestamp representation.
+**Highlights:** Release executables no longer crash on phone metadata lookups through symlinks, distant date filters no longer crash, and group-photo staging is secure (thanks @SebTardif).
+
 - Fix release executables crashing on phone metadata lookup through symlinks by applying resource patches to each architecture's actual dependency checkout.
+- Fix CLI and RPC date filters crashing on valid distant dates such as year 9999; compare out-of-range bounds correctly instead of overflowing the database timestamp representation.
+- **Compatibility:** Securely stage group-photo files for CLI `chat-photo` and RPC `group.setIcon`, rejecting symlink paths before transfer; callers need write access to Messages' attachment staging directory, as with other attachments (#288, thanks @SebTardif).
 - Build the injected helper for the declared macOS 14 minimum instead of inheriting the build host's deployment target.
 
 ## 0.15.4 - 2026-09-11
