@@ -141,6 +141,11 @@ import Foundation
       return response["helper_version"] as? String
     }
 
+    /// Preserve the no-argument callable API for existing library clients.
+    public func ensureRunning() throws {
+      try ensureRunning(expectedHelperVersion: nil, force: false)
+    }
+
     /// Ensure Messages.app is running with our dylib injected. When the
     /// running helper predates the expected version (nil = any ready helper
     /// qualifies), it is killed and relaunched under the launch lock. Pass
@@ -394,6 +399,10 @@ import Foundation
         return .enabled
       }
       return .unknown(output)
+    }
+
+    public func ensureRunning() async throws {
+      try await ensureRunning(expectedHelperVersion: nil, force: false)
     }
 
     public func ensureRunning(

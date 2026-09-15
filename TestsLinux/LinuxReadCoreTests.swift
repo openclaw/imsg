@@ -6,6 +6,14 @@ import Testing
 @testable import imsg
 
 @Test
+func launcherPreservesNoArgumentFunctionReferences() {
+  let synchronous: () throws -> Void = MessagesLauncher.shared.ensureRunning
+  let asynchronous: () async throws -> Void = MessagesLauncher.shared.ensureRunning
+  _ = synchronous
+  _ = asynchronous
+}
+
+@Test
 func bridgeResponseRejectsOversizedJSONID() throws {
   let data = Data(#"{"id":1e100,"success":true}"#.utf8)
   let raw = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])

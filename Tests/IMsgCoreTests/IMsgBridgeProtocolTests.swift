@@ -181,4 +181,12 @@ struct IMsgBridgeProtocolTests {
     _ = defaultTimeoutSend
     _ = explicitTimeoutSend
   }
+
+  @Test
+  func messagesLauncherPreservesNoArgumentFunctionReferences() {
+    let synchronous: () throws -> Void = MessagesLauncher.shared.ensureRunning
+    let asynchronous: () async throws -> Void = MessagesLauncher.shared.ensureRunning
+    _ = synchronous
+    _ = asynchronous
+  }
 }

@@ -72,6 +72,10 @@ checks and replacement share the launch lock, so concurrent launches reuse the
 first caller's updated helper. Standalone `make build-dylib` builds generate
 the helper and CLI version markers from `version.env` before compilation.
 
+Library clients can still call or store the synchronous and asynchronous
+`MessagesLauncher.ensureRunning()` methods as no-argument functions. The
+version-aware overloads also accept `expectedHelperVersion` and `force`.
+
 `imsg status` shows the running helper version and warns on a mismatch.
 JSON output includes `helper_version` when reported and
 `helper_version_mismatch` when it differs from the CLI or a successful probe

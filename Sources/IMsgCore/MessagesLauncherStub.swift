@@ -16,6 +16,10 @@
     public func hasReadyLockFile() -> Bool { false }
     public func isInjectedAndReady() -> Bool { false }
 
+    public func ensureRunning() throws {
+      try ensureRunning(expectedHelperVersion: nil, force: false)
+    }
+
     public func ensureRunning(
       expectedHelperVersion: String? = nil,
       force: Bool = false
@@ -23,6 +27,10 @@
       _ = expectedHelperVersion
       _ = force
       throw MessagesLauncherError.launchFailed("Messages.app is only available on macOS.")
+    }
+
+    public func ensureRunning() async throws {
+      try await ensureRunning(expectedHelperVersion: nil, force: false)
     }
 
     public func ensureRunning(
