@@ -198,7 +198,10 @@ public struct BridgeResponse {
     } else if let i = raw["id"] as? Int {
       id = String(i)
     } else if let d = raw["id"] as? Double {
-      id = String(Int(d))
+      guard let integer = Int(exactly: d) else {
+        throw IMsgBridgeError.malformedResponse("id must be a representable integer")
+      }
+      id = String(integer)
     } else {
       id = ""
     }

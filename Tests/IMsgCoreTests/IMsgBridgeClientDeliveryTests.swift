@@ -5,6 +5,23 @@ import Testing
 
 extension IMsgBridgeClientQueueTests {
   @Test
+  func malformedResponseIDPreservesUncertainDelivery() async throws {
+    let harness = try BridgeClientHarness()
+    defer { harness.remove() }
+    let client = harness.client { publication in
+      let data = Data(#"{"v":2,"id":1e100,"success":true}"#.utf8)
+      try? data.write(to: URL(fileURLWithPath: publication.responsePath))
+    }
+
+    let failure = try await deliveryFailure {
+      try await client.invoke(action: .sendMessage, timeout: 1)
+    }
+    #expect(failure.disposition == .mayHaveCompleted)
+    #expect(!failure.retrySafe)
+    #expect(failure.detail.contains("id must be a representable integer"))
+  }
+
+  @Test
   func unclaimedTimeoutIsReclaimedAsNotStarted() async throws {
     let harness = try BridgeClientHarness()
     defer { harness.remove() }

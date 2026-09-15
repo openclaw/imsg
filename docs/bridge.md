@@ -223,6 +223,9 @@ deadlines:
 - A published request that vanished without a response is
   `may_have_completed`.
 
+The bridge accepts string response IDs and legacy integer IDs; fractional,
+non-finite, or out-of-range numeric IDs are rejected as malformed responses.
+
 Malformed or unreadable responses after publication are also uncertain. The
 legacy single-file command timeout is always `still_in_flight` because it has
 no per-request claim proof. Never automatically retry a bridge mutation unless

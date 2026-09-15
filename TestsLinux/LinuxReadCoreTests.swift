@@ -6,6 +6,15 @@ import Testing
 @testable import imsg
 
 @Test
+func bridgeResponseRejectsOversizedJSONID() throws {
+  let data = Data(#"{"id":1e100,"success":true}"#.utf8)
+  let raw = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+  #expect(throws: IMsgBridgeError.malformedResponse("id must be a representable integer")) {
+    try BridgeResponse.parse(raw)
+  }
+}
+
+@Test
 func readsMessageDatabaseFromCopiedFile() throws {
   let databaseURL = try makeTemporaryDatabase()
   defer { try? FileManager.default.removeItem(at: databaseURL.deletingLastPathComponent()) }
