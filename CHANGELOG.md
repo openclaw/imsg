@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.15.6 - 2026-09-17
+
+**Highlights:** Visible native reply bubbles, responsive message watches, and reliable injected-helper upgrades.
 
 - Keep outgoing native threaded replies visible in Messages, preserve threading through older message constructors, and verify native text/multipart construction in CI (#306, thanks @gennadyclaw).
 - Keep CLI/RPC watch delivery and RPC status responsive during stalled Contacts reads by refreshing optional contact names in the background (#307, thanks @KlingMedia).
