@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Keep outgoing native threaded replies visible in Messages, preserve threading through older message constructors, and verify native text/multipart construction in CI (#306, thanks @gennadyclaw).
 - Preserve the synchronous and asynchronous no-argument `MessagesLauncher.ensureRunning` function signatures for existing library clients.
 - Reject malformed numeric bridge response IDs instead of crashing or truncating them, preserving uncertain delivery errors for sends.
 - **Compatibility:** Replace stale injected helpers under the launch lock after an upgrade, report helper versions and mismatches in `status`, and generate matching helper/CLI versions for standalone builds. `imsg launch --force` relaunches unconditionally (#301, thanks @dkattan).

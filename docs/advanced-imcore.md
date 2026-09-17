@@ -63,6 +63,13 @@ Source installs need one extra step first:
 make build-dylib   # produces .build/release/imsg-bridge-helper.dylib (arm64e)
 ```
 
+Resolved native replies use ordinary message construction with a native thread
+identifier, so their outgoing bubbles remain visible in Messages. Maintainers
+can run `make test-native-replies` to check plain, threaded, and multipart text
+construction against the installed IMCore framework. The probe uses synthetic
+messages without opening `chat.db`, resolving a conversation, or sending. It
+checks construction, not recipient delivery, and also runs in macOS CI.
+
 `imsg launch` refuses to inject when SIP is enabled. There's no override.
 
 After a CLI upgrade, `imsg launch` replaces an injected helper whose release

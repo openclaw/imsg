@@ -67,6 +67,16 @@ static unsigned long long flagsForAssociatedMessagePayload(NSAttributedString *s
     return flagsForMessagePayload(subject, fileTransferGuids, isAudioMessage);
 }
 
+static void applyNormalMessageThread(id message, NSString *threadIdentifier) {
+    if (threadIdentifier.length) {
+        if ([message respondsToSelector:@selector(setThreadIdentifier:)]) {
+            [message performSelector:@selector(setThreadIdentifier:) withObject:threadIdentifier];
+        }
+    } else {
+        clearReplyMetadataOnMessage(message);
+    }
+}
+
 /// Build an IMMessage suitable for `[chat sendMessage:]`. Handles plain text,
 /// optional subject, optional effect (`com.apple.MobileSMS.expressivesend.*`),
 /// optional reply target (`selectedMessageGuid`), and ddScan flag.
@@ -254,14 +264,7 @@ static id buildIMMessage(NSAttributedString *body,
         [inv retainArguments];
         id result = invokeReturningObject(inv);
         if (result) {
-            if (threadIdentifier
-                && [result respondsToSelector:@selector(setThreadIdentifier:)]) {
-                [result performSelector:@selector(setThreadIdentifier:)
-                             withObject:threadIdentifier];
-            }
-            if (!threadIdentifier.length) {
-                clearReplyMetadataOnMessage(result);
-            }
+            applyNormalMessageThread(result, threadIdentifier);
             return result;
         }
     }
@@ -293,9 +296,7 @@ static id buildIMMessage(NSAttributedString *body,
         [inv invoke];
         __unsafe_unretained id result = nil;
         [inv getReturnValue:&result];
-        if (!threadIdentifier.length) {
-            clearReplyMetadataOnMessage(result);
-        }
+        applyNormalMessageThread(result, threadIdentifier);
         return result;
     }
 
@@ -316,9 +317,7 @@ static id buildIMMessage(NSAttributedString *body,
         [inv invoke];
         __unsafe_unretained id result = nil;
         [inv getReturnValue:&result];
-        if (!threadIdentifier.length) {
-            clearReplyMetadataOnMessage(result);
-        }
+        applyNormalMessageThread(result, threadIdentifier);
         return result;
     }
     return nil;

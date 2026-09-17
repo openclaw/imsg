@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 
 static BOOL itemConstructionAvailable = YES;
+static BOOL modernConstructionAvailable = YES;
 static Class testMessageClass(NSString *name) {
     if ([name isEqual:@"IMMessage"]) return NSClassFromString(@"ReplyTestMessage");
     if ([name isEqual:@"IMMessageItem"]) {
@@ -15,6 +16,7 @@ static Class testMessageClass(NSString *name) {
 
 static NSUInteger failures;
 static NSUInteger associatedInitializations;
+static NSUInteger legacyInitializations;
 
 @interface ReplyTestItem : NSObject
 @property NSAttributedString *body;
@@ -29,6 +31,7 @@ static NSUInteger associatedInitializations;
 @property NSString *expressiveSendStyleID;
 @property NSArray *fileTransferGUIDs;
 @property unsigned long long flags;
+@property NSString *guid;
 @end
 @implementation ReplyTestItem
 - (void)setMessageSubject:(NSAttributedString *)subject { self.subject = subject; }
@@ -39,6 +42,7 @@ static NSUInteger associatedInitializations;
     if ((self = [super init])) {
         self.body = body; self.fileTransferGUIDs = files;
         self.flags = flags; self.threadIdentifier = thread;
+        self.guid = guid;
     }
     return self;
 }
@@ -50,6 +54,12 @@ static NSUInteger associatedInitializations;
 @property id threadOriginator;
 @end
 @implementation ReplyTestMessage
++ (BOOL)instancesRespondToSelector:(SEL)selector {
+    if (!modernConstructionAvailable && selector == @selector(initWithSender:time:text:messageSubject:fileTransferGUIDs:flags:error:guid:subject:balloonBundleID:payloadData:expressiveSendStyleID:)) {
+        return NO;
+    }
+    return [super instancesRespondToSelector:selector];
+}
 + (id)messageFromIMMessageItem:(ReplyTestItem *)item sender:(id)sender subject:(id)subject {
     ReplyTestMessage *message = [self new];
     message.item = item;
@@ -68,8 +78,20 @@ static NSUInteger associatedInitializations;
         self.item.body = body; self.item.subject = subject;
         self.item.fileTransferGUIDs = files; self.item.flags = flags;
         self.item.expressiveSendStyleID = effect;
+        self.item.guid = guid;
     }
     return self;
+}
+- (id)initIMMessageWithSender:(id)sender time:(NSDate *)time text:(NSAttributedString *)body
+     messageSubject:(id)subject fileTransferGUIDs:(NSArray *)files
+              flags:(unsigned long long)flags error:(id)error guid:(NSString *)guid
+            subject:(id)subjectString balloonBundleID:(id)balloon payloadData:(id)data
+ expressiveSendStyleID:(NSString *)effect {
+    legacyInitializations++;
+    return [self initWithSender:sender time:time text:body messageSubject:subject
+             fileTransferGUIDs:files flags:flags error:error guid:guid
+                      subject:subjectString balloonBundleID:balloon payloadData:data
+        expressiveSendStyleID:effect];
 }
 - (id)initWithSender:(id)sender time:(NSDate *)time text:(NSAttributedString *)body
      messageSubject:(id)subject fileTransferGUIDs:(NSArray *)files
@@ -102,11 +124,13 @@ int main(void) {
         NSString *thread = @"0:0:12:parent-guid";
 
         // Native text replies are ordinary visible messages with separate thread metadata.
-        for (NSNumber *modern in @[@YES, @NO]) {
-            itemConstructionAvailable = modern.boolValue;
+        for (NSNumber *mode in @[@0, @1, @2]) {
+            itemConstructionAvailable = mode.integerValue == 0;
+            modernConstructionAvailable = mode.integerValue != 2;
             associatedInitializations = 0;
+            legacyInitializations = 0;
             ReplyTestMessage *reply = buildIMMessage(body, subject, @"effect", thread, parent,
-                @"parent-guid", 100, NSMakeRange(0, body.length), nil, @[], NO, NO, nil);
+                @"parent-guid", 100, NSMakeRange(0, body.length), nil, @[], NO, NO, @"reply-guid");
             check(reply != nil, @"A threaded reply can be constructed");
             check(associatedInitializations == 0, @"Native replies do not use the reaction initializer");
             check(reply.item.associatedMessageType == 0 && !reply.item.associatedMessageGUID,
@@ -116,12 +140,28 @@ int main(void) {
             check(reply.item.flags == 0x10000dULL, @"Replies retain normal subject finalization flags");
             check([reply.item.subject.string isEqual:subject.string], @"Reply subject survives construction");
             check([reply.item.expressiveSendStyleID isEqual:@"effect"], @"Reply effect survives construction");
-            if (modern.boolValue) {
+            check([reply.item.guid isEqual:@"reply-guid"], @"Reply identity survives construction");
+            check(legacyInitializations == (mode.integerValue == 2 ? 1 : 0),
+                  @"The selected constructor is exercised");
+            if (itemConstructionAvailable) {
                 check(reply.item.threadOriginator == parent, @"The item retains its thread originator");
                 check(reply.item.bodyData.length > 0, @"Modern reply contains a serialized message body");
             }
         }
         itemConstructionAvailable = YES;
+        modernConstructionAvailable = YES;
+
+        NSMutableAttributedString *multipart = [[NSMutableAttributedString alloc] init];
+        [multipart appendAttributedString:buildPlainAttributed(@"first ", 0)];
+        [multipart appendAttributedString:buildFormattedAttributed(@"second",
+            @[@{@"start": @0, @"length": @6, @"styles": @[@"underline"]}], 1)];
+        ReplyTestMessage *parts = buildIMMessage(multipart, nil, nil, thread, parent,
+            @"parent-guid", 100, NSMakeRange(0, multipart.length), nil, @[], NO, NO, nil);
+        check([parts.item.body isEqualToAttributedString:multipart],
+              @"Multipart replies preserve formatting and message-part attributes");
+        NSAttributedString *decoded = parts.item.bodyData.length
+            ? [NSUnarchiver unarchiveObjectWithData:parts.item.bodyData] : nil;
+        check([decoded isEqualToAttributedString:multipart], @"Serialized multipart reply retains every part");
 
         associatedInitializations = 0;
         ReplyTestMessage *attachment = buildIMMessage(body, nil, nil, thread, parent,
@@ -132,11 +172,23 @@ int main(void) {
               [attachment.item.fileTransferGUIDs isEqual:@[@"transfer-guid"]],
               @"Attachment replies preserve both their thread and transfer");
 
+        NSAttributedString *placeholder = buildAttachmentAttributed(@"transfer-guid", @"voice.caf", 1);
+        for (NSNumber *audio in @[@NO, @YES]) {
+            associatedInitializations = 0;
+            ReplyTestMessage *media = buildIMMessage(placeholder, nil, nil, thread, parent,
+                @"parent-guid", 100, NSMakeRange(0, 1), nil, @[@"transfer-guid"], audio.boolValue, NO, @"media-guid");
+            check(associatedInitializations == 0, @"Media replies avoid the associated constructor");
+            check([media.item.body isEqualToAttributedString:placeholder], @"Media placeholder attributes survive");
+            check([media.item.guid isEqual:@"media-guid"], @"Media identity survives");
+            check(media.item.flags == (audio.boolValue ? 0x300005ULL : 0x100005ULL),
+                  @"Audio and attachment replies retain their distinct flags");
+        }
+
         // Actual reactions and attached stickers must retain their association semantics.
         for (NSNumber *type in @[@1000, @2000, @2001, @3001]) {
             NSDictionary *summary = @{ @"amc": @1, @"ams": @"parent text" };
             associatedInitializations = 0;
-            ReplyTestMessage *reaction = buildIMMessage(body, nil, nil, nil, nil,
+            ReplyTestMessage *reaction = buildIMMessage(body, nil, nil, thread, parent,
                 @"p:0/parent-guid", type.longLongValue, NSMakeRange(0, 12), summary, @[], NO, NO, nil);
             check(associatedInitializations == 1, @"Reactions retain the associated-message initializer");
             check(reaction.item.associatedMessageType == type.longLongValue &&

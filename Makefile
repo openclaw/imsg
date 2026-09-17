@@ -1,12 +1,13 @@
 SHELL := /bin/bash
 
-.PHONY: help format lint test test-helper build imsg clean build-dylib docs-site
+.PHONY: help format lint test test-helper test-native-replies build imsg clean build-dylib docs-site
 
 help:
 	@printf "%s\n" \
 		"make format     - swift format in-place" \
 		"make lint       - swift format lint + swiftlint" \
 		"make test       - run docs-site and Swift tests" \
+		"make test-native-replies - probe native IMCore reply rendering without sending" \
 		"make build      - universal release build into bin/" \
 		"make build-dylib - build injectable dylib for Messages.app" \
 		"make imsg       - clean rebuild + run debug binary (ARGS=...)" \
@@ -43,6 +44,13 @@ ifeq ($(shell uname -s),Darwin)
 else
 	@echo "Skipping native bridge tests (macOS only)."
 endif
+
+test-native-replies:
+	@mkdir -p .build/helper-tests
+	clang -fobjc-arc -Wno-arc-performSelector-leaks -Wno-incomplete-implementation \
+		-framework Foundation -framework AppKit -framework ImageIO -framework LinkPresentation \
+		Tests/IMsgHelperTests/NativeThreadedReplyProbe.m -o .build/helper-tests/NativeThreadedReplyProbe
+	.build/helper-tests/NativeThreadedReplyProbe
 
 build:
 	scripts/generate-version.sh
