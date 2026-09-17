@@ -138,6 +138,12 @@ Each fallback poll also refreshes the file watches, so a rotated `chat.db-wal` o
 `chat.db-shm` is reopened without needing an external `touch chat.db`.
 Once a read advances the cursor, watch continues draining the backlog in bounded batches without waiting for another filesystem event or fallback interval.
 
+Contact names are best-effort metadata in both CLI and RPC watches. The watcher
+uses the last available Contacts catalog while a single background refresh runs;
+before the first catalog loads, names may be absent. A stalled Contacts read does
+not hold up message delivery or unsubscribe. Raw sender handles, message IDs,
+original timestamps, and replay cursors are preserved.
+
 This is the fix for the long-standing "watch goes silent after a while" class of bug. See `CHANGELOG.md` 0.6.0 entry.
 
 ## URL preview deduplication

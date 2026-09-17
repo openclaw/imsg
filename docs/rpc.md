@@ -198,7 +198,10 @@ When the database is ready, `database.features` exposes feature-level booleans,
 not raw SQLite column names. When it is down, `database.error` is redacted and
 actionable. `contacts.available` is refreshed during the child lifetime; a
 permission grant can become usable without restarting, while revocation clears
-cached contact data. Contact-backed sends normalize phone numbers using that
+cached contact data. Status reads the cached Contacts state and starts a background
+refresh when needed, so `contacts.available` may initially be false while the
+first catalog loads. A slow Contacts service does not delay the status response.
+Contact-backed sends normalize phone numbers using that
 request's `region`. A successful bridge probe additionally reports
 `bridge_version`, `v2_ready`, `registry_available`, and `selectors` supplied by
 the helper.
@@ -394,6 +397,13 @@ Notifications (one per emitted message):
 The RPC default debounce (`500ms`) is intentionally higher than the CLI default (`250ms`). RPC's typical caller is an agent that just sent a message and is waiting for the inbound echo to settle (`is_from_me` correction, attachment metadata, …). 500ms is enough for those follow-ups to land before the message is emitted.
 
 Like the CLI watch, RPC watch backs filesystem events with a low-frequency poll so a missed event or a rotated SQLite sidecar doesn't leave the subscription silent.
+
+Contact names use the last available catalog while Contacts refreshes in the
+background. Until the first refresh succeeds, `sender_name` can be absent even
+with Contacts permission. A stalled Contacts read does not delay message
+notifications; message timestamps and resumable cursors retain their original
+values. Explicit contact searches and name-based sends still wait for a fresh
+catalog when needed.
 
 The server permits at most 64 pending or active subscriptions. A 65th
 identified subscribe request receives `-32000` (`Server busy`). The subscribe
