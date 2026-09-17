@@ -61,7 +61,7 @@ extension RPCServer {
     let localIncludeAttachments = includeAttachments
     let localAttachmentOptions = attachmentOptions
     let localIncludeReactions = includeReactions
-    let localContactResolver = contactResolver
+    let localContactResolver = contactResolver.cached
     let localSubscriptions = subscriptions
     let localStreamProvider = watchStreamProvider
     let startGate = SubscriptionStartGate()

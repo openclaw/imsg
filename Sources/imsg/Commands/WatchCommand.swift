@@ -107,7 +107,7 @@ enum WatchCommand {
 
     let store = try storeFactory(dbPath)
     let watcher = MessageWatcher(store: store)
-    let contacts = await contactResolverFactory()
+    let contacts = await contactResolverFactory().cached
     let config = MessageWatcherConfiguration(
       debounceInterval: debounceInterval,
       batchLimit: 100,

@@ -289,6 +289,122 @@ func noOpContactResolverCanRepresentUnavailableContacts() {
     #expect(source.loadCount == 1)
   }
 
+  @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+  func cachedContactsDoNotWaitOrDuplicateLoads(warmCache: Bool) {
+    let clock = ContactTestClock()
+    let source = ContactSourceHarness(records: [contactRecord(name: "Alice")])
+    let resolver = ContactResolver(
+      region: "US", source: source.source, refreshInterval: 10, now: clock.now)
+    if warmCache {
+      #expect(resolver.displayName(for: "+15551234567") == "Alice")
+      source.setRecords([contactRecord(name: "Bob")])
+      clock.advance(by: 11)
+    }
+    let started = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    source.blockNextLoad(started: started, release: release)
+    defer { release.signal() }
+    let completed = DispatchSemaphore(value: 0)
+    Thread {
+      let cached = resolver.cached
+      for _ in 0..<8 {
+        #expect(cached.displayName(for: "+15551234567") == (warmCache ? "Alice" : nil))
+        #expect(cached.contactsUnavailable == !warmCache)
+        #expect(
+          cached.displayNames(for: ["+15551234567"])
+            == (warmCache ? ["+15551234567": "Alice"] : [:]))
+      }
+      completed.signal()
+    }.start()
+
+    #expect(started.wait(timeout: .now() + 2) == .success)
+    #expect(completed.wait(timeout: .now() + 2) == .success)
+    #expect(source.loadCount == (warmCache ? 2 : 1))
+    release.signal()
+    #expect(resolver.displayName(for: "+15551234567") == (warmCache ? "Bob" : "Alice"))
+    #expect(resolver.cached.displayName(for: "+15551234567") == (warmCache ? "Bob" : "Alice"))
+  }
+
+  @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+  func cachedContactsDiscardReadsAcrossAuthorizationChanges(switchSource: Bool) {
+    let source = ContactSourceHarness(records: [contactRecord(name: "Alice")])
+    let resolver = ContactResolver(region: "US", source: source.source, refreshInterval: 60)
+    #expect(resolver.displayName(for: "+15551234567") == "Alice")
+    source.setRecords([contactRecord(name: "Old in-flight result")])
+    source.notify()
+
+    let started = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    source.blockNextLoad(started: started, release: release)
+    defer { release.signal() }
+    let completed = DispatchSemaphore(value: 0)
+    Thread {
+      let cached = resolver.cached
+      #expect(cached.displayName(for: "+15551234567") == "Alice")
+      #expect(started.wait(timeout: .now() + 2) == .success)
+      source.setAuthorization(.restricted)
+      #expect(cached.contactsUnavailable)
+      #expect(cached.displayName(for: "+15551234567") == nil)
+      source.setAuthorization(switchSource ? .addressBook : .authorized)
+      source.setRecords([contactRecord(name: "New grant")])
+      #expect(cached.displayName(for: "+15551234567") == nil)
+      completed.signal()
+    }.start()
+
+    #expect(completed.wait(timeout: .now() + 3) == .success)
+    release.signal()
+    #expect(resolver.displayName(for: "+15551234567") == "New grant")
+    #expect(source.loadCount == 3)
+  }
+
+  @Test
+  func cachedContactsPreserveRegionalMatching() {
+    let source = ContactSourceHarness(records: [contactRecord(name: "Alice", phone: "07700900000")])
+    let resolver = ContactResolver(region: "US", source: source.source)
+    let british = resolver.resolver(region: "GB")
+    #expect(british.searchByName("Alice").first?.handle == "+447700900000")
+    #expect(british.cached.displayName(for: "07700 900000") == "Alice")
+    #expect(british.cached.cached.displayName(for: "07700 900000") == "Alice")
+    #expect(source.loadCount == 1)
+  }
+
+  @Test(.timeLimit(.minutes(1)))
+  func contactSearchWaitsThroughInvalidatedBackgroundRefresh() {
+    let source = ContactSourceHarness(records: [contactRecord(name: "Alice")])
+    let resolver = ContactResolver(region: "US", source: source.source, refreshInterval: 60)
+    #expect(resolver.displayName(for: "+15551234567") == "Alice")
+    source.setRecords([contactRecord(name: "Bob")])
+    source.notify()
+
+    let firstStarted = DispatchSemaphore(value: 0)
+    let firstRelease = DispatchSemaphore(value: 0)
+    let nextStarted = DispatchSemaphore(value: 0)
+    let nextRelease = DispatchSemaphore(value: 0)
+    defer {
+      firstRelease.signal()
+      nextRelease.signal()
+    }
+    source.blockNextLoad(started: firstStarted, release: firstRelease)
+    #expect(resolver.cached.displayName(for: "+15551234567") == "Alice")
+    #expect(firstStarted.wait(timeout: .now() + 2) == .success)
+    source.setRecords([contactRecord(name: "Carol")])
+    source.notify()
+    source.blockNextLoad(started: nextStarted, release: nextRelease)
+
+    let completed = DispatchSemaphore(value: 0)
+    Thread {
+      #expect(resolver.searchByName("Carol").first?.name == "Carol")
+      completed.signal()
+    }.start()
+    firstRelease.signal()
+    #expect(nextStarted.wait(timeout: .now() + 2) == .success)
+    #expect(completed.wait(timeout: .now() + 0.05) == .timedOut)
+    #expect(resolver.cached.displayName(for: "+15551234567") == "Bob")
+    nextRelease.signal()
+    #expect(completed.wait(timeout: .now() + 2) == .success)
+    #expect(source.loadCount == 3)
+  }
+
   @Test
   func contactCatalogKeepsConcurrentRegionalLookupsIndependent() {
     let source = ContactSourceHarness(records: [

@@ -37,8 +37,8 @@
       return snapshots.count
     }
 
-    func displayName(for handle: String, region: String) -> String? {
-      let state = snapshot(region: region)
+    func displayName(for handle: String, region: String, waitForRefresh: Bool = true) -> String? {
+      let state = snapshot(region: region, waitForRefresh: waitForRefresh)
       guard !state.unavailable else { return nil }
       let lookup = Self.normalizedLookupHandle(handle)
       if lookup.contains("@") {
@@ -51,8 +51,10 @@
       return state.catalog.phoneToName[normalized]
     }
 
-    func displayNames(for handles: [String], region: String) -> [String: String] {
-      let state = snapshot(region: region)
+    func displayNames(
+      for handles: [String], region: String, waitForRefresh: Bool = true
+    ) -> [String: String] {
+      let state = snapshot(region: region, waitForRefresh: waitForRefresh)
       guard !state.unavailable else { return [:] }
       condition.lock()
       defer { condition.unlock() }
@@ -68,8 +70,10 @@
       return resolved
     }
 
-    func searchByName(_ query: String, region: String) -> [ContactMatch] {
-      let state = snapshot(region: region)
+    func searchByName(
+      _ query: String, region: String, waitForRefresh: Bool = true
+    ) -> [ContactMatch] {
+      let state = snapshot(region: region, waitForRefresh: waitForRefresh)
       guard !state.unavailable else { return [] }
       let query = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
       guard !query.isEmpty else { return [] }
@@ -93,52 +97,63 @@
     }
 
     func snapshot(
-      region: String
+      region: String, waitForRefresh: Bool = true
     ) -> (catalog: ContactCatalogSnapshot, unavailable: Bool) {
       let region = Self.normalizedRegion(region)
       condition.lock()
+      defer { condition.unlock() }
       while true {
+        let authorization = source.authorization()
+        if lastAuthorization != authorization {
+          // A cached reader must clear revoked/source-switched data even during a stalled load.
+          apply(.unauthorized)
+          lastAuthorization = authorization
+          authorizationGeneration &+= 1
+          invalidated = true
+        }
+        if !authorization.canAttemptRead {
+          return (regionSnapshot(region), true)
+        }
         if refreshing {
+          if !waitForRefresh { return (regionSnapshot(region), unavailable) }
           condition.wait()
           continue
         }
-        let authorization = source.authorization()
-        if !authorization.canAttemptRead {
-          apply(.unauthorized)
-          let catalog = regionSnapshot(region)
-          condition.unlock()
-          return (catalog, true)
-        }
-        let authorizationChanged = lastAuthorization != authorization
-        // Transient failures may retain only a catalog from the same source.
-        if authorizationChanged { apply(.unauthorized) }
-        lastAuthorization = authorization
-        let shouldRefresh = authorizationChanged || invalidated || now() >= nextRefreshAt
-        if shouldRefresh {
+        if invalidated || now() >= nextRefreshAt {
           refreshing = true
           invalidated = false
+          let generation = authorizationGeneration
+          if !waitForRefresh {
+            refreshQueue.async {
+              let result = self.loadCatalog()
+              self.condition.lock()
+              defer { self.condition.unlock() }
+              self.finishRefresh(result, authorization: authorization, generation: generation)
+            }
+            return (regionSnapshot(region), unavailable)
+          }
           condition.unlock()
           let result = loadCatalog()
           condition.lock()
-          // A grant change can switch the data source. Discard an in-flight read
-          // from the old source instead of caching it under the new permission.
-          let sourceChanged = source.authorization() != authorization
-          apply(sourceChanged ? .unauthorized : result)
-          if sourceChanged { invalidated = true }
-          refreshing = false
-          condition.broadcast()
+          // Publish and decide under the same lock; a cached caller must not consume
+          // an invalidation and start another refresh before this caller resumes.
+          finishRefresh(result, authorization: authorization, generation: generation)
           if invalidated { continue }
-          let catalog = regionSnapshot(region)
-          let isUnavailable = unavailable
-          condition.unlock()
-          return (catalog, isUnavailable)
         }
-
-        let catalog = regionSnapshot(region)
-        let isUnavailable = unavailable
-        condition.unlock()
-        return (catalog, isUnavailable)
+        return (regionSnapshot(region), unavailable)
       }
+    }
+
+    private func finishRefresh(
+      _ result: LoadResult, authorization: ContactCatalogAuthorization, generation: UInt64
+    ) {
+      // Also reject a read that spans an observed revoke/regrant of the same source.
+      let sourceChanged =
+        source.authorization() != authorization || authorizationGeneration != generation
+      apply(sourceChanged ? .unauthorized : result)
+      if sourceChanged { invalidated = true }
+      refreshing = false
+      condition.broadcast()
     }
 
     private enum LoadResult {
@@ -313,26 +328,32 @@
   final class ContactRegionResolver: ContactResolving, Sendable {
     private let owner: ContactResolver
     private let region: String
+    private let waitForRefresh: Bool
 
-    init(owner: ContactResolver, region: String) {
+    init(owner: ContactResolver, region: String, waitForRefresh: Bool = true) {
       self.owner = owner
       self.region = region
+      self.waitForRefresh = waitForRefresh
+    }
+
+    var cached: any ContactResolving {
+      ContactRegionResolver(owner: owner, region: region, waitForRefresh: false)
     }
 
     var contactsUnavailable: Bool {
-      owner.snapshot(region: region).unavailable
+      owner.snapshot(region: region, waitForRefresh: waitForRefresh).unavailable
     }
 
     func displayName(for handle: String) -> String? {
-      owner.displayName(for: handle, region: region)
+      owner.displayName(for: handle, region: region, waitForRefresh: waitForRefresh)
     }
 
     func displayNames(for handles: [String]) -> [String: String] {
-      owner.displayNames(for: handles, region: region)
+      owner.displayNames(for: handles, region: region, waitForRefresh: waitForRefresh)
     }
 
     func searchByName(_ query: String) -> [ContactMatch] {
-      owner.searchByName(query, region: region)
+      owner.searchByName(query, region: region, waitForRefresh: waitForRefresh)
     }
   }
 #endif
