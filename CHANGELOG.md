@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.15.6 - 2026-09-17
 
 **Highlights:** Visible native reply bubbles, responsive message watches, and reliable injected-helper upgrades.
