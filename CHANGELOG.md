@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Stop `react` reporting success for no-op UI automation by confirming a new outgoing tapback in the requested chat; document live-chat and message-targeting limitations (#311, thanks @cryptosmithio).
+
 ## 0.15.6 - 2026-09-17
 
 **Highlights:** Visible native reply bubbles, responsive message watches, and reliable injected-helper upgrades.

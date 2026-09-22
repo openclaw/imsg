@@ -5,14 +5,17 @@ import IMsgCore
 enum ReactCommand {
   static let spec = CommandSpec(
     name: "react",
-    abstract: "Send a tapback reaction to the most recent message",
+    abstract: "Send a standard tapback through Messages UI automation",
     discussion: """
-      Sends a tapback reaction to the most recent incoming message in the specified chat.
+      Sends a standard tapback using Messages' last-or-selected-message shortcut.
 
       IMPORTANT LIMITATIONS:
-      - Only reacts to the MOST RECENT incoming message in the conversation
+      - Cannot reliably select a specific message; use bridge tapback for GUID targeting
       - Requires Messages.app to be running
+      - The chat must exist in Messages' live AppleScript chats collection
       - Uses UI automation (System Events) which requires accessibility permissions
+      - Reports success only after a new outgoing reaction is recorded in the requested chat
+      - If confirmation fails, inspect Messages before retrying; a retry may toggle a reaction
 
       Reaction types:
         love (❤️), like (👍), dislike (👎), laugh (😂), emphasis (‼️), question (❓)
@@ -45,7 +48,9 @@ enum ReactCommand {
     storeFactory: @escaping (String) throws -> MessageStore = { try MessageStore(path: $0) },
     appleScriptRunner: @escaping (String, [String]) throws -> Void = { source, arguments in
       try runAppleScript(source, arguments: arguments)
-    }
+    },
+    confirmationTimeout: Duration = .seconds(5),
+    sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) async throws {
     guard let chatID = try values.optionChatID() else {
       throw ParsedValuesError.missingOption("chat-id")
@@ -66,7 +71,6 @@ enum ReactCommand {
       )
     }
 
-    // Get chat info for the GUID
     let dbPath = values.option("db") ?? MessageStore.defaultPath
     let store = try storeFactory(dbPath)
     guard let chatInfo = try store.chatInfo(chatID: chatID) else {
@@ -74,14 +78,26 @@ enum ReactCommand {
     }
 
     let chatLookup = preferredChatLookup(chatInfo: chatInfo)
+    guard store.supportsReactions else {
+      throw IMsgError.unsupportedReaction("this database cannot confirm outgoing tapbacks")
+    }
+    let afterRowID = try store.maxRowID()
 
-    // Send the reaction via AppleScript + System Events
     try sendReaction(
       reactionType: reactionType,
       chatGUID: chatInfo.guid,
       chatLookup: chatLookup,
       appleScriptRunner: appleScriptRunner
     )
+    do {
+      try await confirmReaction(
+        store: store, chatID: chatID, reactionType: reactionType, afterRowID: afterRowID,
+        timeout: confirmationTimeout, sleep: sleep)
+    } catch {
+      throw DeliveryFailure(
+        disposition: .mayHaveCompleted, transport: .appleScript, operation: "react",
+        detail: "No matching new outgoing tapback was confirmed in chat \(chatID): \(error)")
+    }
 
     if runtime.jsonOutput {
       let result = ReactResult(
@@ -94,6 +110,30 @@ enum ReactCommand {
     } else {
       print("Sent \(reactionType.emoji) reaction to chat \(chatID)")
     }
+  }
+
+  private static func confirmReaction(
+    store: MessageStore, chatID: Int64, reactionType: ReactionType, afterRowID: Int64,
+    timeout: Duration, sleep: (Duration) async throws -> Void
+  ) async throws {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: timeout)
+    repeat {
+      // Rescan from the watermark because chat joins can arrive after their message rows.
+      var cursor = afterRowID
+      while true {
+        try Task.checkCancellation()
+        let events = try store.reactionEventsAfter(afterRowID: cursor, chatID: chatID, limit: 100)
+        if events.contains(where: { $0.isFromMe && $0.isAdd && $0.reactionType == reactionType }) {
+          return
+        }
+        guard events.count == 100, let last = events.last, clock.now < deadline else { break }
+        cursor = last.rowID
+      }
+      guard clock.now < deadline else { break }
+      try await sleep(min(.milliseconds(100), clock.now.duration(to: deadline)))
+    } while clock.now < deadline
+    throw IMsgError.appleScriptFailure("confirmation timed out; inspect Messages before retrying")
   }
 
   private static func sendReaction(

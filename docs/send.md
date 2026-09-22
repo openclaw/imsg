@@ -130,7 +130,11 @@ imsg react --chat-id 42 --reaction emphasis
 imsg react --chat-id 42 --reaction question
 ```
 
-`react` sends only the six standard tapbacks Messages.app exposes reliably through automation. After the AppleScript call, `imsg` confirms the reaction selection in Messages' UI before reporting success — this guards against silent UI rejections.
+`react` attempts the six standard tapbacks through Messages UI automation. The chat must exist in Messages' live AppleScript `chats` collection; a chat stored only in `chat.db` cannot be selected this way. Messages applies its shortcut to the last or selected message, so this command cannot guarantee a specific message target. Use bridge `tapback` when you need GUID targeting.
+
+After the AppleScript call, `imsg` waits up to five seconds for a new outgoing reaction of the requested type in the requested chat's database history. A no-op, unrelated incoming reaction, or existing reaction no longer produces a success response. Confirmation establishes a local outgoing record, not remote delivery or exact message targeting. A timeout reports uncertain delivery: inspect Messages before retrying because repeating a tapback can remove it.
+
+On macOS 27, the documented Command-T shortcut can still silently do nothing in some UI states (#311). Database confirmation detects that failure; it does not repair the underlying UI incompatibility.
 
 Custom emoji tapbacks can be *read* in `watch --reactions` output, but `react` rejects them rather than taking a no-op AppleScript path. There is no published automation surface that sends arbitrary emoji tapbacks reliably.
 
