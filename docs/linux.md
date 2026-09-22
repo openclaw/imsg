@@ -74,12 +74,21 @@ cd imsg
 scripts/generate-version.sh
 swift package resolve
 scripts/patch-deps.sh
-swift build -c release --product imsg
-.build/release/imsg chats --db ./chat.db --limit 5
+scripts/build-linux.sh
+mkdir -p /tmp/imsg-linux
+tar -xzf dist/imsg-linux-x86_64.tar.gz -C /tmp/imsg-linux
+/tmp/imsg-linux/imsg chats --db ./chat.db --limit 5
 ```
 
 Release builds for 0.8.0 and newer publish `imsg-linux-x86_64.tar.gz` from the
 GitHub release workflow.
+
+The archive includes the static Swift runtime and dependency resource directories.
+Packaging explicitly uses SwiftPM's native backend because Swift 6.4's default
+Swift Build backend does not yet link this static Foundation/ICU combination.
+CI extracts and runs the archive in Ubuntu without a Swift installation, including
+a phone-metadata lookup. `scripts/check-linux.sh` runs that gate on a Linux host
+with Docker, Node 26, and passwordless sudo.
 
 Once a release is tagged, install the archive like this:
 

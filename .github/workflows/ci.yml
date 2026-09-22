@@ -46,22 +46,10 @@ jobs:
   linux-read-core:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    container: swift:6.4.0-noble
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Swift version
-        run: swift --version
-      - name: Install Python
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends python3
-      - name: Generate version
-        run: scripts/generate-version.sh
-      - name: Resolve dependencies
-        run: swift package resolve
-      - name: Patch dependencies
-        run: scripts/patch-deps.sh
-      - name: Test Linux read core
-        run: swift test
-      - name: Build CLI
-        run: swift build --product imsg
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.10.0"
+      - name: Test Linux read core and standalone release archive
+        run: scripts/check-linux.sh

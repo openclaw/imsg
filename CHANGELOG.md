@@ -1,11 +1,14 @@
 # Changelog
 
-## 0.15.7 - 2026-09-22
+## 0.15.8 - 2026-09-22
 
-**Highlights:** Fixed phone-input normalization denial of service and stopped standard tapbacks from reporting success when UI automation does nothing.
+**Highlights:** Fixed phone-input normalization denial of service, truthful Tapback results, and standalone Linux archives.
+
+0.15.7 was not published because its Linux archive failed to link; its frozen tag is retained.
 
 - **Security:** Update PhoneNumberKit to 5.0.10 to fix quadratic phone-input normalization and enforce its input-length limit (GHSA-3q4f-3hg9-9565).
 - Stop `react` reporting success for no-op UI automation by confirming a new outgoing tapback in the requested chat; document live-chat and message-targeting limitations (#311, thanks @cryptosmithio).
+- Build complete static Linux archives with SwiftPM’s native backend, locate build products through SwiftPM, and verify packaged resources in Ubuntu without Swift installed.
 
 ## 0.15.6 - 2026-09-17
 

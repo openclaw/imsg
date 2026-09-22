@@ -19,13 +19,16 @@ fi
 
 TARGET_TRIPLE=$(swift -print-target-info | python3 -c 'import json,sys; print(json.load(sys.stdin)["target"]["triple"])')
 TARGET_ARCH="${TARGET_TRIPLE%%-*}"
-BUILD_DIR="${ROOT}/.build/${TARGET_TRIPLE}/${BUILD_MODE}"
 ARCHIVE_NAME="${APP_NAME}-linux-${TARGET_ARCH}.tar.gz"
 
-swift build -c "$BUILD_MODE" --product "$APP_NAME" --static-swift-stdlib
+# Swift 6.4's default Swift Build backend omits ICU libraries from static links.
+# Keep the standalone archive contract on SwiftPM's native backend.
+BUILD_ARGS=(--build-system native -c "$BUILD_MODE" --product "$APP_NAME" --static-swift-stdlib)
+swift build "${BUILD_ARGS[@]}"
+BUILD_DIR=$(swift build "${BUILD_ARGS[@]}" --show-bin-path)
 
 cp "${BUILD_DIR}/${APP_NAME}" "${DIST_DIR}/${APP_NAME}"
-for bundle in "${BUILD_DIR}"/*.bundle; do
+for bundle in "${BUILD_DIR}"/*.bundle "${BUILD_DIR}"/*.resources; do
   if [[ -e "$bundle" ]]; then
     cp -R "$bundle" "$DIST_DIR/"
   fi

@@ -104,7 +104,7 @@ make build
 
 `IMsgCore` contains the reusable Swift core, `imsg` contains the CLI, and `IMsgHelper` contains the optional injected helper. The package uses Swift 6 and targets macOS 14 or newer.
 
-CI pins Xcode 26.6 on macOS, Swift 6.4.0 on Linux, Node 26.10.0 for docs tests, and SwiftLint 0.65.1. `make lint` treats formatting and lint findings as errors. `scripts/check-linux.sh` runs the Linux read-core tests and CLI build in the pinned Swift Docker container, then runs docs tests with the host's Node installation. Crabbox hydration installs the pinned Node version.
+CI pins Xcode 26.6 on macOS, Swift 6.4.0 on Linux, Node 26.10.0 for docs tests, and SwiftLint 0.65.1. `make lint` treats formatting and lint findings as errors. `scripts/check-linux.sh` runs Linux tests and builds in the pinned Swift container, checks the standalone release archive in Ubuntu without Swift, and runs docs tests with the host's Node installation. Crabbox hydration installs the pinned Node version.
 
 ## License
 

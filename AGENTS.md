@@ -10,7 +10,7 @@
 - `make build` — universal release build into `bin/`.
 - `make lint` — run `swift format` lint + `swiftlint`.
 - `make test` — run `swift test` after syncing version + patching deps.
-- `scripts/check-linux.sh` — Linux read-core tests and CLI build in the pinned Swift container, plus docs tests with Node; requires Docker, Node 26, and passwordless sudo on the Linux host. Crabbox hydration prepares both toolchains. Use `crabbox run --id <id> --timing-json --shell -- 'scripts/check-linux.sh'` after warmup. macOS-only tests still run in macOS CI.
+- `scripts/check-linux.sh` — Linux tests/builds in the pinned Swift container, standalone archive smoke tests in Ubuntu without Swift, and docs tests with Node; requires Docker, Node 26, and passwordless sudo on the Linux host. Crabbox hydration prepares both toolchains. Use `crabbox run --id <id> --timing-json --shell -- 'scripts/check-linux.sh'` after warmup. macOS-only tests still run in macOS CI.
 
 ## Coding Style & Naming Conventions
 - Swift 6 module; prefer concrete types, early returns, and minimal globals.
