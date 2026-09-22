@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.15.7 - 2026-09-22
+
+**Highlights:** Fixed phone-input normalization denial of service and stopped standard tapbacks from reporting success when UI automation does nothing.
 
 - **Security:** Update PhoneNumberKit to 5.0.10 to fix quadratic phone-input normalization and enforce its input-length limit (GHSA-3q4f-3hg9-9565).
 - Stop `react` reporting success for no-op UI automation by confirming a new outgoing tapback in the requested chat; document live-chat and message-targeting limitations (#311, thanks @cryptosmithio).
