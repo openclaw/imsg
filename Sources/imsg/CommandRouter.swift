@@ -77,7 +77,7 @@ struct CommandRouter {
     }
 
     do {
-      let invocation = try program.resolve(argv: argv)
+      let invocation = try program.resolve(arguments: argv)
       guard let commandName = invocation.path.last,
         let spec = specs.first(where: { $0.name == commandName })
       else {

@@ -39,13 +39,16 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
 
-      - name: Prepare Swift workspace
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.10.0"
+
+      - name: Prepare Swift toolchain container
         shell: bash
         run: |
           set -euo pipefail
           git fetch --no-tags --depth=50 origin "+refs/heads/main:refs/remotes/origin/main"
-          swift --version
-          swift package resolve
+          sudo docker pull swift:6.4.0-noble
 
       - name: Mark Crabbox ready
         shell: bash

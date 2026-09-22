@@ -6,6 +6,13 @@ import Testing
 @testable import imsg
 
 @Test
+func phoneNumberNormalizerPreservesOversizedInput() {
+  let normalizer = PhoneNumberNormalizer()
+  let input = "+16502530000" + String(repeating: " ", count: 250)
+  #expect(normalizer.normalize(input, region: "US") == input)
+}
+
+@Test
 func launcherPreservesNoArgumentFunctionReferences() {
   let synchronous: () throws -> Void = MessagesLauncher.shared.ensureRunning
   let asynchronous: () async throws -> Void = MessagesLauncher.shared.ensureRunning

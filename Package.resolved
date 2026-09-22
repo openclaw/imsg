@@ -1,13 +1,13 @@
 {
-  "originHash" : "1668c8b5e632f8fcc29b6f73e16e39e1311cb6d0eabaee2f2b23575b4781906d",
+  "originHash" : "4521efb70cf376750c0c5f85d47e330bc42add9e19feff7585191c57df76b4e1",
   "pins" : [
     {
       "identity" : "commander",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/steipete/Commander.git",
       "state" : {
-        "revision" : "bd219c4ee9032fee3e009856f81fcc6ec09a85f4",
-        "version" : "0.2.4"
+        "revision" : "3f5a3cb1f19ce7ca79fdc2111a09dfb3da200c1c",
+        "version" : "0.3.0"
       }
     },
     {
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/PhoneNumberKit/PhoneNumberKit.git",
       "state" : {
-        "revision" : "15c27dbf811e96b9fe48525389ffe042adb9f8cb",
-        "version" : "5.0.9"
+        "revision" : "38783049b71a4f774843341baa7ef5f4ceecfcaf",
+        "version" : "5.0.10"
       }
     },
     {
