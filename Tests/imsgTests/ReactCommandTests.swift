@@ -49,15 +49,20 @@ func reactCommandRejectsMultiCharacterEmojiInput() async {
   }
 }
 
-@Test
-func reactCommandBuildsParameterizedAppleScriptForStandardTapback() async throws {
+@Test(arguments: [
+  ("love", "heart"), ("like", "thumbsUp"), ("dislike", "thumbsDown"),
+  ("laugh", "ha"), ("emphasis", "exclamation"), ("question", "questionMark"),
+])
+func reactCommandBuildsParameterizedAppleScriptForStandardTapback(
+  reaction: String, buttonID: String
+) async throws {
   let (path, db) = try makeReactDatabase()
   defer {
     try? FileManager.default.removeItem(at: URL(fileURLWithPath: path).deletingLastPathComponent())
   }
   let values = ParsedValues(
     positional: [],
-    options: ["db": [path], "chatID": ["1"], "reaction": ["like"]],
+    options: ["db": [path], "chatID": ["1"], "reaction": [reaction]],
     flags: []
   )
   let runtime = RuntimeOptions(parsedValues: values)
@@ -70,17 +75,85 @@ func reactCommandBuildsParameterizedAppleScriptForStandardTapback() async throws
       appleScriptRunner: { source, arguments in
         capturedScript = source
         capturedArguments = arguments
-        try insertReactEvent(db)
+        try insertReactEvent(
+          db, type: try #require(ReactionType.parse(reaction)).associatedMessageType)
       }
     )
   }
-  #expect(capturedArguments == ["iMessage;+;chat123", "Test Chat", "2"])
+  #expect(capturedArguments == ["iMessage;+;chat123", "sms://open?groupid=%2B123", buttonID])
   #expect(capturedScript.contains("on run argv"))
-  #expect(capturedScript.contains("keystroke \"f\" using command down"))
+  #expect(!capturedScript.contains("keystroke chatLookup"))
+  #expect(capturedScript.contains("open location chatURL"))
+  let searchFocus = try #require(
+    capturedScript.range(of: "my focusSearch()"))
+  let navigation = try #require(capturedScript.range(of: "open location chatURL"))
+  let composerFocus = try #require(
+    capturedScript.range(of: "my requireFocus(\"AXIdentifier\", \"messageBodyField\")"))
+  #expect(searchFocus.lowerBound < navigation.lowerBound)
+  #expect(navigation.lowerBound < composerFocus.lowerBound)
   #expect(capturedScript.contains("set targetChat to chat id chatGUID"))
-  #expect(capturedScript.contains("keystroke reactionKey"))
-  #expect(capturedScript.contains("keystroke reactionKey\n      delay 0.1\n      key code 36"))
+  #expect(capturedScript.contains("TapbackPickerCollectionView"))
+  #expect(capturedScript.contains("click reactionButton"))
+  #expect(!capturedScript.contains("key code 36"))
   #expect(capturedScript.contains("chat123") == false)
+}
+
+@Test(arguments: ["+15551234567", "chat&body=do not send?#%", "quoted\"\\\nchat", "群組"])
+func reactCommandKeepsConversationIdentifierInOneURLParameter(identifier: String) async throws {
+  let (path, db) = try makeReactDatabase()
+  defer {
+    try? FileManager.default.removeItem(at: URL(fileURLWithPath: path).deletingLastPathComponent())
+  }
+  try db.run("UPDATE chat SET chat_identifier = ?, display_name = 'Ambiguous Name'", identifier)
+  let values = ParsedValues(
+    positional: [], options: ["db": [path], "chatID": ["1"], "reaction": ["like"]], flags: [])
+  _ = try await StdoutCapture.capture {
+    try await ReactCommand.run(
+      values: values, runtime: RuntimeOptions(parsedValues: values),
+      appleScriptRunner: { source, arguments in
+        let url = try #require(URLComponents(string: arguments[1]))
+        #expect(url.scheme == "sms")
+        #expect(url.host == "open")
+        #expect(url.queryItems == [URLQueryItem(name: "groupid", value: identifier)])
+        #expect(url.fragment == nil)
+        #expect(!source.contains("Ambiguous Name"))
+        #expect(!source.contains(identifier))
+        try insertReactEvent(db)
+      })
+  }
+}
+
+@Test
+func reactCommandRejectsMissingConversationIdentifierBeforeAutomation() async throws {
+  let (path, db) = try makeReactDatabase()
+  defer {
+    try? FileManager.default.removeItem(at: URL(fileURLWithPath: path).deletingLastPathComponent())
+  }
+  try db.run("UPDATE chat SET chat_identifier = ''")
+  let values = ParsedValues(
+    positional: [], options: ["db": [path], "chatID": ["1"], "reaction": ["like"]], flags: [])
+  await #expect(throws: IMsgError.self) {
+    try await ReactCommand.run(
+      values: values, runtime: RuntimeOptions(parsedValues: values),
+      appleScriptRunner: { _, _ in Issue.record("Invalid chat must not reach UI automation") })
+  }
+}
+
+@Test
+func reactCommandRejectsAmbiguousConversationIdentifierBeforeAutomation() async throws {
+  let (path, db) = try makeReactDatabase()
+  defer {
+    try? FileManager.default.removeItem(at: URL(fileURLWithPath: path).deletingLastPathComponent())
+  }
+  try db.run("INSERT INTO chat (ROWID, chat_identifier, guid) VALUES (2, '+123', 'SMS;-;+123')")
+  let values = ParsedValues(
+    positional: [], options: ["db": [path], "chatID": ["1"], "reaction": ["like"]], flags: [])
+  let error = await #expect(throws: IMsgError.self) {
+    try await ReactCommand.run(
+      values: values, runtime: RuntimeOptions(parsedValues: values),
+      appleScriptRunner: { _, _ in Issue.record("Ambiguous chat must not reach UI automation") })
+  }
+  #expect(error?.localizedDescription.contains("ambiguous") == true)
 }
 
 @Test(arguments: ["incoming", "removal", "wrong-type", "wrong-chat", "existing"])

@@ -134,7 +134,7 @@ imsg react --chat-id 42 --reaction question
 
 After the AppleScript call, `imsg` waits up to five seconds for a new outgoing reaction of the requested type in the requested chat's database history. A no-op, unrelated incoming reaction, or existing reaction no longer produces a success response. Confirmation establishes a local outgoing record, not remote delivery or exact message targeting. A timeout reports uncertain delivery: inspect Messages before retrying because repeating a tapback can remove it.
 
-On macOS 27, the documented Command-T shortcut can still silently do nothing in some UI states (#311). Database confirmation detects that failure; it does not repair the underlying UI incompatibility.
+`react` opens the conversation using its database identifier, waits for composer focus, and presses the requested button in the Tapback picker. It resets focus to Search before navigation so an already-focused composer cannot satisfy the readiness check. It does not search by display name or type a reaction number and Return into the current UI. This fixes macOS 27 navigation that could leave Search active or the previous conversation selected (#311). If multiple database chats share the identifier, or the composer or picker is unavailable, automation stops with an error. Keep Messages in front and avoid interacting with it while the command runs.
 
 Custom emoji tapbacks can be *read* in `watch --reactions` output, but `react` rejects them rather than taking a no-op AppleScript path. There is no published automation surface that sends arbitrary emoji tapbacks reliably.
 

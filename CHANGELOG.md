@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix standard `react` navigation on macOS 27 by opening the chat identifier directly and requiring an enabled Tapback picker button; remove ambiguous name searches and blind number/Return keystrokes (#311, thanks @cryptosmithio).
+
 ## 0.15.8 - 2026-09-22
 
 **Highlights:** Fixed phone-input normalization denial of service, truthful Tapback results, and standalone Linux archives.

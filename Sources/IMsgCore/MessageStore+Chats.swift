@@ -309,6 +309,15 @@ extension MessageStore {
     }
   }
 
+  package func chatIdentifierIsUnique(_ identifier: String) throws -> Bool {
+    try withConnection { db in
+      let count =
+        try db.scalar(
+          "SELECT COUNT(*) FROM chat WHERE chat_identifier = ?", identifier) as? Int64
+      return count == 1
+    }
+  }
+
   public func participants(chatID: Int64) throws -> [String] {
     let query = ParticipantsQuery(chatID: ChatID(rawValue: chatID))
     return try withConnection { db in

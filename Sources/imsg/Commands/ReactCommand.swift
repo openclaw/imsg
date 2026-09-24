@@ -14,6 +14,7 @@ enum ReactCommand {
       - Requires Messages.app to be running
       - The chat must exist in Messages' live AppleScript chats collection
       - Uses UI automation (System Events) which requires accessibility permissions
+      - Opens the conversation directly and requires a visible, enabled Tapback button
       - Reports success only after a new outgoing reaction is recorded in the requested chat
       - If confirmation fails, inspect Messages before retrying; a retry may toggle a reaction
 
@@ -77,16 +78,18 @@ enum ReactCommand {
       throw IMsgError.chatNotFound(chatID: chatID)
     }
 
-    let chatLookup = preferredChatLookup(chatInfo: chatInfo)
     guard store.supportsReactions else {
       throw IMsgError.unsupportedReaction("this database cannot confirm outgoing tapbacks")
+    }
+    guard try store.chatIdentifierIsUnique(chatInfo.identifier) else {
+      throw IMsgError.appleScriptFailure("the Messages conversation identifier is ambiguous")
     }
     let afterRowID = try store.maxRowID()
 
     try sendReaction(
       reactionType: reactionType,
       chatGUID: chatInfo.guid,
-      chatLookup: chatLookup,
+      chatIdentifier: chatInfo.identifier,
       appleScriptRunner: appleScriptRunner
     )
     do {
@@ -139,68 +142,123 @@ enum ReactCommand {
   private static func sendReaction(
     reactionType: ReactionType,
     chatGUID: String,
-    chatLookup: String,
+    chatIdentifier: String,
     appleScriptRunner: @escaping (String, [String]) throws -> Void
   ) throws {
-    let keyNumber: Int
+    let buttonID: String
     switch reactionType {
-    case .love: keyNumber = 1
-    case .like: keyNumber = 2
-    case .dislike: keyNumber = 3
-    case .laugh: keyNumber = 4
-    case .emphasis: keyNumber = 5
-    case .question: keyNumber = 6
+    case .love: buttonID = "heart"
+    case .like: buttonID = "thumbsUp"
+    case .dislike: buttonID = "thumbsDown"
+    case .laugh: buttonID = "ha"
+    case .emphasis: buttonID = "exclamation"
+    case .question: buttonID = "questionMark"
     case .custom(let emoji):
       throw IMsgError.unsupportedReaction(
         "custom emoji tapback '\(emoji)' cannot be sent by Messages.app "
           + "AppleScript automation; use love, like, dislike, laugh, emphasis, or question."
       )
     }
+    guard !chatIdentifier.isEmpty,
+      let encodedIdentifier = chatIdentifier.addingPercentEncoding(
+        withAllowedCharacters: .alphanumerics)
+    else {
+      throw IMsgError.appleScriptFailure("the chat has no usable Messages conversation identifier")
+    }
+    // Messages expects chat_identifier here, not the service-qualified GUID.
+    let chatURL = "sms://open?groupid=\(encodedIdentifier)"
 
     let script = """
+      on requireFocus(attributeName, expectedValue)
+        tell application "System Events" to tell process "Messages"
+          repeat 50 times
+            set focusedItem to value of attribute "AXFocusedUIElement"
+            if exists attribute attributeName of focusedItem then
+              if value of attribute attributeName of focusedItem is expectedValue then return
+            end if
+            delay 0.1
+          end repeat
+        end tell
+        error "Messages did not focus " & expectedValue
+      end requireFocus
+
+      on focusSearch()
+        tell application "System Events" to tell process "Messages"
+          repeat 50 times
+            if not frontmost then error "Messages lost focus before navigation"
+            keystroke "f" using command down
+            delay 0.1
+            set focusedItem to value of attribute "AXFocusedUIElement"
+            if subrole of focusedItem is "AXSearchField" then return
+          end repeat
+        end tell
+        error "Messages did not focus Search"
+      end focusSearch
+
+      on findTapbackPicker(parentElement)
+        tell application "System Events"
+          if exists attribute "AXIdentifier" of parentElement then
+            set elementID to value of attribute "AXIdentifier" of parentElement
+            if elementID is "TapbackPickerCollectionView" then return parentElement
+            if elementID is in {"TranscriptCollectionView", "CKConversationListCollectionView", "MessageEntryView"} then
+              return missing value
+            end if
+          end if
+          -- Overlays come last; avoid walking message bodies while finding the picker.
+          set childGroups to groups of parentElement
+          set childGroups to reverse of childGroups
+          repeat with childRef in childGroups
+            set found to my findTapbackPicker(contents of childRef)
+            if found is not missing value then return found
+          end repeat
+        end tell
+        return missing value
+      end findTapbackPicker
+
       on run argv
         set chatGUID to item 1 of argv
-        set chatLookup to item 2 of argv
-        set reactionKey to item 3 of argv
+        set chatURL to item 2 of argv
+        set reactionButtonID to item 3 of argv
 
         tell application "Messages"
           activate
           set targetChat to chat id chatGUID
         end tell
-
-        delay 0.3
+        -- A stale composer must not satisfy the navigation readiness check.
+        tell application "System Events" to tell process "Messages"
+          repeat 50 times
+            if frontmost then exit repeat
+            delay 0.1
+          end repeat
+          if not frontmost then error "Messages is not in front"
+        end tell
+        my focusSearch()
+        tell application "Messages" to open location chatURL
+        my requireFocus("AXIdentifier", "messageBodyField")
 
         tell application "System Events"
           tell process "Messages"
-            keystroke "f" using command down
-            delay 0.15
-            keystroke "a" using command down
-            keystroke chatLookup
-            delay 0.25
-            key code 36
-            delay 0.35
+            if not frontmost then error "Messages lost focus before opening Tapback"
+            set mainWindow to value of attribute "AXFocusedWindow"
+            if subrole of mainWindow is not "AXStandardWindow" then error "Messages has a dialog open"
             keystroke "t" using command down
-            delay 0.2
-            keystroke reactionKey
-            delay 0.1
-            key code 36
+            set picker to missing value
+            repeat 3 times
+              delay 0.2
+              set picker to my findTapbackPicker(mainWindow)
+              if picker is not missing value then exit repeat
+            end repeat
+            if picker is missing value then error "Messages did not open the Tapback picker"
+            set reactionButton to first button of picker whose value of attribute "AXIdentifier" is reactionButtonID
+            if not frontmost then error "Messages lost focus before choosing Tapback"
+            if not enabled of reactionButton then error "The requested Tapback is unavailable"
+            click reactionButton
           end tell
         end tell
+        return
       end run
       """
-    try appleScriptRunner(script, [chatGUID, chatLookup, "\(keyNumber)"])
-  }
-
-  private static func preferredChatLookup(chatInfo: ChatInfo) -> String {
-    let preferred = chatInfo.name.trimmingCharacters(in: .whitespacesAndNewlines)
-    if !preferred.isEmpty {
-      return preferred
-    }
-    let identifier = chatInfo.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
-    if !identifier.isEmpty {
-      return identifier
-    }
-    return chatInfo.guid
+    try appleScriptRunner(script, [chatGUID, chatURL, buttonID])
   }
 
   private static func isSingleEmoji(_ value: String) -> Bool {
