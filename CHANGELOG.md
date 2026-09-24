@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.15.9 - 2026-09-24
+
+**Highlights:** Restored standard Tapback navigation on macOS 27 with verified conversation focus and picker controls.
 
 - Fix standard `react` navigation on macOS 27 by opening the chat identifier directly and requiring an enabled Tapback picker button; remove ambiguous name searches and blind number/Return keystrokes (#311, thanks @cryptosmithio).
 
