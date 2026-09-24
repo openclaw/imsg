@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.15.9 - 2026-09-24
 
 **Highlights:** Restored standard Tapback navigation on macOS 27 with verified conversation focus and picker controls.
