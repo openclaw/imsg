@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Resolve bare group identifiers exactly in bridge sends, including database-unavailable sends, and report missing chats as safe pre-dispatch failures (#324, thanks @hyprsh).
+
 - Confirm sent text across canonically equivalent Unicode forms, including accented and mixed-normalization text (#320, #321, thanks @privateloris and @goutamadwant).
 
 ## 0.15.9 - 2026-09-24

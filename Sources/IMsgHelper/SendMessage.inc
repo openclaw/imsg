@@ -63,9 +63,11 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
 
     IMChat *chat = resolveChatByGuid(chatGuid);
     if (!chat) {
-        return errorResponse(requestId,
-            [NSString stringWithFormat:@"Chat not found: %@", chatGuid]);
+        return errorResponseWithDisposition(requestId,
+            [NSString stringWithFormat:@"Chat not found: %@", chatGuid], @"not_started");
     }
+    NSString *resolvedGuid = [chat respondsToSelector:@selector(guid)] ? [chat guid] : nil;
+    if (resolvedGuid.length) chatGuid = resolvedGuid;
     if (richLinkPreview) {
         NSString *serviceName = serviceNameForChat(chat, chatGuid).lowercaseString;
         if (!([serviceName isEqualToString:@"imessage"] ||

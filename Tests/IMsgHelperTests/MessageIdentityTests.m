@@ -16,6 +16,7 @@ static id dispatchedMessage;
 static NSString *loadedGUID;
 static NSUInteger failures;
 static BOOL omitGUID;
+static BOOL identifierLookupAvailable;
 
 @interface IdentityMessage : NSObject
 @property NSString *guid;
@@ -26,6 +27,15 @@ static BOOL omitGUID;
 @implementation IdentityMessage
 - (id)initWithText:(NSAttributedString *)text flags:(unsigned long long)flags {
     if ((self = [super init])) { self.guid = omitGUID ? nil : @"new-message-guid"; self.text = text; }
+    return self;
+}
+- (id)initWithSender:(id)sender time:(NSDate *)time text:(NSAttributedString *)text
+     messageSubject:(id)messageSubject fileTransferGUIDs:(NSArray *)transfers
+              flags:(unsigned long long)flags error:(id)error guid:(NSString *)guid
+            subject:(id)subject balloonBundleID:(id)balloon payloadData:(id)data
+ expressiveSendStyleID:(id)effect {
+    self = [self initWithText:text flags:flags];
+    if (guid.length) self.guid = guid;
     return self;
 }
 - (id)initWithSender:(id)sender time:(NSDate *)time text:(NSAttributedString *)text
@@ -93,7 +103,14 @@ static IdentityParent *parent;
 @end
 @implementation IdentityRegistry
 + (id)sharedInstance { return [self new]; }
-- (id)existingChatWithGUID:(NSString *)guid { return [IdentityChat new]; }
+- (id)existingChatWithGUID:(NSString *)guid {
+    return [guid isEqual:@"iMessage;+;chat-test"] || [guid isEqual:@"any;+;group-test"]
+        ? [IdentityChat new] : nil;
+}
+- (id)existingChatWithChatIdentifier:(NSString *)identifier {
+    return identifierLookupAvailable && [identifier isEqual:@"identifier-only"]
+        ? [IdentityChat new] : nil;
+}
 @end
 
 static void check(BOOL condition, NSString *message) {
@@ -150,6 +167,44 @@ int main(void) {
         });
         check(![missing[@"success"] boolValue] && dispatchedMessage == nil,
               @"An absent selected part must fail before sending");
+        for (NSString *target in @[@"group-test", @"identifier-only"]) {
+            identifierLookupAvailable = YES;
+            dispatchedMessage = nil;
+            NSDictionary *group = handleSendMessage(5, @{
+                @"chatGuid": target, @"message": @"group fixture"
+            });
+            check([group[@"success"] boolValue] && dispatchedMessage != nil,
+                  @"Bare group identifiers resolve without a database or a visible conversation");
+            check([group[@"chatGuid"] isEqual:@"iMessage;+;chat-test"],
+                  @"Send acknowledgment returns the resolved canonical chat GUID");
+        }
+        for (NSString *target in @[@"missing-group", @"SMS;+;group-test", @"not-group-test"]) {
+            dispatchedMessage = nil;
+            NSDictionary *missingChat = handleSendMessage(6, @{
+                @"chatGuid": target, @"message": @"must not send"
+            });
+            check(![missingChat[@"success"] boolValue] && dispatchedMessage == nil,
+                  @"Absent or explicitly different chats never dispatch");
+            check([missingChat[@"delivery_disposition"] isEqual:@"not_started"],
+                  @"Missing chat is a proven pre-dispatch rejection");
+        }
+        NSString *attempt = @"a093f4f2-d812-4ca2-a2a3-575c114512ba";
+        dispatchedMessage = nil;
+        NSDictionary *tracked = processV2Envelope(@{
+            @"id": @"tracked-fixture", @"action": @"send-message",
+            @"params": @{@"chatGuid": @"group-test", @"message": @"tracked",
+                         @"clientMessageGuid": attempt}
+        });
+        check([tracked[@"data"][@"messageGuid"] isEqual:attempt] && dispatchedMessage != nil,
+              @"Tracked group send retains the caller GUID through the v2 envelope");
+        dispatchedMessage = nil;
+        NSDictionary *rejected = processV2Envelope(@{
+            @"id": @"missing-fixture", @"action": @"send-message",
+            @"params": @{@"chatGuid": @"missing-group", @"message": @"tracked",
+                         @"clientMessageGuid": @"b093f4f2-d812-4ca2-a2a3-575c114512ba"}
+        });
+        check([rejected[@"delivery_disposition"] isEqual:@"not_started"] && dispatchedMessage == nil,
+              @"V2 preserves a tracked send's proven pre-dispatch rejection");
         omitGUID = YES;
         NSDictionary *withoutGUID = handleSendMessage(4, @{
             @"chatGuid": @"iMessage;+;chat-test", @"message": @"hello"

@@ -577,6 +577,8 @@ service inference, direct-chat lookup, and post-send row verification, then
 returns only fields observable from the chosen transport. A `chat_id` target
 always requires the database and returns `-32002` while it is unavailable.
 
+Bridge text sends resolve a bare `chat_identifier` by exact identifier or known GUID prefix, including groups whose GUID starts with `any;+;`. A missing chat is rejected before dispatch with `disposition: "not_started"` and `retry_safe: true`; a successful result reports the resolved `chat_guid`. Explicit service-qualified GUIDs never fall through to a different service.
+
 For chat-target sends, `send` also performs the [Tahoe ghost-row check](send.md#tahoe-ghost-row-protection): if Messages writes an empty unjoined SMS row instead of delivering, the call returns an error rather than `{"ok": true}`.
 
 ### `message.send_status`

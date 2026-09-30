@@ -1,7 +1,8 @@
 #pragma mark - Resolve Chat (v2)
 
 /// Resolve an IMChat from a chatGuid string (BlueBubbles-style addressing,
-/// e.g. `iMessage;-;+15551234567` or `iMessage;+;chat0000`). Falls back to
+/// e.g. `iMessage;-;+15551234567` or `iMessage;+;chat0000`) or an exact
+/// portable chat identifier. Falls back to
 /// `chatForIMHandle:` to materialize chats that don't yet exist in the
 /// registry's allExistingChats snapshot. Returns nil if no chat could be
 /// resolved or created.
@@ -18,6 +19,24 @@ static IMChat *resolveChatByGuid(NSString *chatGuid) {
         id chat = [registry performSelector:@selector(existingChatWithGUID:)
                                  withObject:chatGuid];
         if (chat) return chat;
+    }
+
+    // Portable identifiers are exact chat targets, never participant searches.
+    // Keep service-qualified GUIDs strict instead of trying other services.
+    if (![chatGuid containsString:@";"]) {
+        SEL identifierSel = @selector(existingChatWithChatIdentifier:);
+        if ([registry respondsToSelector:identifierSel]) {
+            id chat = [registry performSelector:identifierSel withObject:chatGuid];
+            if (chat) return chat;
+        }
+        if ([registry respondsToSelector:@selector(existingChatWithGUID:)]) {
+            for (NSString *prefix in chatIdentifierPrefixes()) {
+                id chat = [registry performSelector:@selector(existingChatWithGUID:)
+                                         withObject:[prefix stringByAppendingString:chatGuid]];
+                if (chat) return chat;
+            }
+        }
+        return nil;
     }
 
     // Fallback: parse a direct `<service>;-;<address>` guid and materialize
