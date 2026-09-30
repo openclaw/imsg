@@ -17,6 +17,8 @@ Send an Apple URL preview. URL mode cannot be combined with text, effects, repli
 imsg send-rich --chat 'iMessage;-;+15551234567' --url https://imsg.sh
 ```
 
+Text replies resolve the parent with chat context even when its transcript is not loaded in a Messages window. If the helper cannot derive a native thread for an explicit `--reply-to` / RPC `reply_to`, the text send returns `not_started` before dispatch instead of silently sending outside the thread.
+
 Send rich text, a reply, or an attachment:
 
 ```bash

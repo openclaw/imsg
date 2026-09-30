@@ -79,7 +79,7 @@ static NSDictionary *handleSendAttachment(NSInteger requestId, NSDictionary *par
         id parentItem = nil;
         NSString *threadIdentifier = nil;
         if (selectedMessageGuid.length) {
-            threadIdentifier = deriveThreadIdentifier(selectedMessageGuid,
+            threadIdentifier = deriveThreadIdentifier(chat, selectedMessageGuid,
                                                       &parentMessage,
                                                       &parentItem);
             debugLog(@"handleSendAttachment: parent=%@ threadId=%@",

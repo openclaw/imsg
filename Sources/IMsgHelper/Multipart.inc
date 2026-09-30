@@ -46,7 +46,7 @@ static NSDictionary *handleSendMultipart(NSInteger requestId, NSDictionary *para
         id parentItem = nil;
         NSString *threadIdentifier = nil;
         if (selectedMessageGuid.length) {
-            threadIdentifier = deriveThreadIdentifier(selectedMessageGuid,
+            threadIdentifier = deriveThreadIdentifier(chat, selectedMessageGuid,
                                                       &parentMessage,
                                                       &parentItem);
             debugLog(@"handleSendMultipart: parent=%@ threadId=%@",

@@ -56,7 +56,7 @@ static NSDictionary *handleSendPoll(NSInteger requestId, NSDictionary *params) {
     NSString *replyToGUID = selectedMessageGuid;
     NSString *threadOriginatorGUID = selectedMessageGuid;
     if (selectedMessageGuid.length) {
-        threadIdentifier = deriveThreadIdentifier(selectedMessageGuid,
+        threadIdentifier = deriveThreadIdentifier(chat, selectedMessageGuid,
                                                   &parentMessage,
                                                   &parentItem);
         parentChatItem = loadParentFirstChatItem(selectedMessageGuid, NULL);

@@ -91,17 +91,19 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
     NSRange zeroRange = NSMakeRange(0, body.length);
     long long associatedType = selectedMessageGuid.length ? 100 : 0;
 
-    // Reply targets need a derived thread identifier on macOS 26 to render
-    // as a threaded in-line reply rather than a standalone message.
-    // Best-effort: if we can't derive the parent, retain the older associated-message
-    // fallback so receivers can still render a quoted reply.
+    // An explicit reply must retain native threading even when its parent is
+    // outside the loaded transcript. Never silently dispatch it as plain text.
     id parentMessage = nil;
     id parentItem = nil;
     NSString *threadIdentifier = nil;
     if (selectedMessageGuid.length) {
-        threadIdentifier = deriveThreadIdentifier(selectedMessageGuid,
+        threadIdentifier = deriveThreadIdentifier(chat, selectedMessageGuid,
                                                   &parentMessage,
                                                   &parentItem);
+        if (!threadIdentifier.length) {
+            return errorResponseWithDisposition(requestId,
+                @"Could not resolve reply thread; message was not sent", @"not_started");
+        }
         debugLog(@"handleSendMessage: parent=%@ threadId=%@",
                  selectedMessageGuid, threadIdentifier ?: @"(none)");
     } else {

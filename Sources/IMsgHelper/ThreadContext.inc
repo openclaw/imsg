@@ -1,4 +1,8 @@
-static NSString *deriveThreadIdentifier(NSString *parentGuid,
+static id safelyReadObjectSelector(id object, SEL selector);
+static id safelyReadObjectSelectorWithObject(id object, SEL selector, id argument);
+static id normalizeFoundMessageItemWithChatContext(id object, id chatContext);
+
+static NSString *deriveThreadIdentifier(IMChat *chat, NSString *parentGuid,
                                          id *outParentMessage,
                                          id *outParentItem) {
     if (outParentMessage) *outParentMessage = nil;
@@ -51,20 +55,27 @@ static NSString *deriveThreadIdentifier(NSString *parentGuid,
     }
     if (outParentMessage) *outParentMessage = parent;
 
-    if (![parent respondsToSelector:@selector(_imMessageItem)]) {
-        debugLog(@"deriveThreadIdentifier: parent has no _imMessageItem");
-        return nil;
-    }
-    id parentItem = [parent performSelector:@selector(_imMessageItem)];
+    id parentItem = safelyReadObjectSelector(parent, @selector(_imMessageItem));
     if (outParentItem) *outParentItem = parentItem;
 
-    SEL chatItemsSel = NSSelectorFromString(@"_newChatItems");
-    if (!parentItem || ![parentItem respondsToSelector:chatItemsSel]) {
-        debugLog(@"deriveThreadIdentifier: parentItem missing _newChatItems");
-        return nil;
+    if ([parent respondsToSelector:@selector(threadIdentifier)]) {
+        NSString *existingIdentifier =
+            safelyReadObjectSelector(parent, @selector(threadIdentifier));
+        if (existingIdentifier.length > 0) {
+            debugLog(@"deriveThreadIdentifier: parent=%@ existing=%@",
+                     parentGuid, existingIdentifier);
+            return existingIdentifier;
+        }
     }
 
-    id items = [parentItem performSelector:chatItemsSel];
+    id items = safelyReadObjectSelector(parentItem, @selector(_newChatItems));
+    if (!items || ([items isKindOfClass:[NSArray class]] && [(NSArray *)items count] == 0)) {
+        Class contextClass = NSClassFromString(@"IMMutableChatContext");
+        id context = safelyReadObjectSelectorWithObject(
+            contextClass, NSSelectorFromString(@"chatContextForPinnedChat:"), chat);
+        id materialized = normalizeFoundMessageItemWithChatContext(parentItem, context);
+        if (materialized && materialized != parentItem) items = @[materialized];
+    }
     id chatItem = nil;
     if ([items isKindOfClass:[NSArray class]]) {
         SEL backingItemSel = NSSelectorFromString(@"_item");
@@ -91,16 +102,6 @@ static NSString *deriveThreadIdentifier(NSString *parentGuid,
     if (!chatItem) {
         debugLog(@"deriveThreadIdentifier: parent has no chat items");
         return nil;
-    }
-
-    if ([parent respondsToSelector:@selector(threadIdentifier)]) {
-        NSString *existingIdentifier =
-            [parent performSelector:@selector(threadIdentifier)];
-        if (existingIdentifier.length > 0) {
-            debugLog(@"deriveThreadIdentifier: parent=%@ existing=%@",
-                     parentGuid, existingIdentifier);
-            return existingIdentifier;
-        }
     }
 
     IMCreateThreadIdentifierForMessagePartChatItemFn fn =
