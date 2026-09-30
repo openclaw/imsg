@@ -1,5 +1,5 @@
 {
-  "originHash" : "4521efb70cf376750c0c5f85d47e330bc42add9e19feff7585191c57df76b4e1",
+  "originHash" : "345e37dafa83c2e63a226376abf10de3d01de2176c85eedb1faa0af6cdab2bf0",
   "pins" : [
     {
       "identity" : "commander",
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/PhoneNumberKit/PhoneNumberKit.git",
       "state" : {
-        "revision" : "38783049b71a4f774843341baa7ef5f4ceecfcaf",
-        "version" : "5.0.10"
+        "revision" : "faf1703e6fc71c699e911ff0e306c58ad7c756c0",
+        "version" : "5.0.11"
       }
     },
     {
