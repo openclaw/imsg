@@ -15,7 +15,7 @@ enum SentMessageVerifier {
     chatID: Int64?,
     sentAt: Date
   ) async throws -> Message? {
-    guard !options.text.isEmpty else { return nil }
+    guard !options.text.isEmpty || !options.attachmentPath.isEmpty else { return nil }
 
     let lowerBound = sentAt.addingTimeInterval(-2)
     let deadline = Date().addingTimeInterval(8)
@@ -76,11 +76,12 @@ enum SentMessageVerifier {
     let verificationChatID = try chatID ?? self.verificationChatID(store: store, options: options)
     guard let verificationChatID else { return nil }
 
+    if options.text.isEmpty, !options.attachmentPath.isEmpty {
+      return try store.sentAttachmentReceipt(
+        matchingPath: options.attachmentPath, chatID: verificationChatID, since: date)
+    }
     return try store.latestSentMessage(
-      matchingText: options.text,
-      chatID: verificationChatID,
-      since: date
-    )
+      matchingText: options.text, chatID: verificationChatID, since: date)
   }
 
   static func verificationChatID(store: MessageStore, options: MessageSendOptions) throws -> Int64?
@@ -128,13 +129,14 @@ enum SentMessageVerifier {
     if let message { return message }
 
     try throwIfMisroutedChatSend(store: store, options: options, sentAt: sentAt)
-    guard !options.text.isEmpty else { return nil }
+    guard !options.text.isEmpty || !options.attachmentPath.isEmpty else { return nil }
+    let content = options.text.isEmpty ? "attachment" : "text"
     throw DeliveryFailure(
       disposition: .mayHaveCompleted,
       transport: .appleScript,
       operation: "send",
       detail:
-        "Messages automation returned success, but no matching outgoing text row was observed within 8 seconds."
+        "Messages automation returned success, but no matching outgoing \(content) row was observed within 8 seconds."
     )
   }
 }

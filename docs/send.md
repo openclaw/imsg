@@ -65,6 +65,8 @@ Both `--text` and `--file` can be supplied together.
 
 Before handing the file to Messages, `imsg` stages it under `~/Library/Messages/Attachments/imsg/`. Messages reads attachments from there reliably across macOS versions; sending directly from `~/Desktop` or `~/Downloads` can hit sandbox-related send failures.
 
+When the Messages database is available, attachment-only AppleScript sends wait up to eight seconds for the staged file to appear in the intended chat. This allows Messages to finish writing its chat and attachment joins. A missing or ambiguous receipt reports an uncertain outcome, not a safe-to-retry failure; check the conversation before sending again. Sends that include text retain text-based receipt verification.
+
 Audio files (`.m4a`, `.caf`, `.aiff`, etc.) send as ordinary attachments. For a native inline voice message, use bridge-backed [`send-attachment --audio`](attachments.md#native-voice-messages).
 
 ## Service selection

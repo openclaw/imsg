@@ -76,7 +76,7 @@ func sendCommandAutoDetectionUsesRegionNormalizedRecipient() async throws {
         captured = options
         return options
       },
-      resolveSentMessage: { _, _, _, _ in nil }
+      resolveSentMessage: resolvedSentMessageFixture
     )
   }
   #expect(captured?.service == .sms)

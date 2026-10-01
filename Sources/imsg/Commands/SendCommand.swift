@@ -173,7 +173,7 @@ enum SendCommand {
     let sentOptions = try sendMessage(options)
 
     var sentMessage: Message?
-    if let store, input.hasChatTarget || !text.isEmpty {
+    if let store {
       let verificationChatID = try? SentMessageVerifier.verificationChatID(
         store: store, options: sentOptions)
       sentMessage = try await SentMessageVerifier.verifyAppleScriptSend(

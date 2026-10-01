@@ -548,7 +548,7 @@ Result:
 { "ok": true, "id": 1979, "guid": "8DF..." }
 ```
 
-`id` and `guid` are best-effort. `send` returns them when the inserted row can be observed in `chat.db` after Messages accepts the send. Attachment-only sends, delayed database writes, or ambiguous direct sends may return only `{"ok": true}`.
+`id` and `guid` identify the observed outgoing row when available. With database access, attachment-only AppleScript sends wait up to eight seconds for the unique staged file to join the intended chat. Missing or ambiguous receipts return `-32001` with `retry_safe: false`, because sending again could duplicate a delivered message. Sends that include text retain text-based receipt verification. When the database is unavailable, a successful automation call can still return only `{"ok": true}`. Bridge sends use their native acknowledgment.
 
 ### `send.tracked`
 

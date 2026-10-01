@@ -141,7 +141,7 @@ func rpcSendReturnsSentMessageIdentifiersWhenResolved() async throws {
 }
 
 @Test
-func rpcAttachmentOnlyKeepsOkResponseWithoutTextVerification() async throws {
+func rpcAttachmentOnlyWithoutReceiptReportsUncertainOutcome() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()
   let server = RPCServer(
@@ -149,19 +149,20 @@ func rpcAttachmentOnlyKeepsOkResponseWithoutTextVerification() async throws {
     verbose: false,
     output: output,
     sendMessage: { $0 },
-    resolveSentMessage: { _, _, _, _ in nil }
+    resolveSentMessage: { _, _, _, _ in nil },
+    isBridgeReady: { false }
   )
 
   let line =
     #"{"jsonrpc":"2.0","id":"3c","method":"send","params":{"chat_id":1,"file":"/tmp/photo.jpg"}}"#
   await server.handleLineForTesting(line)
 
-  let result = output.responses.first?["result"] as? [String: Any]
-  #expect(result?["ok"] as? Bool == true)
-  #expect(result?["id"] == nil)
-  #expect(result?["guid"] == nil)
-  #expect(result?["chat_guid"] as? String == "iMessage;+;chat123")
-  #expect(result?["service"] as? String == "iMessage")
+  #expect(output.responses.isEmpty)
+  let error = output.errors.first?["error"] as? [String: Any]
+  let data = error?["data"] as? [String: Any]
+  #expect(error?["code"] as? Int == -32001)
+  #expect(data?["retry_safe"] as? Bool == false)
+  #expect(data?["disposition"] as? String == "may_have_completed")
 }
 
 @Test

@@ -230,7 +230,7 @@ extension RPCServer {
       database.flatMap {
         try? SentMessageVerifier.verificationChatID(store: $0.store, options: sentOptions)
       }
-    if let database, input.hasChatTarget || !text.isEmpty {
+    if let database {
       sentMessage = try await SentMessageVerifier.verifyAppleScriptSend(
         store: database.store,
         options: sentOptions,
