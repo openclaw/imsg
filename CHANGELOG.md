@@ -2,11 +2,15 @@
 
 ## Unreleased
 
+## 0.15.10 - 2026-09-30
+
+**Highlights:** Reliable attachment receipts, unloaded reply targets, and exact group sends.
+
 - Wait for attachment-only AppleScript receipts to join the intended chat, match the unique staged file, and preserve retry-unsafe uncertainty when verification times out (#322, thanks @lockhartheavyindustries).
-- Update PhoneNumberKit to 5.0.11 with phone-number metadata 9.0.40.
 - Materialize unloaded reply parents with chat context, preserve existing thread identifiers without rendered items, and reject unresolved explicit text replies before dispatch (#323, thanks @schjonhaug).
 - Resolve bare group identifiers exactly in bridge sends, including database-unavailable sends, and report missing chats as safe pre-dispatch failures (#324, thanks @hyprsh).
 - Confirm sent text across canonically equivalent Unicode forms, including accented and mixed-normalization text (#320, #321, thanks @privateloris and @goutamadwant).
+- Update PhoneNumberKit to 5.0.11 with phone-number metadata 9.0.40.
 
 ## 0.15.9 - 2026-09-24
 
