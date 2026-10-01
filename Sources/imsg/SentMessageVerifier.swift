@@ -15,10 +15,23 @@ enum SentMessageVerifier {
     chatID: Int64?,
     sentAt: Date
   ) async throws -> Message? {
+    try await resolveSentMessage(
+      store: store, options: options, chatID: chatID, sentAt: sentAt,
+      now: Date.init, wait: { try await Task.sleep(nanoseconds: 100_000_000) })
+  }
+
+  static func resolveSentMessage(
+    store: MessageStore,
+    options: MessageSendOptions,
+    chatID: Int64?,
+    sentAt: Date,
+    now: () -> Date,
+    wait: () async throws -> Void
+  ) async throws -> Message? {
     guard !options.text.isEmpty || !options.attachmentPath.isEmpty else { return nil }
 
     let lowerBound = sentAt.addingTimeInterval(-2)
-    let deadline = Date().addingTimeInterval(8)
+    let deadline = now().addingTimeInterval(8)
     repeat {
       if Task.isCancelled { return nil }
       if let message = try resolveSentMessageCandidate(
@@ -29,8 +42,8 @@ enum SentMessageVerifier {
       ) {
         return message
       }
-      try await Task.sleep(nanoseconds: 100_000_000)
-    } while Date() < deadline
+      try await wait()
+    } while now() < deadline
     return nil
   }
 

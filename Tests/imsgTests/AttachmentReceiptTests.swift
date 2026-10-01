@@ -16,22 +16,25 @@ func attachmentReceiptWaitsForChatAndAttachmentJoins() async throws {
       "INSERT INTO message(ROWID, handle_id, text, date, is_from_me, service) VALUES (99, 1, '', ?, 1, 'iMessage')",
       CommandTestDatabase.appleEpoch(sentAt))
   }
-  let update = Task {
-    try await Task.sleep(for: .milliseconds(150))
-    _ = try store.withConnection { db in
-      try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 99)")
-    }
-    try await Task.sleep(for: .milliseconds(150))
-    try store.withConnection { db in
-      try db.run("INSERT INTO attachment(ROWID, filename) VALUES (99, ?)", path)
-      try db.run("INSERT INTO message_attachment_join(message_id, attachment_id) VALUES (99, 99)")
-    }
-  }
+  var polls = 0
   let receipt = try await SentMessageVerifier.resolveSentMessage(
     store: store,
     options: MessageSendOptions(recipient: "", attachmentPath: path, chatGUID: "iMessage;-;+123"),
-    chatID: 1, sentAt: sentAt)
-  try await update.value
+    chatID: 1, sentAt: sentAt,
+    now: { sentAt.addingTimeInterval(Double(polls) / 10) },
+    wait: {
+      polls += 1
+      try store.withConnection { db in
+        if polls == 1 {
+          try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 99)")
+        } else if polls == 2 {
+          try db.run("INSERT INTO attachment(ROWID, filename) VALUES (99, ?)", path)
+          try db.run(
+            "INSERT INTO message_attachment_join(message_id, attachment_id) VALUES (99, 99)")
+        }
+      }
+    })
+  #expect(polls == 2)
   #expect(receipt?.rowID == 99)
   #expect(receipt?.chatID == 1)
 }
@@ -102,15 +105,21 @@ func attachmentReceiptDeadlineKeepsUnjoinedRowUncertain() async throws {
       "INSERT INTO message(ROWID, handle_id, text, date, is_from_me, service) VALUES (99, 99, '', ?, 1, 'iMessage')",
       CommandTestDatabase.appleEpoch(sentAt))
   }
+  var polls = 0
   do {
     _ = try await SentMessageVerifier.verifyAppleScriptSend(
       store: store,
       options: MessageSendOptions(
         recipient: "", attachmentPath: "/synthetic/photo.jpg", chatGUID: "iMessage;-;+123"),
-      chatID: 1, sentAt: sentAt, resolve: SentMessageVerifier.resolveSentMessage)
+      chatID: 1, sentAt: sentAt,
+      resolve: { store, options, chatID, sentAt in
+        try await SentMessageVerifier.resolveSentMessage(
+          store: store, options: options, chatID: chatID, sentAt: sentAt,
+          now: { sentAt.addingTimeInterval(Double(polls) / 10) }, wait: { polls += 1 })
+      })
     Issue.record("expected uncertain delivery after receipt deadline")
   } catch let failure as DeliveryFailure {
-    #expect(Date().timeIntervalSince(sentAt) >= 8)
+    #expect(polls == 80)
     #expect(!failure.retrySafe)
     #expect(failure.disposition == .mayHaveCompleted)
     #expect(failure.description.contains("row (99)"))
