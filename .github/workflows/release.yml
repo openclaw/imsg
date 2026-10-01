@@ -32,7 +32,7 @@ jobs:
       macos-archive-name: imsg-macos.zip
       linux-archive-name: imsg-linux-x86_64.tar.gz
       swift-linux-image: swift:6.4.0-noble
-      ci-check-events: '["push","pull_request"]'
+      ci-check-events: '["push","pull_request","workflow_dispatch"]'
     secrets:
       MACOS_SIGNING_P12: ${{ secrets.MACOS_SIGNING_P12 }}
       MACOS_SIGNING_P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}

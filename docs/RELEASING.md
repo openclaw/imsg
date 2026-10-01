@@ -29,6 +29,14 @@ The first five are required before the workflow can create a release tag. The pr
 
 Dispatch only after the release-preparation PR is merged and current `main` CI is green. Run from the repository root so the requested version comes from the canonical source:
 
+If GitHub does not create a push CI run for the merge commit, dispatch the same CI workflow manually, then verify that its head SHA matches current `main` and both macOS and Linux jobs pass. The release preflight accepts this independent `workflow_dispatch` evidence for the frozen commit:
+
+```bash
+gh workflow run ci.yml --repo openclaw/imsg --ref main
+```
+
+Once that exact commit is green, dispatch the release:
+
 ```bash
 gh workflow run release.yml --repo openclaw/imsg --ref main -f "version=$(cut -d= -f2 version.env)"
 ```
