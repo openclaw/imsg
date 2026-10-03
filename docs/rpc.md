@@ -180,7 +180,8 @@ prose or message content:
   },
   "contacts": { "available": true },
   "methods": ["initialize", "status", "watch.unsubscribe", "chats.list", "send", "typing", "read"],
-  "supported_methods": ["initialize", "status", "watch.unsubscribe", "..."]
+  "supported_methods": ["initialize", "status", "watch.unsubscribe", "..."],
+  "rpc_features": ["tapback.emoji"]
 }
 ```
 
@@ -193,6 +194,9 @@ non-launching v2 status probe and are conservatively gated by the selectors the
 bridge reports (for example stickers, polls, editing, unsend, chat deletion,
 and Name & Photo). Aliases appear together. `supported_methods` is the compiled
 union for protocol negotiation and does not claim current readiness.
+`rpc_features` is a short list the client can gate on without knowing selector
+names; `tapback.emoji` means the running bridge can send an arbitrary emoji
+tapback, and it is absent (empty list) when it cannot.
 
 When the database is ready, `database.features` exposes feature-level booleans,
 not raw SQLite column names. When it is down, `database.error` is redacted and
@@ -632,7 +636,7 @@ existing iMessage chat; ordinary `send.rich` text does not.
 - `send.attachment` sends `file` or `path`, with optional `audio` / `is_audio` / `as_voice`. Pass `reply_to` (or `replyTo`, `reply_to_guid`, or `message_guid`) to reply to an existing message. An optional non-negative integer `part_index` / `partIndex` selects that message's part and is invalid without a reply target.
   When audio is true, imsg prepares a CAF/Opus voice message with macOS's built-in `afconvert` before dispatch. Invalid audio fails without sending; the original file is unchanged. See [native voice messages](attachments.md#native-voice-messages).
 - `send.multipart` sends 1–20 text parts. `parts` is a required array of objects containing a non-empty `text` string and optional `text_formatting` array. Top-level `effect` / `effect_id` and `subject` match `imsg send-multipart`. File, attachment, and mention parts are rejected before bridge dispatch.
-- `tapback` sends or removes a standard reaction. Params: `message_id` or `message_guid`, plus `reaction` / `kind` / `emoji`, optional `remove` and non-negative `part_index`. A `p:N/GUID` target selects its embedded part; the reference and native range always refer to that same part.
+- `tapback` sends or removes a reaction. Params: `message_id` or `message_guid`, plus `reaction` / `kind` for the six standard kinds or `emoji` for an arbitrary emoji tapback, optional `remove` and non-negative `part_index`. An arbitrary emoji requires `rpc_features` to include `tapback.emoji`; without it a custom emoji is refused rather than folded onto a standard kind. A `p:N/GUID` target selects its embedded part; the reference and native range always refer to that same part.
 - `message.edit` edits `message_id` / `message_guid` with `text`.
 - `message.unsend`, `message.delete`, and `message.notifyAnyways` target `message_id` / `message_guid`.
 - `contacts.shouldShareContact` reads Apple Messages' advisory Name & Photo offer eligibility. The result includes `can_inspect_offer`, `can_share`, and tri-state `should_offer`.

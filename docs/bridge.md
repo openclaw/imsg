@@ -79,6 +79,13 @@ imsg tapback --chat 'iMessage;-;+15551234567' \
   --message <message-guid> --kind love --remove
 ```
 
+A custom emoji is sent with `--emoji` in place of `--kind` (and removed with `--remove`). This needs the running bridge to report `selectors.emojiTapbackSend`; `imsg status --json` lists `tapback.emoji` in `rpc_features` when it does:
+
+```bash
+imsg tapback --chat 'iMessage;-;+15551234567' \
+  --message <message-guid> --emoji 🎉
+```
+
 Bridge send responses identify the newly constructed message even when dispatch is queued. A returned GUID is an acknowledgment, not proof of delivery; an unavailable GUID is returned as an empty string.
 
 ## Native polls

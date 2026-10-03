@@ -255,6 +255,19 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         && clientMessageGuidInitializerAvailable();
     BOOL reactionSend = [chatClass instancesRespondToSelector:@selector(sendMessage:)]
         && stickerAssociatedMessageInitializerAvailable();
+    // Arbitrary emoji tapbacks go through IMEmojiTapback + IMTapbackSender
+    // rather than the classic IMMessage path, so they are a separate
+    // capability and are advertised separately (see rpc_features).
+    Class emojiTapbackClass = NSClassFromString(@"IMEmojiTapback");
+    Class tapbackSenderClass = NSClassFromString(@"IMTapbackSender");
+    BOOL emojiTapbackSend =
+        [emojiTapbackClass instancesRespondToSelector:
+            NSSelectorFromString(@"initWithEmoji:isRemoved:")]
+        && ([tapbackSenderClass instancesRespondToSelector:
+                NSSelectorFromString(@"initWithTapback:chat:messagePartChatItem:")]
+            || [tapbackSenderClass instancesRespondToSelector:
+                NSSelectorFromString(@"initWithTapback:chat:messageGUID:messagePartRange:messageSummaryInfo:threadIdentifier:")])
+        && [tapbackSenderClass instancesRespondToSelector:NSSelectorFromString(@"send")];
     BOOL typingAvailable = hasRegistry
         && [chatClass instancesRespondToSelector:@selector(setLocalUserIsTyping:)];
     BOOL readAvailable = hasRegistry
@@ -325,6 +338,7 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"sendAttachment": @(attachmentSend),
         @"sendMultipart": @(chatSend),
         @"sendReaction": @(reactionSend),
+        @"emojiTapbackSend": @(emojiTapbackSend),
         @"pollPayloadMessage": @(
             [chatClass instancesRespondToSelector:@selector(sendMessage:)]
                 && pollPayloadMessageInitializerAvailable()),

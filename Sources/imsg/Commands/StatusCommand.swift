@@ -112,7 +112,8 @@ enum StatusCommand {
         helperVersion: helperVersion,
         helperVersionMismatch: helperVersionMismatch,
         selectors: selectors,
-        rpcMethods: advertisedRPCMethods(selectors: selectors)
+        rpcMethods: advertisedRPCMethods(selectors: selectors),
+        rpcFeatures: selectors["emojiTapbackSend"] == true ? ["tapback.emoji"] : []
       )
       try JSONLines.print(payload)
     } else {
@@ -210,6 +211,7 @@ private struct StatusPayload: Encodable {
   let helperVersionMismatch: String?
   let selectors: [String: Bool]
   let rpcMethods: [String]
+  let rpcFeatures: [String]
 
   enum CodingKeys: String, CodingKey {
     case version
@@ -225,5 +227,6 @@ private struct StatusPayload: Encodable {
     case helperVersionMismatch = "helper_version_mismatch"
     case selectors
     case rpcMethods = "rpc_methods"
+    case rpcFeatures = "rpc_features"
   }
 }
