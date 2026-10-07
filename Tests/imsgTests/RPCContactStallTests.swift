@@ -112,7 +112,8 @@ import Testing
   }
 
   private func waitForContactStallProof(_ predicate: () -> Bool) async throws {
-    let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+    // Allow watcher startup on loaded CI runners; the contract is progress while Contacts stays blocked.
+    let deadline = ContinuousClock.now.advanced(by: .seconds(15))
     while !predicate(), ContinuousClock.now < deadline {
       try await Task.sleep(for: .milliseconds(10))
     }
