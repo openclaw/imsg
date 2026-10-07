@@ -342,3 +342,76 @@ func rpcBridgeMessageMethodsResolveDirectChatIdentifierToGUID() async throws {
 
   #expect(capturedParams["chatGuid"] as? String == "iMessage;-;+123")
 }
+
+@Test
+func rpcTapbackForwardsCustomEmojiOutsideTheClassicKindWhitelist() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, params in
+      capturedAction = action
+      capturedParams = params
+      return ["messageGuid": ""]
+    }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"emoji","method":"tapback","params":{"chat_id":1,"message_guid":"parent-guid","emoji":"💀","remove":true}}"#
+  )
+
+  #expect(capturedAction == .sendReaction)
+  #expect(capturedParams["emoji"] as? String == "💀")
+  #expect(capturedParams["remove"] as? Bool == true)
+  #expect(capturedParams["reactionType"] == nil)
+  let result = output.responses.first?["result"] as? [String: Any]
+  #expect(result?["ok"] as? Bool == true)
+  #expect(result?["emoji"] as? String == "💀")
+}
+
+@Test
+func rpcTapbackStillRefusesAnEmojiThroughTheClassicReactionParameter() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  var invoked = false
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { _, _ in
+      invoked = true
+      return [:]
+    }
+  )
+
+  // The control: only the dedicated emoji parameter opens the new path. An
+  // emoji sent through the classic reaction parameter is still refused, so a
+  // client that does not advertise support keeps the six-kind behaviour.
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"boom","method":"tapback","params":{"chat_id":1,"message_guid":"parent-guid","reaction":"🎉"}}"#
+  )
+
+  #expect(invoked == false)
+  #expect(output.responses.isEmpty)
+  #expect(!output.errors.isEmpty)
+}
+
+private func bridgeReactionTypeThrows(_ raw: String) -> Bool {
+  do {
+    _ = try normalizeBridgeReactionType(raw)
+    return false
+  } catch {
+    return true
+  }
+}
+
+@Test
+func rpcClassicReactionWhitelistStillRefusesAnUnknownKind() {
+  #expect(bridgeReactionTypeThrows("🎉"))
+  #expect(bridgeReactionTypeThrows("shrug"))
+  #expect((try? normalizeBridgeReactionType("❤️")) == "love")
+}

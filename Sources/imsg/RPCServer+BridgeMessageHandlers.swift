@@ -226,10 +226,31 @@ extension RPCServer {
     guard let messageGUID = try rpcMessageGUIDParam(params) else {
       throw RPCError.invalidParams("message_id or message_guid is required")
     }
-    let rawReaction = try params.string("reaction", aliases: ["kind", "emoji"]) ?? ""
     let remove = try params.boolean("remove") ?? false
     let partIndex = try params.integer("part_index", aliases: ["partIndex"]) ?? 0
     let chatGUID = try await resolveChatGUIDParam(params)
+
+    // Arbitrary emoji tapbacks bypass the six-kind whitelist: the bridge
+    // forwards `emoji` to IMEmojiTapback/IMTapbackSender on the Mac, while the
+    // classic kinds keep going through normalizeBridgeReactionType. Routing an
+    // emoji through the classic path folds some onto a kind (🤣 becomes laugh)
+    // and refuses the rest, which is the defect this branch fixes.
+    if let emoji = try params.string("emoji"), !emoji.isEmpty {
+      _ = try await invokeBridge(
+        action: .sendReaction,
+        params: [
+          "chatGuid": chatGUID,
+          "selectedMessageGuid": messageGUID,
+          "emoji": emoji,
+          "remove": remove,
+          "partIndex": partIndex,
+        ]
+      )
+      respond(id: id, result: ["ok": true, "emoji": emoji])
+      return
+    }
+
+    let rawReaction = try params.string("reaction", aliases: ["kind"]) ?? ""
     let reactionType = try normalizeBridgeReactionType(
       rawReaction,
       remove: remove

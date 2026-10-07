@@ -81,6 +81,15 @@ struct RPCBridgeSnapshot: Sendable {
     return result
   }
 
+  /// The engine's capability block (see EngineCapabilities): the build identity and the named, versioned features
+  /// this build reports, in one place a client reads in a single call. `tapback.emoji` is version 2 where the bridge
+  /// sends an arbitrary emoji as itself. The version tracks the API shape, so a client asks for the version it needs;
+  /// a build that advertises an older version, or predates the block and reports none, does not support the pattern
+  /// and is denied in place, never attempted and never folded onto a wrong reaction.
+  var capabilities: EngineCapabilities {
+    .current(emojiTapbackSend: selectors["emojiTapbackSend"] == true)
+  }
+
   func supports(_ requirement: RPCBridgeRequirement) -> Bool {
     if requirement == .none { return true }
     guard bridgeVersion != nil, v2Ready == true else { return false }
@@ -139,6 +148,7 @@ extension RPCServer {
       "contacts": ["available": !contactResolver.cached.contactsUnavailable],
       "methods": rpcUsableMethods(database: databaseSnapshot, bridge: bridgeSnapshot),
       "supported_methods": kSupportedRPCMethods,
+      "capabilities": bridgeSnapshot.capabilities.dictionary,
     ]
   }
 

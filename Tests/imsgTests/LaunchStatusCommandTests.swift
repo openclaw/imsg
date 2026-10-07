@@ -175,3 +175,39 @@ func statusReportsHelperVersionMismatch(version: String?, json: Bool) async thro
   }
   #expect(output.contains("imsg launch") == mismatch)
 }
+
+@Test
+func statusAdvertisesVersionedEmojiTapbackCapabilityOnlyWhenTheHelperSupportsIt() async throws {
+  let values = ParsedValues(positional: [], options: [:], flags: ["jsonOutput"])
+  let runtime = RuntimeOptions(parsedValues: values)
+
+  let (withFeature, _) = try await StdoutCapture.capture {
+    try await StatusCommand.run(
+      values: values, runtime: runtime,
+      availability: (true, "Connected to Messages.app."),
+      probe: {
+        [
+          "bridge_version": 2, "v2_ready": true, "registry_available": true,
+          "selectors": ["emojiTapbackSend": true],
+        ]
+      })
+  }
+  #expect(withFeature.contains("\"capabilities\""))
+  #expect(withFeature.contains("\"tapback.emoji\":2"))
+
+  // The control: without the helper selector the capability is not advertised, so
+  // a client keeps the six classic kinds.
+  let (withoutFeature, _) = try await StdoutCapture.capture {
+    try await StatusCommand.run(
+      values: values, runtime: runtime,
+      availability: (true, "Connected to Messages.app."),
+      probe: {
+        [
+          "bridge_version": 2, "v2_ready": true, "registry_available": true,
+          "selectors": ["emojiTapbackSend": false],
+        ]
+      })
+  }
+  #expect(withoutFeature.contains("\"capabilities\""))
+  #expect(!withoutFeature.contains("tapback.emoji"))
+}

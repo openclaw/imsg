@@ -2,7 +2,8 @@
 static Class identityTestClass(NSString *name) {
     NSDictionary *classes = @{
         @"IMMessage": @"IdentityMessage", @"IMChatRegistry": @"IdentityRegistry",
-        @"IMChatHistoryController": @"IdentityHistory", @"IMMessagePartChatItem": @"IdentityPart"
+        @"IMChatHistoryController": @"IdentityHistory", @"IMMessagePartChatItem": @"IdentityPart",
+        @"IMEmojiTapback": @"TestEmojiTapback", @"IMTapbackSender": @"TestTapbackSender"
     };
     if (classes[name]) return NSClassFromString(classes[name]);
     if ([name hasPrefix:@"IM"] || [name hasPrefix:@"IDS"]) return Nil;
@@ -97,6 +98,43 @@ static IdentityParent *parent;
 }
 - (void)sendMessage:(id)message { dispatchedMessage = message; }
 - (void)sendMessage:(id)message reason:(NSInteger)reason { [self sendMessage:message]; }
+@end
+
+// Emoji-tapback fixtures. The emoji path builds an IMEmojiTapback and an
+// IMTapbackSender through NSInvocation. The sender is the invocation's TARGET,
+// which NSInvocation retains only in -retainArguments, so the instance handed
+// to -setTarget: must outlive that call. These stubs let the builder run
+// without Messages.app and observe whether the target survived.
+static BOOL emojiTapbackInitCalled;
+static BOOL senderInitCalled;
+static BOOL senderSendCalled;
+static NSInteger senderDeallocCount;
+static NSInteger senderDeallocCountAtSend = -1;
+
+@interface TestEmojiTapback : NSObject
+@end
+@implementation TestEmojiTapback
+- (id)initWithEmoji:(id)emoji isRemoved:(BOOL)removed {
+    if ((self = [super init])) { emojiTapbackInitCalled = YES; }
+    return self;
+}
+@end
+
+@interface TestTapbackSender : NSObject
+@end
+@implementation TestTapbackSender
+- (id)initWithTapback:(id)tapback chat:(id)chat messagePartChatItem:(id)item {
+    if ((self = [super init])) { senderInitCalled = YES; }
+    return self;
+}
+- (id)initWithTapback:(id)tapback chat:(id)chat messageGUID:(NSString *)guid
+     messagePartRange:(NSRange)range messageSummaryInfo:(NSDictionary *)info
+     threadIdentifier:(NSString *)threadIdentifier {
+    if ((self = [super init])) { senderInitCalled = YES; }
+    return self;
+}
+- (void)send { senderSendCalled = YES; senderDeallocCountAtSend = senderDeallocCount; }
+- (void)dealloc { senderDeallocCount += 1; }
 @end
 
 @interface IdentityRegistry : NSObject
@@ -210,6 +248,28 @@ int main(void) {
             @"chatGuid": @"iMessage;+;chat-test", @"message": @"hello"
         });
         check([withoutGUID[@"messageGuid"] isEqual:@""], @"An unavailable new GUID must never fall back to old history");
+        // Emoji tapbacks: the sender is the NSInvocation target and must survive
+        // -retainArguments. On the unfixed builder the target is an ARC temporary
+        // released at the end of the -setTarget: statement, so -retainArguments
+        // retains a freed object (crash) or the sender is built on freed memory
+        // (dealloc before send); either way the assertions below fail.
+        emojiTapbackInitCalled = NO;
+        senderInitCalled = NO;
+        senderSendCalled = NO;
+        senderDeallocCount = 0;
+        senderDeallocCountAtSend = -1;
+        NSDictionary *emojiResult = handleSendReaction(7, @{
+            @"chatGuid": @"iMessage;+;chat-test",
+            @"selectedMessageGuid": @"parent-guid",
+            @"emoji": @"🎉",
+            @"partIndex": @0
+        });
+        check([emojiResult[@"success"] boolValue], @"An emoji tapback succeeds through the emoji path");
+        check(emojiTapbackInitCalled, @"The emoji path constructs IMEmojiTapback");
+        check(senderInitCalled, @"The emoji path constructs IMTapbackSender");
+        check(senderSendCalled, @"The emoji path dispatches the tapback sender");
+        check(senderDeallocCountAtSend == 0,
+              @"The sender invocation target is alive when the tapback is sent");
         fprintf(stdout, "Bridge message identity tests: %lu failure(s)\n", (unsigned long)failures);
         return failures ? 1 : 0;
     }
