@@ -179,7 +179,7 @@ prose or message content:
     "error": "The bridge is not started. Run imsg launch explicitly before using bridge methods."
   },
   "contacts": { "available": true },
-  "methods": ["initialize", "status", "watch.unsubscribe", "chats.list", "send", "typing", "read"],
+  "methods": ["initialize", "status", "watch.unsubscribe", "chats.list", "chats.get", "send", "typing", "read"],
   "supported_methods": ["initialize", "status", "watch.unsubscribe", "..."]
 }
 ```
@@ -218,6 +218,34 @@ Result:
 ```json
 { "chats": [Chat] }
 ```
+
+### `chats.get`
+
+Reads identity and participants for exactly one existing chat, including direct
+chats. This database-only method does not scan `chats.list`, read message content,
+invoke the bridge, or mutate chat state.
+
+Params:
+
+- `chat_id` (positive int, required) — the exact chat rowid; no other selectors or params are accepted.
+
+Result is the same metadata object as `imsg group --chat-id <id> --json`:
+
+```json
+{
+  "id": 42,
+  "identifier": "chat123",
+  "guid": "iMessage;+;chat123",
+  "name": "Group Chat",
+  "service": "iMessage",
+  "is_group": true,
+  "participants": ["+14155551212", "+14155551213"]
+}
+```
+
+`account_id`, `account_login`, and `last_addressed_handle` are included when
+available. Missing, malformed, non-positive, or unknown IDs return `-32602`;
+an unknown ID reports `Chat not found: <id>` rather than an empty result.
 
 ### `chats.create`
 

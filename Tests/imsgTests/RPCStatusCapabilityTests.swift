@@ -21,7 +21,8 @@ func rpcStatusCalculatesDynamicMethodsAcrossResourceStates() async throws {
   let bothMethods = rpcStatusMethods(both)
   #expect(
     bothMethods.isSuperset(of: [
-      "chats.list", "messages.search", "send.multipart", "send.sticker", "poll.send", "poll.vote",
+      "chats.list", "chats.get", "messages.search", "send.multipart", "send.sticker", "poll.send",
+      "poll.vote",
       "send.tracked", "typing", "read", "message.edit", "message.unsend", "group.rename",
     ]))
   let readyBridge = try #require(both["bridge"] as? [String: Any])
@@ -52,6 +53,7 @@ func rpcStatusCalculatesDynamicMethodsAcrossResourceStates() async throws {
     #"{"jsonrpc":"2.0","id":"database-only","method":"status"}"#)
   let databaseOnlyMethods = rpcStatusMethods(try rpcStatusResult(databaseOnlyOutput))
   #expect(databaseOnlyMethods.contains("chats.list"))
+  #expect(databaseOnlyMethods.contains("chats.get"))
   #expect(databaseOnlyMethods.contains("typing"))
   #expect(databaseOnlyMethods.contains("read"))
   #expect(!databaseOnlyMethods.contains("group.rename"))
@@ -68,6 +70,7 @@ func rpcStatusCalculatesDynamicMethodsAcrossResourceStates() async throws {
   #expect(bridgeOnlyMethods.contains("group.rename"))
   #expect(bridgeOnlyMethods.contains("poll.send"))
   #expect(!bridgeOnlyMethods.contains("chats.list"))
+  #expect(!bridgeOnlyMethods.contains("chats.get"))
   #expect(!bridgeOnlyMethods.contains("send.multipart"))
   #expect(!bridgeOnlyMethods.contains("send.sticker"))
   #expect(!bridgeOnlyMethods.contains("send.tracked"))

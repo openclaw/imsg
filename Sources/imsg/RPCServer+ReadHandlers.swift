@@ -44,6 +44,23 @@ extension RPCServer {
     respond(id: id, result: ["chats": payloads])
   }
 
+  func handleChatsGet(id: Any?, params: [String: Any]) async throws {
+    let params = try RPCParameters(params, method: "chats.get", supportedKeys: ["chat_id"])
+    guard let chatID = try params.int64("chat_id") else {
+      throw RPCError.invalidParams("chat_id is required")
+    }
+    guard chatID > 0 else {
+      throw RPCError.invalidParams("chat_id must be a positive integer")
+    }
+    let store = try await databaseResources.require().store
+    guard let info = try store.chatInfo(chatID: chatID) else {
+      throw IMsgError.chatNotFound(chatID: chatID)
+    }
+    let participants = try store.participants(chatID: chatID)
+    respond(
+      id: id, result: try GroupPayload(chatInfo: info, participants: participants).asDictionary())
+  }
+
   func handleMessagesHistory(id: Any?, params: [String: Any]) async throws {
     let params = try RPCParameters(
       params,

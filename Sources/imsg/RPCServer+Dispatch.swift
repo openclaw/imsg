@@ -31,6 +31,8 @@ extension RPCServer {
         try await handleStatus(id: id, params: params)
       case .chatsList:
         try await handleChatsList(id: id, params: params)
+      case .chatsGet:
+        try await handleChatsGet(id: id, params: params)
       case .messagesStats:
         try await handleMessagesStats(id: id, params: params)
       case .messagesHistory:

@@ -312,6 +312,20 @@ struct GroupPayload: Codable {
   }
 }
 
+extension GroupPayload {
+  func asDictionary() throws -> [String: Any] {
+    let data = try JSONEncoder().encode(self)
+    let object = try JSONSerialization.jsonObject(with: data)
+    guard let dictionary = object as? [String: Any] else {
+      throw EncodingError.invalidValue(
+        self,
+        EncodingError.Context(
+          codingPath: [], debugDescription: "Group payload encoding did not produce an object"))
+    }
+    return dictionary
+  }
+}
+
 struct AttachmentPayload: Codable {
   let filename: String
   let transferName: String
