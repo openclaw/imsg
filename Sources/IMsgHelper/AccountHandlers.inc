@@ -136,6 +136,20 @@ static NSString *nicknameSenderHandleID(IMChat *chat, NSString **source) {
     return nil;
 }
 
+static NSString *nicknameStringProperty(id object, SEL selector) {
+    id value = safelyReadObjectSelector(object, selector);
+    return [value isKindOfClass:[NSString class]] && [value length] ? value : nil;
+}
+
+static NSNumber *nicknameBoolProperty(id object, SEL selector) {
+    if (![object respondsToSelector:selector]) return nil;
+    @try {
+        return @(((BOOL (*)(id, SEL))objc_msgSend)(object, selector));
+    } @catch (__unused NSException *exception) {
+        return nil;
+    }
+}
+
 static NSDictionary *handleGetNicknameInfo(NSInteger requestId, NSDictionary *params) {
     NSString *address = params[@"address"];
     if (![address isKindOfClass:[NSString class]] || address.length == 0) {
@@ -163,7 +177,20 @@ static NSDictionary *handleGetNicknameInfo(NSInteger requestId, NSDictionary *pa
             @"address": address,
             @"has_nickname": @(nickname != nil)
         } mutableCopy];
-        if (nickname) info[@"description"] = [nickname description] ?: @"";
+        if (nickname) {
+            info[@"description"] = [nickname description] ?: @"";
+            info[@"first_name"] = nicknameStringProperty(nickname, @selector(firstName));
+            info[@"last_name"] = nicknameStringProperty(nickname, @selector(lastName));
+            info[@"display_name"] = nicknameStringProperty(nickname, @selector(displayName));
+
+            id avatar = safelyReadObjectSelector(nickname, @selector(avatar));
+            NSString *avatarPath = nicknameStringProperty(avatar, @selector(imageFilePath));
+            if (avatarPath && [nicknameBoolProperty(avatar, @selector(imageExists)) boolValue]) {
+                info[@"avatar_path"] = avatarPath;
+                info[@"avatar_is_sensitive"] =
+                    nicknameBoolProperty(avatar, @selector(contentIsSensitive));
+            }
+        }
         return successResponse(requestId, info);
     } @catch (NSException *exception) {
         return errorResponse(requestId,
