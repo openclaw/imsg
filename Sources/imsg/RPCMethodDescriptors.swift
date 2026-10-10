@@ -43,7 +43,7 @@ struct RPCBridgeRequirement: Sendable, Equatable {
 }
 
 enum RPCDispatchRoute: Sendable, Equatable {
-  case initialize, status, chatsList, messagesStats, messagesHistory, messagesSearch
+  case initialize, status, chatsList, chatsGet, messagesStats, messagesHistory, messagesSearch
   case messagesAfter, watchSubscribe, bridgeEventsSubscribe, watchUnsubscribe
   case send, sendTracked, sendRich, sendAttachment
   case sendMultipart, sendSticker, messagesScheduled, pollSend, pollVote, pollUnvote
@@ -109,6 +109,7 @@ let rpcMethodDescriptors: [RPCMethodDescriptor] = [
   RPCMethodDescriptor("status", route: .status, lane: .read),
   RPCMethodDescriptor("watch.unsubscribe", route: .watchUnsubscribe, lane: .control),
   RPCMethodDescriptor("chats.list", route: .chatsList, lane: .read, database: [.ready]),
+  RPCMethodDescriptor("chats.get", route: .chatsGet, lane: .read, database: [.ready]),
   RPCMethodDescriptor(
     "messages.stats", route: .messagesStats, lane: .read, database: [.ready]),
   RPCMethodDescriptor(
