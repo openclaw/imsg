@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update PhoneNumberKit to 5.0.12 with phone-number metadata 9.0.41 and actions/setup-node to 7.1.0.
+
 - Add read-only `chats.get` RPC for exact chat identity and participant metadata without enumerating messages or using the bridge (#338, thanks @hannesrudolph).
 
 - Preserve attachment caption text without adding a trailing blank line, keeping formatting and file parts intact (#336, thanks @logananderson).
