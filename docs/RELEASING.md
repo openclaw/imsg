@@ -22,6 +22,7 @@ The first five are required before the workflow can create a release tag. The pr
 - `scripts/build-universal.sh` must emit the universal `imsg` CLI, `imsg-bridge-helper.dylib` with `arm64e`, `arm64`, and `x86_64` slices, and at least one Swift resource bundle.
 - `scripts/build-linux.sh` must emit `imsg-linux-x86_64.tar.gz` with the static Swift runtime.
 - The Darwin payload retains `com.steipete.imsg` and `com.steipete.imsg.bridge-helper` under Peter Steinberger's Developer ID identity.
+- `scripts/check-macos-minimum.sh` checks `LC_BUILD_VERSION` for every CLI and helper slice during the macOS build and rejects any minimum newer than macOS 14.0.
 - Both native macOS verifier jobs must accept the checksum inventory, signatures, architecture slices, resource bundles, notarization, native version output, and Linux executable format before publication.
 - The Homebrew formula in `steipete/homebrew-tap` must resolve to the exact verified `imsg-macos.zip` URL and SHA-256.
 

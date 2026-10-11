@@ -2,11 +2,14 @@
 
 ## Unreleased
 
-- Update PhoneNumberKit to 5.0.12 with phone-number metadata 9.0.41 and actions/setup-node to 7.1.0.
+## 0.16.0 - 2026-10-11
+
+**Highlights:** Read exact chat identity and participants with the new `chats.get` RPC, and preserve attachment caption formatting.
 
 - Add read-only `chats.get` RPC for exact chat identity and participant metadata without enumerating messages or using the bridge (#338, thanks @hannesrudolph).
-
 - Preserve attachment caption text without adding a trailing blank line, keeping formatting and file parts intact (#336, thanks @logananderson).
+- Update PhoneNumberKit to 5.0.12 with phone-number metadata 9.0.41 and actions/setup-node to 7.1.0.
+- Reject macOS release artifacts whose deployment target exceeds the documented macOS 14 minimum.
 
 ## 0.15.10 - 2026-09-30
 

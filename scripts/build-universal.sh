@@ -59,6 +59,8 @@ for ARCH in "${HELPER_ARCH_LIST[@]}"; do
   fi
 done
 
+"$ROOT/scripts/check-macos-minimum.sh" "${DIST_DIR}/${APP_NAME}" "${DIST_DIR}/${HELPER_NAME}"
+
 if [[ "$CODESIGN_IDENTITY" == "-" ]]; then
   codesign --force --sign - \
     --entitlements "$ENTITLEMENTS" \
