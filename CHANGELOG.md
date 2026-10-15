@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Speed up chat unread counts by traversing the unread index before chat membership, while preserving query planning for copied databases without that index (#342, thanks @theanhgen).
 - Return structured shared names and downloaded avatar metadata from `nickname --json`, preserving the existing description and omitting unavailable fields (#339, thanks @logananderson).
 
 ## 0.16.0 - 2026-10-11

@@ -87,6 +87,8 @@ imsg chats --unread-only --json
 
 On an older Messages database without a read-state column, `--unread-only` fails clearly instead of reporting an empty inbox.
 
+Unread counts use the Messages database's unread index when available, avoiding a scan of each listed chat's full history. Copied databases without that index remain supported, and split URL-preview rows still count as one logical message.
+
 For anything else, pipe through `jq` or `grep` for ad-hoc filtering:
 
 ```bash

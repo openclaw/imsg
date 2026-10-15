@@ -20,6 +20,7 @@ struct MessageStoreSchema: Sendable {
   let hasChatLastAddressedHandleColumn: Bool
   let hasIsReadColumn: Bool
   let hasDateReadColumn: Bool
+  let hasUnreadMessageIndex: Bool
 
   init(connection: Connection) throws {
     let messageColumns = try MessageStore.tableColumns(connection: connection, table: "message")
@@ -50,6 +51,20 @@ struct MessageStoreSchema: Sendable {
     self.hasChatLastAddressedHandleColumn = chatColumns.contains("last_addressed_handle")
     self.hasIsReadColumn = messageColumns.contains("is_read")
     self.hasDateReadColumn = messageColumns.contains("date_read")
+    self.hasUnreadMessageIndex = try Self.hasUnreadIndex(connection)
+  }
+
+  private static func hasUnreadIndex(_ connection: Connection) throws -> Bool {
+    for row in try connection.prepare(
+      "SELECT name FROM pragma_index_list('message') WHERE partial = 0")
+    {
+      guard let name = row[0] as? String else { continue }
+      let columns = try connection.prepare(
+        "SELECT name FROM pragma_index_info(?) ORDER BY seqno LIMIT 2", name
+      ).compactMap { ($0[0] as? String)?.lowercased() }
+      if Set(columns) == Set(["is_read", "is_from_me"]) { return true }
+    }
+    return false
   }
 
   init(
@@ -96,5 +111,6 @@ struct MessageStoreSchema: Sendable {
       hasChatLastAddressedHandleColumn ?? base.hasChatLastAddressedHandleColumn
     self.hasIsReadColumn = hasIsReadColumn ?? base.hasIsReadColumn
     self.hasDateReadColumn = hasDateReadColumn ?? base.hasDateReadColumn
+    self.hasUnreadMessageIndex = base.hasUnreadMessageIndex
   }
 }

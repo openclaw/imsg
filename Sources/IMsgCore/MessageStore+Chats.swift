@@ -86,10 +86,13 @@ private struct UnreadMessagesQuery {
     let selection = MessageRowSelection(store: store, chatIDColumn: "cmj.chat_id")
     self.selection = selection
     let placeholders = Array(repeating: "?", count: chatIDs.count).joined(separator: ", ")
+    // Start with the small unread index instead of looking up every row in each chat.
+    // Without that index, let SQLite choose the cheaper traversal for the copied schema.
+    let chatJoin = store.schema.hasUnreadMessageIndex ? "CROSS JOIN" : "JOIN"
     self.sql = """
       SELECT \(selection.selectList)
       FROM message m
-      JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+      \(chatJoin) chat_message_join cmj ON m.ROWID = cmj.message_id
       LEFT JOIN handle h ON m.handle_id = h.ROWID
       WHERE cmj.chat_id IN (\(placeholders))
         AND m.is_from_me = 0
