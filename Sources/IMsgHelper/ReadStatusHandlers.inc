@@ -325,6 +325,9 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"sendAttachment": @(attachmentSend),
         @"sendMultipart": @(chatSend),
         @"sendReaction": @(reactionSend),
+        @"emojiTapbackMessage": @(
+            [chatClass instancesRespondToSelector:@selector(sendMessage:)]
+                && emojiTapbackMessageInitializerAvailable()),
         @"pollPayloadMessage": @(
             [chatClass instancesRespondToSelector:@selector(sendMessage:)]
                 && pollPayloadMessageInitializerAvailable()),

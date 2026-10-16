@@ -13,6 +13,7 @@ static BOOL pollPayloadMessageInitializerAvailable(void);
 static BOOL pollVoteMessageInitializerAvailable(void);
 static NSDictionary *nicknameSharingSelectorStatus(void);
 static BOOL urlPreviewMessageInitializerAvailable(void);
+static BOOL emojiTapbackMessageInitializerAvailable(void);
 
 static void probeSelectors(void) {
     Class chatClass = NSClassFromString(@"IMChat");

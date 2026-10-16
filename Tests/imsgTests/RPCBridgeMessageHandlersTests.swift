@@ -55,6 +55,101 @@ func rpcNormalizesTapbackReactionAliases() throws {
 }
 
 @Test
+func customTapbackEmojiAcceptsOnlySingleNonClassicEmoji() {
+  for emoji in ["🎉", "💀", "👍🏽", "✌🏽", "☝🏾", "🇺🇸", "👨‍👩‍👧", "1️⃣", "☺️", " 🎉 "] {
+    #expect(customTapbackEmoji(emoji) == emoji.trimmingCharacters(in: .whitespaces))
+  }
+  for raw in ["👍", "❤️", "❤", "😂", "🤣", "‼️", "❓", "like", "1", "#", "™", "☺", "🎉🎉", "🎉 x", ""] {
+    #expect(customTapbackEmoji(raw) == nil)
+  }
+}
+
+@Test
+func rpcTapbackSendsCustomEmojiThroughCapableBridge() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  var actions: [BridgeAction] = []
+  var capturedParams: [String: Any] = [:]
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, params in
+      actions.append(action)
+      if action == .status {
+        return ["selectors": ["emojiTapbackMessage": true] as [String: Any]]
+      }
+      capturedParams = params
+      return [:]
+    }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"emoji","method":"tapback","params":{"chat_id":1,"message_id":"p:1/parent-guid","emoji":"🎉","remove":true}}"#
+  )
+
+  #expect(actions == [.status, .sendReaction])
+  #expect(capturedParams["emoji"] as? String == "🎉")
+  #expect(capturedParams["remove"] as? Bool == true)
+  #expect(capturedParams["reactionType"] == nil)
+  #expect(capturedParams["selectedMessageGuid"] as? String == "p:1/parent-guid")
+  let result = output.responses.first?["result"] as? [String: Any]
+  #expect(result?["reaction"] as? String == "🎉")
+}
+
+@Test
+func rpcTapbackRejectsCustomEmojiBeforeSendOnBridgeWithoutSupport() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  var actions: [BridgeAction] = []
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, _ in
+      actions.append(action)
+      return ["selectors": ["sendReaction": true] as [String: Any]]
+    }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"emoji","method":"tapback","params":{"chat_id":1,"message_id":"parent-guid","reaction":"🎉"}}"#
+  )
+
+  #expect(actions == [.status])
+  let error = output.errors.first?["error"] as? [String: Any]
+  #expect(error?["code"] as? Int == -32603)
+  #expect((error?["data"] as? String)?.contains("does not support emoji tapbacks") == true)
+}
+
+@Test
+func rpcTapbackKeepsClassicEmojiAliasesWithoutProbingTheBridge() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  var actions: [BridgeAction] = []
+  var reactionTypes: [String] = []
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, params in
+      actions.append(action)
+      if let reactionType = params["reactionType"] as? String { reactionTypes.append(reactionType) }
+      return [:]
+    }
+  )
+
+  for emoji in ["👍", "🤣"] {
+    await server.handleLineForTesting(
+      #"{"jsonrpc":"2.0","id":"classic","method":"tapback","params":{"chat_id":1,"message_id":"parent-guid","emoji":"\#(emoji)"}}"#
+    )
+  }
+
+  #expect(actions == [.sendReaction, .sendReaction])
+  #expect(reactionTypes == ["like", "laugh"])
+}
+
+@Test
 func rpcSendRichInvokesBridgeWithResolvedChat() async throws {
   let store = try CommandTestDatabase.makeStoreForRPC()
   let output = TestRPCOutput()

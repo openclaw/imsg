@@ -23,8 +23,24 @@ static BOOL identifierLookupAvailable;
 @property NSAttributedString *text;
 @property NSString *associatedGUID;
 @property NSRange associatedRange;
+@property long long associatedType;
+@property NSString *associatedEmoji;
 @end
 @implementation IdentityMessage
++ (id)instantMessageWithAssociatedMessageContent:(NSAttributedString *)content
+                           associatedMessageGUID:(NSString *)associatedGUID
+                           associatedMessageType:(long long)type
+                          associatedMessageRange:(NSRange)range
+                          associatedMessageEmoji:(NSString *)emoji
+                              messageSummaryInfo:(NSDictionary *)summary
+                                threadIdentifier:(NSString *)threadIdentifier {
+    IdentityMessage *message = [[self alloc] initWithText:content flags:0];
+    message.associatedGUID = associatedGUID;
+    message.associatedType = type;
+    message.associatedRange = range;
+    message.associatedEmoji = emoji;
+    return message;
+}
 - (id)initWithText:(NSAttributedString *)text flags:(unsigned long long)flags {
     if ((self = [super init])) { self.guid = omitGUID ? nil : @"new-message-guid"; self.text = text; }
     return self;
@@ -167,6 +183,43 @@ int main(void) {
         });
         check(![missing[@"success"] boolValue] && dispatchedMessage == nil,
               @"An absent selected part must fail before sending");
+        for (NSString *reference in @[@"parent-guid", @"p:1/parent-guid"]) {
+            for (NSNumber *remove in @[@NO, @YES]) {
+                dispatchedMessage = nil;
+                NSDictionary *result = handleSendReaction(4, @{
+                    @"chatGuid": @"iMessage;+;chat-test", @"selectedMessageGuid": reference,
+                    @"emoji": @"🎉", @"remove": remove,
+                    @"partIndex": [reference hasPrefix:@"p:"] ? @0 : @1
+                });
+                IdentityMessage *message = dispatchedMessage;
+                NSString *body = remove.boolValue
+                    ? @"Removed 🎉 from “second”" : @"Reacted 🎉 to “second”";
+                check([result[@"success"] boolValue], @"Emoji reaction succeeds");
+                check(message.associatedType == (remove.boolValue ? 3006 : 2006),
+                      @"Emoji reaction uses the custom tapback type");
+                check([message.associatedEmoji isEqual:@"🎉"], @"Emoji reaction carries its emoji");
+                check([message.associatedGUID isEqual:@"p:1/parent-guid"],
+                      @"Emoji reaction retains the selected part reference");
+                check(NSEqualRanges(message.associatedRange, NSMakeRange(6, 5)),
+                      @"Emoji reaction range belongs to part one");
+                check([message.text.string isEqual:body], @"Emoji reaction body matches Messages");
+                check([result[@"messageGuid"] isEqual:message.guid],
+                      @"Emoji reaction result identifies the newly dispatched message");
+            }
+        }
+        dispatchedMessage = nil;
+        NSDictionary *missingEmoji = handleSendReaction(4, @{
+            @"chatGuid": @"iMessage;+;chat-test", @"selectedMessageGuid": @"parent-guid",
+            @"emoji": @"🎉", @"partIndex": @3
+        });
+        check(![missingEmoji[@"success"] boolValue] && dispatchedMessage == nil,
+              @"An emoji reaction to an absent part must fail before sending");
+        NSDictionary *both = handleSendReaction(4, @{
+            @"chatGuid": @"iMessage;+;chat-test", @"selectedMessageGuid": @"parent-guid",
+            @"emoji": @"🎉", @"reactionType": @"like"
+        });
+        check(![both[@"success"] boolValue] && dispatchedMessage == nil,
+              @"An emoji and a classic kind together must fail before sending");
         for (NSString *target in @[@"group-test", @"identifier-only"]) {
             identifierLookupAvailable = YES;
             dispatchedMessage = nil;

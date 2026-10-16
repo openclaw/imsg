@@ -71,6 +71,21 @@ func normalizeBridgeReactionType(_ raw: String, remove: Bool = false) throws -> 
   return result
 }
 
+/// A single emoji with no classic kind, sent as a custom (2006) tapback.
+func customTapbackEmoji(_ raw: String) -> String? {
+  let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+  guard value.count == 1, (try? normalizeBridgeReactionType(value)) == nil,
+    value.unicodeScalars.first?.properties.isEmoji == true,
+    value.unicodeScalars.contains(where: { $0.properties.isEmojiPresentation || $0 == "\u{FE0F}" })
+  else { return nil }
+  return value
+}
+
+func bridgeSupportsEmojiTapbacks(_ status: [String: Any]) -> Bool {
+  let selectors = status["selectors"] as? [String: Any]
+  return selectors?["emojiTapbackMessage"] as? Bool == true
+}
+
 extension RPCServer {
   func bridgeSendVerificationBaseline() async throws -> (
     database: RPCDatabaseResources, rowID: Int64
@@ -165,6 +180,25 @@ extension RPCServer {
       throw RPCError.internalError(
         "running bridge does not support rich attachment metadata; "
           + "restart Messages with the current imsg bridge"
+      )
+    }
+  }
+
+  func requireEmojiTapbackCapability() async throws {
+    let status: [String: Any]
+    do {
+      status = try await invokeBridge(action: .status, params: [:])
+    } catch {
+      throw DeliveryFailure(
+        disposition: .notStarted,
+        transport: .bridgeV2,
+        operation: BridgeAction.sendReaction.rawValue,
+        detail: "Bridge capability inspection failed before the tapback was published."
+      )
+    }
+    guard bridgeSupportsEmojiTapbacks(status) else {
+      throw RPCError.internalError(
+        "running bridge does not support emoji tapbacks; restart Messages with the current imsg bridge"
       )
     }
   }

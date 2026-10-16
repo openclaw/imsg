@@ -17,7 +17,7 @@ enum BridgeReactCommand {
           .make(label: "message", names: [.long("message")], help: "target message guid"),
           .make(
             label: "kind", names: [.long("kind")],
-            help: "love|like|dislike|laugh|emphasize|question"),
+            help: "love|like|dislike|laugh|emphasize|question, or an emoji"),
           .make(label: "part", names: [.long("part")], help: "part index"),
         ],
         flags: [
@@ -34,7 +34,14 @@ enum BridgeReactCommand {
     try await run(values: values, runtime: runtime)
   }
 
-  static func run(values: ParsedValues, runtime: RuntimeOptions) async throws {
+  static func run(
+    values: ParsedValues,
+    runtime: RuntimeOptions,
+    invokeBridge: @escaping (BridgeAction, [String: Any]) async throws -> [String: Any] = {
+      action, params in
+      try await IMsgBridgeClient.shared.invoke(action: action, params: params)
+    }
+  ) async throws {
     guard let chat = values.option("chat"), !chat.isEmpty else {
       throw ParsedValuesError.missingOption("chat")
     }
@@ -44,17 +51,36 @@ enum BridgeReactCommand {
     guard let kind = values.option("kind"), !kind.isEmpty else {
       throw ParsedValuesError.missingOption("kind")
     }
-    let normalized = kind.lowercased()
-    let prefixed = values.flag("remove") ? "remove-\(normalized)" : normalized
-    let params: [String: Any] = [
+    let remove = values.flag("remove")
+    var params: [String: Any] = [
       "chatGuid": chat,
       "selectedMessageGuid": message,
-      "reactionType": prefixed,
       "partIndex": try values.optionInt("part", minimum: 0) ?? 0,
     ]
+    let summary: String
+    if let emoji = customTapbackEmoji(kind) {
+      guard bridgeSupportsEmojiTapbacks(try await invokeBridge(.status, [:])) else {
+        throw IMsgError.unsupportedReaction(
+          "running bridge does not support emoji tapbacks; restart Messages with the current imsg bridge"
+        )
+      }
+      params["emoji"] = emoji
+      params["remove"] = remove
+      summary = remove ? "tapback: \(emoji) removed" : "tapback: \(emoji) sent"
+    } else {
+      let reactionType: String
+      do {
+        reactionType = try normalizeBridgeReactionType(kind, remove: remove)
+      } catch {
+        throw IMsgError.unsupportedReaction(
+          "\(kind); use love, like, dislike, laugh, emphasize, question, or a single emoji")
+      }
+      params["reactionType"] = reactionType
+      summary = "tapback: \(reactionType) sent"
+    }
     _ = try await BridgeOutput.invokeAndEmit(
-      action: .sendReaction, params: params, runtime: runtime
-    ) { _ in "tapback: \(prefixed) sent" }
+      action: .sendReaction, params: params, runtime: runtime, invokeBridge: invokeBridge
+    ) { _ in summary }
   }
 }
 

@@ -318,6 +318,7 @@ func rpcRejectsConflictingAliasesBeforeSideEffects() async throws {
     #"{"jsonrpc":"2.0","id":"poll-option","method":"poll.vote","params":{"#
       + #""chat_id":1,"poll_guid":"p","option_id":"o","optionIndex":1}}"#,
     #"{"jsonrpc":"2.0","id":"tapback","method":"tapback","params":{"chat_id":1,"message_id":"m","reaction":"like","kind":"like"}}"#,
+    #"{"jsonrpc":"2.0","id":"tapback-emoji","method":"tapback","params":{"chat_id":1,"message_id":"m","reaction":"like","emoji":"🎉"}}"#,
     #"{"jsonrpc":"2.0","id":"edit","method":"message.edit","params":{"chat_id":1,"message_id":"m","text":"x","newText":"x"}}"#,
     #"{"jsonrpc":"2.0","id":"part","method":"message.unsend","params":{"chat_id":1,"message_id":"m","part_index":0,"partIndex":0}}"#,
     #"{"jsonrpc":"2.0","id":"message","method":"message.delete","params":{"chat_id":1,"message_id":"m","messageId":"m"}}"#,
