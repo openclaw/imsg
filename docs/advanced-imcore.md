@@ -179,6 +179,8 @@ imsg launch --kill-only           # quit Messages without launching
 imsg launch --json                # machine-readable launch result
 ```
 
+An explicit `--dylib` path is authoritative. If it is missing, launch reports that path and stops; it does not substitute a helper from automatic discovery.
+
 `--kill-only` is the inverse: it tears Messages down (to drop a stale injection) without relaunching.
 
 ## When to use any of this

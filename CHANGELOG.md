@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Name the rejected `--dylib` path in launch errors instead of listing automatic discovery paths that were not tried (#334, thanks @azuretek).
 - Stop reporting ordinary messages as replies to the previous row; keep reply GUIDs aligned with their quoted thread parent (#347, thanks @logananderson).
 
 ## 0.17.0 - 2026-10-16

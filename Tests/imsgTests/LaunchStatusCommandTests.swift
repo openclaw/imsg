@@ -6,6 +6,24 @@ import Testing
 @testable import imsg
 
 @Test
+func launchMissingExplicitDylibNamesTheRejectedPath() {
+  let path = "/synthetic/missing-helper.dylib"
+  let message = LaunchCommand.dylibNotFoundMessage(custom: path)
+  #expect(message.contains(path))
+  #expect(message.contains("--dylib"))
+  #expect(!message.contains("Searched:"))
+}
+
+@Test
+func launchMissingDefaultDylibListsDiscoveryPaths() {
+  let message = LaunchCommand.dylibNotFoundMessage(custom: nil)
+  #expect(message.contains("Searched:"))
+  for path in BridgeHelperLocator.searchPaths() {
+    #expect(message.contains(path))
+  }
+}
+
+@Test
 func commandRouterIncludesLaunchCommand() async {
   let router = CommandRouter()
   let names = router.specs.map(\.name)
