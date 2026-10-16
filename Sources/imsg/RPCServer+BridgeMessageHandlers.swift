@@ -230,20 +230,23 @@ extension RPCServer {
     let remove = try params.boolean("remove") ?? false
     let partIndex = try params.integer("part_index", aliases: ["partIndex"]) ?? 0
     let chatGUID = try await resolveChatGUIDParam(params)
-    let reactionType = try normalizeBridgeReactionType(
-      rawReaction,
-      remove: remove
-    )
-    _ = try await invokeBridge(
-      action: .sendReaction,
-      params: [
-        "chatGuid": chatGUID,
-        "selectedMessageGuid": messageGUID,
-        "reactionType": reactionType,
-        "partIndex": partIndex,
-      ]
-    )
-    respond(id: id, result: ["ok": true, "reaction": reactionType])
+    var bridgeParams: [String: Any] = [
+      "chatGuid": chatGUID,
+      "selectedMessageGuid": messageGUID,
+      "partIndex": partIndex,
+    ]
+    let reaction: String
+    if let emoji = customTapbackEmoji(rawReaction) {
+      try await requireEmojiTapbackCapability()
+      bridgeParams["emoji"] = emoji
+      bridgeParams["remove"] = remove
+      reaction = emoji
+    } else {
+      reaction = try normalizeBridgeReactionType(rawReaction, remove: remove)
+      bridgeParams["reactionType"] = reaction
+    }
+    _ = try await invokeBridge(action: .sendReaction, params: bridgeParams)
+    respond(id: id, result: ["ok": true, "reaction": reaction])
   }
 
   func handleMessageEdit(params: [String: Any], id: Any?) async throws {
