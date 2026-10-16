@@ -2,9 +2,14 @@
 
 ## Unreleased
 
-- Update the CI and documentation-test Node runtime to 26.12.0 and the GitHub App token action to 3.3.0.
-- Speed up chat unread counts by traversing the unread index before chat membership, while preserving query planning for copied databases without that index (#342, thanks @theanhgen).
+## 0.17.0 - 2026-10-16
+
+**Highlights:** Read structured shared names and avatar metadata with `nickname --json`, and get faster chat unread counts.
+
 - Return structured shared names and downloaded avatar metadata from `nickname --json`, preserving the existing description and omitting unavailable fields (#339, thanks @logananderson).
+- Speed up chat unread counts by traversing the unread index before chat membership, while preserving query planning for copied databases without that index (#342, thanks @theanhgen).
+- Update the CI and documentation-test Node runtime to 26.12.0 and the GitHub App token action to 3.3.0.
+- Add an Actions release dry run that builds both platforms, checks the macOS 14 minimum on every slice, and preflights notarization without creating a tag or publishing.
 
 ## 0.16.0 - 2026-10-11
 

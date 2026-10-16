@@ -36,10 +36,16 @@ If GitHub does not create a push CI run for the merge commit, dispatch the same 
 gh workflow run ci.yml --repo openclaw/imsg --ref main
 ```
 
-Once that exact commit is green, dispatch the release:
+Once that exact commit is green, run the release preflight. Dry runs are the default and never create tags or publish. They validate the requested version against the frozen checkout, check the required signing credentials, read notarization history, build the universal macOS payload with a deployment-target check for every slice, and test the standalone Linux archive:
 
 ```bash
-gh workflow run release.yml --repo openclaw/imsg --ref main -f "version=$(cut -d= -f2 version.env)"
+gh workflow run release.yml --repo openclaw/imsg --ref main -f "version=$(cut -d= -f2 version.env)" -f dry_run=true
+```
+
+Require that exact run to succeed, then dispatch publication from the same unchanged `main` commit:
+
+```bash
+gh workflow run release.yml --repo openclaw/imsg --ref main -f "version=$(cut -d= -f2 version.env)" -f dry_run=false
 ```
 
 Watch the exact run. After success, verify that the public release is non-draft and non-prerelease, the annotated tag peels to the frozen main commit, all six control/platform assets are present, `SHA256SUMS` validates them, the Homebrew workflow succeeded, and the formula hash matches the published macOS ZIP.

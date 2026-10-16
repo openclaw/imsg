@@ -7,11 +7,83 @@ on:
         description: SemVer to release
         required: true
         type: string
+      dry_run:
+        description: Build and preflight without tagging or publishing
+        required: false
+        default: true
+        type: boolean
 
 permissions: {}
 
 jobs:
+  preflight:
+    if: inputs.dry_run
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate release metadata
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          source version.env
+          [[ "$RELEASE_VERSION" == "$MARKETING_VERSION" ]]
+          [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          scripts/generate-version.sh
+          git diff --exit-code
+          python3 - <<'PYTHON'
+          import os, re
+          from pathlib import Path
+          version = re.escape(os.environ['RELEASE_VERSION'])
+          sections = re.findall(r'^## ' + version + r' - \d{4}-\d{2}-\d{2}$', Path('CHANGELOG.md').read_text(), re.M)
+          assert len(sections) == 1, 'expected exactly one dated release section'
+          PYTHON
+      - name: Preflight signing credentials and notarization history
+        env:
+          MACOS_SIGNING_P12: ${{ secrets.MACOS_SIGNING_P12 }}
+          MACOS_SIGNING_P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          for name in MACOS_SIGNING_P12 MACOS_SIGNING_P12_PASSWORD ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY_P8; do
+            [[ -n "${!name}" ]] || { echo "Missing required credential: $name" >&2; exit 1; }
+          done
+          key=$(mktemp "$RUNNER_TEMP/notary-key.XXXXXX")
+          trap 'rm -f "$key"' EXIT
+          chmod 600 "$key"
+          printf '%s' "$ASC_PRIVATE_KEY_P8" >"$key"
+          xcrun notarytool history --key "$key" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --output-format json >"$RUNNER_TEMP/notary-history.json"
+          jq -e '.history | type == "array"' "$RUNNER_TEMP/notary-history.json"
+      - name: Build universal macOS payload and check every deployment target
+        run: |
+          set -euo pipefail
+          OUTPUT_DIR="$RUNNER_TEMP/imsg-preflight" scripts/build-universal.sh
+          scripts/check-macos-minimum.sh "$RUNNER_TEMP/imsg-preflight/imsg" "$RUNNER_TEMP/imsg-preflight/imsg-bridge-helper.dylib"
+
+  preflight-linux:
+    if: inputs.dry_run
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.12.0"
+      - name: Test Linux read core and standalone release archive
+        run: scripts/check-linux.sh
+
   release:
+    if: ${{ !inputs.dry_run }}
     permissions:
       actions: read
       checks: read
