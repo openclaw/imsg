@@ -85,17 +85,20 @@ jobs:
         run: scripts/check-linux.sh
 
   release:
-    if: ${{ !inputs.dry_run }}
     permissions:
       actions: read
       checks: read
       contents: write
       pull-requests: write
       statuses: read
-    # v1, verified 2026-09-13; preserve the immutable workflow revision.
-    uses: openclaw/release-workflows/.github/workflows/release-swift-cli.yml@ea135a47fa5c597250c2b45a681969f1e556cdea
+    # v1, verified 2026-10-18; preserve the immutable workflow revision.
+    uses: openclaw/release-workflows/.github/workflows/release-swift-cli.yml@55c651f600fadc8d565512642c38a4d45890c0a0
     with:
       version: ${{ inputs.version }}
+      dry_run: ${{ inputs.dry_run }}
+      macos-runner: xcode-27
+      verify-arm64-runner: xcode-27
+      minimum-macos-version: 14
       repository-type: personal
       homebrew-tap: steipete/homebrew-tap
       homebrew-formula: imsg

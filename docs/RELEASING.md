@@ -23,7 +23,7 @@ The first five are required before the workflow can create a release tag. The pr
 - `scripts/build-linux.sh` must emit `imsg-linux-x86_64.tar.gz` with the static Swift runtime.
 - The Darwin payload retains `com.steipete.imsg` and `com.steipete.imsg.bridge-helper` under Peter Steinberger's Developer ID identity.
 - `scripts/check-macos-minimum.sh` checks `LC_BUILD_VERSION` for every CLI and helper slice during the macOS build and rejects any minimum newer than macOS 14.0.
-- Both native macOS verifier jobs must accept the checksum inventory, signatures, architecture slices, resource bundles, notarization, native version output, and Linux executable format before publication.
+- Both macOS architecture verifier jobs on `xcode-27` must accept the checksum inventory, signatures, architecture slices, resource bundles, notarization, version output (Intel under Rosetta), and Linux executable format before publication.
 - The Homebrew formula in `steipete/homebrew-tap` must resolve to the exact verified `imsg-macos.zip` URL and SHA-256.
 
 ## Dispatch and verification
@@ -36,7 +36,7 @@ If GitHub does not create a push CI run for the merge commit, dispatch the same 
 gh workflow run ci.yml --repo openclaw/imsg --ref main
 ```
 
-Once that exact commit is green, run the release preflight. Dry runs are the default and never create tags or publish. They validate the requested version against the frozen checkout, check the required signing credentials, read notarization history, build the universal macOS payload with a deployment-target check for every slice, and test the standalone Linux archive:
+Once that exact commit is green, run the release preflight. Dry runs are the default and never create tags or publish. They validate the requested version against the frozen checkout, check the required signing credentials, read notarization history, build the universal macOS payload with a deployment-target check for every slice, and test the standalone Linux archive. The pinned shared workflow also signs, notarizes, and independently verifies both architectures without publishing:
 
 ```bash
 gh workflow run release.yml --repo openclaw/imsg --ref main -f "version=$(cut -d= -f2 version.env)" -f dry_run=true
