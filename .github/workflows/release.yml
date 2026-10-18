@@ -18,7 +18,9 @@ permissions: {}
 jobs:
   preflight:
     if: inputs.dry_run
-    runs-on: macos-15
+    runs-on: xcode-27
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
     permissions:
       contents: read
     steps:
