@@ -3,6 +3,7 @@ import Foundation
 import IMsgCore
 import Testing
 
+@testable import IMsgRPC
 @testable import imsg
 
 @Test

@@ -1,6 +1,7 @@
 import Commander
 import Foundation
 import IMsgCore
+import IMsgRPC
 
 enum StatusCommand {
   static func availableBridgeSendCommands(selectors: [String: Bool]) -> [String] {

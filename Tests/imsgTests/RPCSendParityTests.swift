@@ -2,7 +2,7 @@ import Foundation
 import Testing
 
 @testable import IMsgCore
-@testable import imsg
+@testable import IMsgRPC
 
 private struct SendVerificationTestError: Error {}
 

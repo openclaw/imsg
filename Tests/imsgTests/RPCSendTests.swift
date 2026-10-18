@@ -3,7 +3,7 @@ import SQLite
 import Testing
 
 @testable import IMsgCore
-@testable import imsg
+@testable import IMsgRPC
 
 @Test
 func rpcSendResolvesChatID() async throws {

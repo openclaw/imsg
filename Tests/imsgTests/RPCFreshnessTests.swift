@@ -3,7 +3,7 @@ import SQLite
 import Testing
 
 @testable import IMsgCore
-@testable import imsg
+@testable import IMsgRPC
 
 private func makeWALFixture() throws -> (path: String, writer: Connection, store: MessageStore) {
   let path = try CommandTestDatabase.makePath()

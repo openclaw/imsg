@@ -3,7 +3,7 @@ import SQLite
 import Testing
 
 @testable import IMsgCore
-@testable import imsg
+@testable import IMsgRPC
 
 private let trackedAttemptID = "8cc0c53a-7844-45ef-8b90-11f8a3e2cb66"
 

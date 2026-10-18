@@ -57,7 +57,7 @@ extension RPCServer {
       let database = await databaseResources.available()
       let chatInfo = try bridgeResponseChatInfo(
         params: params, chatGUID: chatGUID, database: database)
-      var result = await SendRichCommand.enrichedSentMessageResponse(
+      var result = await SentMessageEnrichment.enrichedSentMessageResponse(
         data,
         chat: chatGUID,
         text: text,
@@ -147,7 +147,7 @@ extension RPCServer {
     } catch {
       throw error
     }
-    var result = await SendRichCommand.enrichedSentMessageResponse(
+    var result = await SentMessageEnrichment.enrichedSentMessageResponse(
       data,
       chat: chatGUID,
       text: prepared.originalURL,
@@ -202,7 +202,7 @@ extension RPCServer {
     let database = await databaseResources.available()
     let chatInfo = try bridgeResponseChatInfo(
       params: params, chatGUID: chatGUID, database: database)
-    var result = await SendRichCommand.enrichedSentMessageResponse(
+    var result = await SentMessageEnrichment.enrichedSentMessageResponse(
       data,
       chat: chatGUID,
       text: "",

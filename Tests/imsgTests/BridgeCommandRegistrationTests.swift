@@ -3,6 +3,7 @@ import Foundation
 import IMsgCore
 import Testing
 
+@testable import IMsgRPC
 @testable import imsg
 
 /// Snapshot of the bridge-backed commands we expect to be wired up. Locks in

@@ -1,6 +1,7 @@
 import Commander
 import Foundation
 import IMsgCore
+import IMsgRPC
 
 enum StickerCommand {
   static let spec = CommandSpec(

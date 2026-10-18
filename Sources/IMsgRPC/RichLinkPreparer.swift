@@ -7,9 +7,9 @@ import IMsgCore
   import UniformTypeIdentifiers
 #endif
 
-typealias RichLinkPrepare = (String) async throws -> PreparedRichLinkPreview
+package typealias RichLinkPrepare = (String) async throws -> PreparedRichLinkPreview
 
-struct PreparedRichLinkPreview: Sendable, Equatable {
+package struct PreparedRichLinkPreview: Sendable, Equatable {
   struct Image: Sendable, Equatable {
     let filePath: String
     let mimeType: String
@@ -30,12 +30,12 @@ struct PreparedRichLinkPreview: Sendable, Equatable {
     }
   }
 
-  let originalURL: String
+  package let originalURL: String
   let resolvedURL: String
   let title: String
   let image: Image?
 
-  var bridgePayload: [String: Any] {
+  package var bridgePayload: [String: Any] {
     var payload: [String: Any] = [
       "version": 1,
       "originalURL": originalURL,
@@ -48,7 +48,7 @@ struct PreparedRichLinkPreview: Sendable, Equatable {
     return payload
   }
 
-  func removeStagedImage() {
+  package func removeStagedImage() {
     guard let image else { return }
     let path = URL(fileURLWithPath: image.filePath).standardizedFileURL
     let root = FileManager.default.homeDirectoryForCurrentUser
@@ -59,7 +59,7 @@ struct PreparedRichLinkPreview: Sendable, Equatable {
   }
 }
 
-struct RichLinkFetchedMetadata: Sendable {
+package struct RichLinkFetchedMetadata: Sendable {
   let resolvedURL: String?
   let title: String?
   let imageData: Data?
@@ -75,12 +75,12 @@ struct RichLinkFetchedMetadata: Sendable {
   }
 }
 
-enum RichLinkPreparationError: Error, LocalizedError, Equatable, Sendable {
+package enum RichLinkPreparationError: Error, LocalizedError, Equatable, Sendable {
   case invalidURL(String)
   case unsupportedBridge
   case unsupportedPlatform
 
-  var errorDescription: String? {
+  package var errorDescription: String? {
     switch self {
     case .invalidURL(let reason): return "Invalid rich-link URL: \(reason)"
     case .unsupportedBridge:
@@ -91,15 +91,15 @@ enum RichLinkPreparationError: Error, LocalizedError, Equatable, Sendable {
   }
 }
 
-func bridgeSupportsRichLinks(_ status: [String: Any]) -> Bool {
+package func bridgeSupportsRichLinks(_ status: [String: Any]) -> Bool {
   guard let selectors = status["selectors"] as? [String: Any] else { return false }
   return selectors["urlPreviewMessage"] as? Bool == true
     && selectors["sendRichLinkAction"] as? Bool == true
 }
 
-enum RichLinkPreparer {
-  typealias MetadataLoader = @Sendable (URL) async throws -> RichLinkFetchedMetadata?
-  typealias ImageStager = @Sendable (Data) throws -> String
+package enum RichLinkPreparer {
+  package typealias MetadataLoader = @Sendable (URL) async throws -> RichLinkFetchedMetadata?
+  package typealias ImageStager = @Sendable (Data) throws -> String
 
   private static let maximumURLBytes = 8 * 1024
   private static let maximumTitleBytes = 1024
@@ -108,7 +108,7 @@ enum RichLinkPreparer {
   private static let maximumImagePixels = 16 * 1024 * 1024
   private static let defaultTimeout: Duration = .seconds(8)
 
-  static func prepare(
+  package static func prepare(
     _ rawURL: String,
     timeout: Duration = defaultTimeout,
     loadMetadata: @escaping MetadataLoader = { url in

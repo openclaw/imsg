@@ -1,6 +1,7 @@
 import Commander
 import Foundation
 import IMsgCore
+import IMsgRPC
 
 enum SendRichCommand {
   static let spec = CommandSpec(
@@ -156,7 +157,7 @@ enum SendRichCommand {
       let sentAt = Date()
       let action: BridgeAction = preparedRichLink == nil ? .sendMessage : .sendRichLink
       let data = try await invokeBridge(action, params)
-      let enriched = try await enrichedSentMessageResponse(
+      let enriched = try await SentMessageEnrichment.enrichedSentMessageResponse(
         data,
         chat: chat,
         text: effectiveText,

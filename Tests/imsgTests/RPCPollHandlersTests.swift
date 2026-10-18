@@ -2,7 +2,7 @@ import Foundation
 import Testing
 
 @testable import IMsgCore
-@testable import imsg
+@testable import IMsgRPC
 
 @Test(arguments: [false, true])
 func rpcPollUnvoteValidatesAndResolvesOption(updateReference: Bool) async throws {

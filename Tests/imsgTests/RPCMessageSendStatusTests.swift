@@ -2,7 +2,7 @@ import Foundation
 import Testing
 
 @testable import IMsgCore
-@testable import imsg
+@testable import IMsgRPC
 
 private func sendStatusInt64Value(_ value: Any?) -> Int64? {
   if let value = value as? Int64 { return value }

@@ -1,12 +1,31 @@
 import Foundation
 import IMsgCore
 
-final class RPCWriter: RPCOutput, Sendable {
-  func sendResponse(id: Any, result: Any) {
+/// Writes each JSON-RPC message as one line of JSON. The default sink is standard output, as
+/// `imsg rpc` uses; a host running the server in process passes its own and gets the same bytes.
+public final class RPCWriter: RPCOutput, Sendable {
+  private let writeLine: @Sendable (String) -> Void
+  private let flushLines: @Sendable () -> Void
+
+  public convenience init() {
+    self.init(writeLine: { StdoutWriter.writeLine($0) }, flush: { StdoutWriter.flush() })
+  }
+
+  /// `writeLine` receives each message without its trailing newline; `flush` runs when the
+  /// server drains at the end of its input.
+  public init(
+    writeLine: @escaping @Sendable (String) -> Void,
+    flush: @escaping @Sendable () -> Void = {}
+  ) {
+    self.writeLine = writeLine
+    self.flushLines = flush
+  }
+
+  public func sendResponse(id: Any, result: Any) {
     send(["jsonrpc": "2.0", "id": id, "result": result])
   }
 
-  func sendError(id: Any?, error: RPCError) {
+  public func sendError(id: Any?, error: RPCError) {
     let payload: [String: Any] = [
       "jsonrpc": "2.0",
       "id": id ?? NSNull(),
@@ -15,33 +34,34 @@ final class RPCWriter: RPCOutput, Sendable {
     send(payload)
   }
 
-  func sendNotification(method: String, params: Any) {
+  public func sendNotification(method: String, params: Any) {
     send(["jsonrpc": "2.0", "method": method, "params": params])
   }
 
-  func flush() {
-    StdoutWriter.flush()
+  public func flush() {
+    flushLines()
   }
 
   private func send(_ object: Any) {
     do {
       let data = try JSONSerialization.data(withJSONObject: object, options: [])
       if let output = String(data: data, encoding: .utf8) {
-        StdoutWriter.writeLine(output)
+        writeLine(output)
       }
     } catch {
-      StdoutWriter.writeLine(
+      writeLine(
         "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"write failed\"}}"
       )
     }
   }
 }
 
-struct RPCError: Error, @unchecked Sendable {
-  let code: Int
-  let message: String
-  let data: String?
-  let structuredData: [String: Any]?
+/// A JSON-RPC error object. `asDictionary()` gives the `error` member exactly as `RPCWriter` writes it.
+public struct RPCError: Error, @unchecked Sendable {
+  public let code: Int
+  public let message: String
+  public let data: String?
+  public let structuredData: [String: Any]?
 
   init(code: Int, message: String, data: String?) {
     self.code = code
@@ -135,7 +155,7 @@ struct RPCError: Error, @unchecked Sendable {
     ]
   }
 
-  func asDictionary() -> [String: Any] {
+  public func asDictionary() -> [String: Any] {
     var dict: [String: Any] = [
       "code": code,
       "message": message,

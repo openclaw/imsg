@@ -3,7 +3,7 @@ import SQLite
 import Testing
 
 @testable import IMsgCore
-@testable import imsg
+@testable import IMsgRPC
 
 private func repairResult(_ output: TestRPCOutput, at index: Int = 0) throws -> [String: Any] {
   try #require(output.responses[index]["result"] as? [String: Any])

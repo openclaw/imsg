@@ -2,7 +2,7 @@ import Foundation
 import Testing
 
 @testable import IMsgCore
-@testable import imsg
+@testable import IMsgRPC
 
 private let rpcPreparedRichLinkFixture = PreparedRichLinkPreview(
   originalURL: "https://imsg.sh",

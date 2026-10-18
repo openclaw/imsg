@@ -1,6 +1,7 @@
 import Commander
 import Foundation
 import IMsgCore
+import IMsgRPC
 
 enum RpcCommand {
   /// Contacts policy for RPC startup.
@@ -42,11 +43,11 @@ enum RpcCommand {
   ) async throws {
     let dbPath = values.option("db") ?? MessageStore.defaultPath
     let contacts = await contactResolverFactory()
-    let server = RPCServer(
+    let server = IMsgRPCServer(
       databasePath: dbPath,
       verbose: runtime.verbose,
       contactResolver: contacts
     )
-    try await server.run()
+    try await server.runStandardInput()
   }
 }

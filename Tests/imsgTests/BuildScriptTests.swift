@@ -138,6 +138,6 @@ func developmentHelperGeneratesVersionAndTargetsDeclaredMacOSMinimum() throws {
   let strings = try runBuildTool("/usr/bin/strings", [binary.path], at: root)
   #expect(strings.split(separator: "\n").contains(Substring(version)))
   let cliVersion = try String(
-    contentsOf: sources.appendingPathComponent("imsg/Version.swift"), encoding: .utf8)
+    contentsOf: sources.appendingPathComponent("IMsgRPC/Version.swift"), encoding: .utf8)
   #expect(cliVersion.contains(version))
 }

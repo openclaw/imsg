@@ -1,10 +1,10 @@
 import Foundation
 
-struct StickerSendTarget: Equatable {
-  let messageGUID: String
-  let partIndex: Int
+package struct StickerSendTarget: Equatable {
+  package let messageGUID: String
+  package let partIndex: Int
 
-  static func resolve(rawTarget: String?, explicitPart: Int?) throws -> StickerSendTarget? {
+  package static func resolve(rawTarget: String?, explicitPart: Int?) throws -> StickerSendTarget? {
     if let explicitPart, explicitPart < 0 {
       throw StickerSendValidationError.invalidPart(explicitPart)
     }
@@ -56,18 +56,18 @@ struct StickerSendTarget: Equatable {
   }
 }
 
-func isStickerIMessageService(_ service: String) -> Bool {
+package func isStickerIMessageService(_ service: String) -> Bool {
   let normalized = service.lowercased()
   return normalized == "imessage" || normalized == "imessagelite"
 }
 
-func stickerChatLookupTarget(_ target: String) -> String {
+package func stickerChatLookupTarget(_ target: String) -> String {
   let parts = target.split(separator: ";", omittingEmptySubsequences: false)
   guard parts.count == 3, parts[0] != "any", !parts[2].isEmpty else { return target }
   return String(parts[2])
 }
 
-func directStickerChatGUID(_ target: String) -> String? {
+package func directStickerChatGUID(_ target: String) -> String? {
   let trimmed = target.trimmingCharacters(in: .whitespacesAndNewlines)
   let parts = trimmed.split(separator: ";", omittingEmptySubsequences: false)
   guard parts.count == 3,
@@ -78,7 +78,7 @@ func directStickerChatGUID(_ target: String) -> String? {
   return trimmed
 }
 
-enum StickerSendValidationError: LocalizedError, CustomStringConvertible, Equatable {
+package enum StickerSendValidationError: LocalizedError, CustomStringConvertible, Equatable {
   case invalidPart(Int)
   case partWithoutTarget
   case malformedTarget(String)
@@ -86,9 +86,9 @@ enum StickerSendValidationError: LocalizedError, CustomStringConvertible, Equata
   case targetNotInChat
   case iMessageRequired
 
-  var errorDescription: String? { description }
+  package var errorDescription: String? { description }
 
-  var description: String {
+  package var description: String {
     switch self {
     case .invalidPart(let part):
       return "target part must be non-negative (received \(part))"

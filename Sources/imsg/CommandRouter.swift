@@ -1,5 +1,6 @@
 import Commander
 import Foundation
+import IMsgRPC
 
 struct CommandRouter {
   let rootName = "imsg"

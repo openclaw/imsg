@@ -2,7 +2,7 @@ import Foundation
 import Testing
 
 @testable import IMsgCore
-@testable import imsg
+@testable import IMsgRPC
 
 private final class RetryStoreFactory: @unchecked Sendable {
   private let lock = NSLock()

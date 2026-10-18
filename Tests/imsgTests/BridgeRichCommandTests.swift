@@ -3,6 +3,7 @@ import Foundation
 import Testing
 
 @testable import IMsgCore
+@testable import IMsgRPC
 @testable import imsg
 
 private let preparedRichLinkFixture = PreparedRichLinkPreview(

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 
 @testable import IMsgCore
-@testable import imsg
+@testable import IMsgRPC
 
 @Test(.timeLimit(.minutes(1)))
 func rpcBridgeEventResponsePrecedesImmediateEvent() async throws {

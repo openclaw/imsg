@@ -49,7 +49,7 @@ func attachmentPayload(_ meta: AttachmentMeta) -> [String: Any] {
   return payload
 }
 
-func isGroupHandle(identifier: String, guid: String) -> Bool {
+package func isGroupHandle(identifier: String, guid: String) -> Bool {
   return guid.contains(";+;") || identifier.contains(";+;")
 }
 
@@ -66,7 +66,7 @@ func watchDebounceIntervalParam(_ params: RPCParameters) throws -> TimeInterval 
   return Double(milliseconds) / 1000
 }
 
-func buildMessagePayload(
+package func buildMessagePayload(
   store: MessageStore,
   message: Message,
   includeAttachments: Bool,

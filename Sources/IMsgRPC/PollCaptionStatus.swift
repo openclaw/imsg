@@ -3,8 +3,8 @@ import IMsgCore
 
 /// The balloon and its question caption are separate sends. Keep caption failure
 /// or uncertainty separate so callers never retry an already-created poll.
-enum PollCaptionStatus {
-  enum VerificationOutcome: Equatable, Sendable {
+package enum PollCaptionStatus {
+  package enum VerificationOutcome: Equatable, Sendable {
     case delivered
     case failed
     case unknown
@@ -61,12 +61,12 @@ enum PollCaptionStatus {
   }
 
   /// True when `status` describes a caption that was wanted but never arrived.
-  static func isUndelivered(_ status: [String: Any]) -> Bool {
+  package static func isUndelivered(_ status: [String: Any]) -> Bool {
     (status["requested"] as? Bool) == true && (status["sent"] as? Bool) == false
   }
 
   /// True when the caption may still arrive and must not be retried blindly.
-  static func isDeliveryUnknown(_ status: [String: Any]) -> Bool {
+  package static func isDeliveryUnknown(_ status: [String: Any]) -> Bool {
     (status["requested"] as? Bool) == true && status["sent"] is NSNull
   }
 
@@ -74,7 +74,7 @@ enum PollCaptionStatus {
   // offline recipient does not hold every queued mutation for the CLI deadline.
   static let rpcVerifyTimeout: TimeInterval = 2
 
-  static func verifyCaption(
+  package static func verifyCaption(
     captionGUID: String,
     chatGUID: String,
     store: MessageStore?,
@@ -123,7 +123,7 @@ enum PollCaptionStatus {
   }
 
   /// Finishes the caption before CLI output; the successful poll remains successful.
-  static func sendCaption(
+  package static func sendCaption(
     after data: [String: Any],
     chat: String,
     comment: String?,

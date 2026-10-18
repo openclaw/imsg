@@ -1,15 +1,15 @@
 import Foundation
 import IMsgCore
 
-enum SentMessageVerifier {
-  typealias Resolver = (
+package enum SentMessageVerifier {
+  package typealias Resolver = (
     _ store: MessageStore,
     _ options: MessageSendOptions,
     _ chatID: Int64?,
     _ sentAt: Date
   ) async throws -> Message?
 
-  static func resolveSentMessage(
+  package static func resolveSentMessage(
     store: MessageStore,
     options: MessageSendOptions,
     chatID: Int64?,
@@ -97,7 +97,8 @@ enum SentMessageVerifier {
       matchingText: options.text, chatID: verificationChatID, since: date)
   }
 
-  static func verificationChatID(store: MessageStore, options: MessageSendOptions) throws -> Int64?
+  package static func verificationChatID(store: MessageStore, options: MessageSendOptions) throws
+    -> Int64?
   {
     let target = options.chatGUID.isEmpty ? options.chatIdentifier : options.chatGUID
     if !target.isEmpty { return try store.chatInfo(matchingTarget: target)?.id }
@@ -131,7 +132,7 @@ enum SentMessageVerifier {
     )
   }
 
-  static func verifyAppleScriptSend(
+  package static func verifyAppleScriptSend(
     store: MessageStore,
     options: MessageSendOptions,
     chatID: Int64?,

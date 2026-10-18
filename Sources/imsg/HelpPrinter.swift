@@ -1,5 +1,6 @@
 import Commander
 import Foundation
+import IMsgRPC
 
 struct HelpPrinter {
   static func printRoot(version: String, rootName: String, commands: [CommandSpec]) {

@@ -1,6 +1,7 @@
 import Commander
 import Foundation
 import IMsgCore
+import IMsgRPC
 
 enum WatchCommand {
   /// Same TTY rule as RPC: headless stdin must not prompt for Contacts.

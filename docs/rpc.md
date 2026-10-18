@@ -67,6 +67,22 @@ notifications beyond the bound are discarded without a response. Every stdout
 record remains one complete JSON line even when concurrent reads finish at the
 same time.
 
+## In process
+
+The same server ships as a Swift library product, `IMsgRPC`, for a host that wants these
+methods without running a child process. `IMsgRPCServer` answers the same methods with the same
+payloads and schedules requests the same way, and `RPCWriter(writeLine:)` hands the host each
+message as the exact line `imsg rpc` would print. `imsg rpc` itself is a thin wrapper over it.
+
+```swift
+import IMsgRPC
+
+let output = RPCWriter(writeLine: { line in deliver(line) })
+let server = IMsgRPCServer(databasePath: path, output: output)
+// One JSON-RPC request per element; the server drains and returns when the stream ends.
+try await server.run(lines: requests)
+```
+
 ## Lifecycle
 
 - The host process spawns one `imsg rpc` child.

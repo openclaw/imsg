@@ -6,6 +6,7 @@ let package = Package(
   platforms: [.macOS(.v14)],
   products: [
     .library(name: "IMsgCore", targets: ["IMsgCore"]),
+    .library(name: "IMsgRPC", targets: ["IMsgRPC"]),
     .executable(name: "imsg", targets: ["imsg"]),
   ],
   dependencies: [
@@ -29,10 +30,22 @@ let package = Package(
           .linkedFramework("Contacts", .when(platforms: [.macOS])),
         ]
       ),
+      .target(
+        name: "IMsgRPC",
+        dependencies: [
+          "IMsgCore"
+        ],
+        linkerSettings: [
+          .linkedFramework("ImageIO", .when(platforms: [.macOS])),
+          .linkedFramework("LinkPresentation", .when(platforms: [.macOS])),
+          .linkedFramework("UniformTypeIdentifiers", .when(platforms: [.macOS])),
+        ]
+      ),
       .executableTarget(
         name: "imsg",
         dependencies: [
           "IMsgCore",
+          "IMsgRPC",
           .product(name: "Commander", package: "Commander"),
         ],
         exclude: [
@@ -69,6 +82,7 @@ let package = Package(
           dependencies: [
             "imsg",
             "IMsgCore",
+            "IMsgRPC",
           ],
           exclude: [
             "README-live.md"
@@ -82,6 +96,7 @@ let package = Package(
           dependencies: [
             "imsg",
             "IMsgCore",
+            "IMsgRPC",
             .product(name: "SQLite", package: "SQLite.swift"),
           ],
           path: "TestsLinux"

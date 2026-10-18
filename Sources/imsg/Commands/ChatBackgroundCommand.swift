@@ -1,6 +1,7 @@
 import Commander
 import Foundation
 import IMsgCore
+import IMsgRPC
 
 enum ChatBackgroundCommand {
   static let spec = CommandSpec(

@@ -1,6 +1,7 @@
 import Commander
 import Foundation
 import IMsgCore
+import IMsgRPC
 
 enum SendMultipartCommand {
   static let spec = CommandSpec(

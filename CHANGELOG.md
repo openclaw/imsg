@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add the `IMsgRPC` library product: the JSON-RPC server behind `imsg rpc`, for hosts that run it in process, with a golden test that pins the command's output byte for byte.
 - Name the rejected `--dylib` path in launch errors instead of listing automatic discovery paths that were not tried (#334, thanks @azuretek).
 - Stop reporting ordinary messages as replies to the previous row; keep reply GUIDs aligned with their quoted thread parent (#347, thanks @logananderson).
 

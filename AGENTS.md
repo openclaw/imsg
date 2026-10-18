@@ -3,6 +3,7 @@
 ## Project Structure & Module Organization
 - `Sources/imsg` holds the CLI entrypoint and command wiring.
 - `Sources/IMsgCore` contains SQLite access, watchers, AppleScript send logic, and helpers.
+- `Sources/IMsgRPC` holds the JSON-RPC server behind `imsg rpc` (handlers, payload builders, scheduling), exported as the `IMsgRPC` library product.
 - `bin/` is created by `make build` for local artifacts.
 
 ## Build, Test, and Development Commands

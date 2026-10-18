@@ -3,6 +3,7 @@ import Foundation
 import IMsgCore
 import Testing
 
+@testable import IMsgRPC
 @testable import imsg
 
 @Test
@@ -30,7 +31,7 @@ func chatPhotoAndGroupSetIconStageAttachmentsBeforeBridge() throws {
     contentsOf: repoRoot.appendingPathComponent("Sources/imsg/Commands/BridgeChatCommands.swift"),
     encoding: .utf8)
   let rpc = try String(
-    contentsOf: repoRoot.appendingPathComponent("Sources/imsg/RPCServer+ChatHandlers.swift"),
+    contentsOf: repoRoot.appendingPathComponent("Sources/IMsgRPC/RPCServer+ChatHandlers.swift"),
     encoding: .utf8)
 
   let photoStart = try #require(cli.range(of: "enum ChatPhotoCommand"))

@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 
+@testable import IMsgRPC
 @testable import imsg
 
 @Test

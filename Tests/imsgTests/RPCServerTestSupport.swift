@@ -3,7 +3,7 @@ import SQLite
 import Testing
 
 @testable import IMsgCore
-@testable import imsg
+@testable import IMsgRPC
 
 func rpcTestInt64Value(_ value: Any?) -> Int64? {
   if let value = value as? Int64 { return value }

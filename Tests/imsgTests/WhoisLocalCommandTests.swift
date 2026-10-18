@@ -4,6 +4,7 @@ import SQLite
 import Testing
 
 @testable import IMsgCore
+@testable import IMsgRPC
 @testable import imsg
 
 private func emptyStore() throws -> MessageStore {

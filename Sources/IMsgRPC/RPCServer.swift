@@ -25,7 +25,9 @@ struct RPCMutationPoisonSignal: Error, Sendable {
   let failure: DeliveryFailure
 }
 
-protocol RPCOutput: Sendable {
+/// Where the server writes each JSON-RPC message. `RPCWriter` serializes them as lines of JSON;
+/// a host can supply its own to keep the messages in memory.
+public protocol RPCOutput: Sendable {
   func sendResponse(id: Any, result: Any)
   func sendError(id: Any?, error: RPCError)
   func sendNotification(method: String, params: Any)

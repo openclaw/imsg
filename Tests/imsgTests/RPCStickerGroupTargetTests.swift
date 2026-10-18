@@ -2,7 +2,7 @@ import Foundation
 import IMsgCore
 import Testing
 
-@testable import imsg
+@testable import IMsgRPC
 
 @Test
 func rpcSendStickerAcceptsBridgeGuidForAnyStoredGroupTarget() async throws {

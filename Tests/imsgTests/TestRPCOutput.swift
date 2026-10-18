@@ -1,6 +1,6 @@
 import Foundation
 
-@testable import imsg
+@testable import IMsgRPC
 
 final class TestRPCOutput: RPCOutput, @unchecked Sendable {
   private let lock = NSLock()

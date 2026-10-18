@@ -17,7 +17,7 @@ The first five are required before the workflow can create a release tag. The pr
 
 ## Release contract
 
-- `version.env`, generated `Sources/imsg/Version.swift`, and the requested version must agree.
+- `version.env`, generated `Sources/IMsgRPC/Version.swift`, and the requested version must agree.
 - `CHANGELOG.md` must contain exactly one dated level-two section for the requested version.
 - `scripts/build-universal.sh` must emit the universal `imsg` CLI, `imsg-bridge-helper.dylib` with `arm64e`, `arm64`, and `x86_64` slices, and at least one Swift resource bundle.
 - `scripts/build-linux.sh` must emit `imsg-linux-x86_64.tar.gz` with the static Swift runtime.

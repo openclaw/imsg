@@ -210,7 +210,7 @@ let rpcMethodDescriptors: [RPCMethodDescriptor] = [
     macOSOnly: true),
 ]
 
-let kSupportedRPCMethods: [String] =
+package let kSupportedRPCMethods: [String] =
   rpcMethodDescriptors
   .filter(\.isCompiledForCurrentPlatform)
   .flatMap(\.names)

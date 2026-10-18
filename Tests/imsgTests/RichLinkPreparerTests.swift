@@ -4,7 +4,7 @@ import ImageIO
 import Testing
 import UniformTypeIdentifiers
 
-@testable import imsg
+@testable import IMsgRPC
 
 private final class RichLinkTestBox<Value>: @unchecked Sendable {
   private let lock = NSLock()

@@ -3,6 +3,7 @@ import Foundation
 import Testing
 
 @testable import IMsgCore
+@testable import IMsgRPC
 @testable import imsg
 
 // A poll's question is only ever visible via the caption message imsg sends

@@ -1,6 +1,6 @@
 import Testing
 
-@testable import imsg
+@testable import IMsgRPC
 
 @Test
 func subscriptionStoreRejectsLimitsAndClosureWithoutConsumingIDs() async {

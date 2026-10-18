@@ -1,7 +1,7 @@
 import Foundation
 import IMsgCore
 
-struct ChatPayload: Codable {
+package struct ChatPayload: Codable {
   let id: Int64
   let name: String
   let identifier: String
@@ -17,7 +17,7 @@ struct ChatPayload: Codable {
   let lastAddressedHandle: String?
   let unreadCount: Int?
 
-  init(
+  package init(
     chat: Chat, chatInfo: ChatInfo? = nil, participants: [String]? = nil, contactName: String? = nil
   ) {
     let identifier = chatInfo?.identifier ?? chat.identifier
@@ -70,7 +70,7 @@ extension ChatPayload {
   }
 }
 
-func contactNameForChat(
+package func contactNameForChat(
   chat: Chat,
   chatInfo: ChatInfo?,
   participants: [String],
@@ -273,7 +273,7 @@ struct ReactionPayload: Codable {
   }
 }
 
-struct GroupPayload: Codable {
+package struct GroupPayload: Codable {
   let id: Int64
   let identifier: String
   let guid: String
@@ -285,7 +285,7 @@ struct GroupPayload: Codable {
   let accountLogin: String?
   let lastAddressedHandle: String?
 
-  init(chatInfo: ChatInfo, participants: [String]) {
+  package init(chatInfo: ChatInfo, participants: [String]) {
     self.id = chatInfo.id
     self.identifier = chatInfo.identifier
     self.guid = chatInfo.guid
@@ -365,10 +365,10 @@ struct AttachmentPayload: Codable {
   }
 }
 
-enum CLIISO8601 {
+package enum CLIISO8601 {
   private static let formatter = LockedISO8601Formatter()
 
-  static func format(_ date: Date) -> String {
+  package static func format(_ date: Date) -> String {
     formatter.string(from: date)
   }
 

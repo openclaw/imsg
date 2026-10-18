@@ -1,30 +1,37 @@
 import Foundation
 import IMsgCore
 
-struct ChatTargetInput: Sendable {
-  let recipient: String
-  let chatID: Int64?
-  let chatIdentifier: String
-  let chatGUID: String
+package struct ChatTargetInput: Sendable {
+  package let recipient: String
+  package let chatID: Int64?
+  package let chatIdentifier: String
+  package let chatGUID: String
 
-  var hasChatTarget: Bool {
+  package init(recipient: String, chatID: Int64?, chatIdentifier: String, chatGUID: String) {
+    self.recipient = recipient
+    self.chatID = chatID
+    self.chatIdentifier = chatIdentifier
+    self.chatGUID = chatGUID
+  }
+
+  package var hasChatTarget: Bool {
     chatID != nil || !chatIdentifier.isEmpty || !chatGUID.isEmpty
   }
 }
 
-struct ResolvedChatTarget: Sendable {
-  let chatIdentifier: String
-  let chatGUID: String
+package struct ResolvedChatTarget: Sendable {
+  package let chatIdentifier: String
+  package let chatGUID: String
 
-  var preferredIdentifier: String? {
+  package var preferredIdentifier: String? {
     if !chatGUID.isEmpty { return chatGUID }
     if !chatIdentifier.isEmpty { return chatIdentifier }
     return nil
   }
 }
 
-enum ChatTargetResolver {
-  static func validateRecipientRequirements(
+package enum ChatTargetResolver {
+  package static func validateRecipientRequirements(
     input: ChatTargetInput,
     mixedTargetError: Error,
     missingRecipientError: Error
@@ -37,7 +44,7 @@ enum ChatTargetResolver {
     }
   }
 
-  static func resolveChatTarget(
+  package static func resolveChatTarget(
     input: ChatTargetInput,
     lookupChat: (Int64) async throws -> ChatInfo?,
     unknownChatError: (Int64) -> Error
@@ -59,7 +66,7 @@ enum ChatTargetResolver {
     )
   }
 
-  static func directTypingIdentifier(
+  package static func directTypingIdentifier(
     recipient: String,
     serviceRaw: String,
     invalidServiceError: (String) -> Error
@@ -97,7 +104,7 @@ enum ChatTargetResolver {
     return candidates
   }
 
-  static func existingDirectChat(
+  package static func existingDirectChat(
     store: MessageStore,
     recipient: String,
     service: MessageService,
@@ -122,7 +129,7 @@ enum ChatTargetResolver {
     return nil
   }
 
-  static func looksLikeContactName(_ recipient: String) -> Bool {
+  package static func looksLikeContactName(_ recipient: String) -> Bool {
     let trimmed = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmed.isEmpty { return false }
     if trimmed.contains("@") { return false }
@@ -134,7 +141,7 @@ enum ChatTargetResolver {
     return true
   }
 
-  static func directParticipantTarget(
+  package static func directParticipantTarget(
     store: MessageStore?,
     resolvedTarget: ResolvedChatTarget,
     directChatInfo: ChatInfo?
@@ -151,7 +158,7 @@ enum ChatTargetResolver {
     return DirectParticipantTarget(chat: chat, participants: participants)
   }
 
-  static func resolveRecipientName(
+  package static func resolveRecipientName(
     _ recipient: String,
     contacts: any ContactResolving
   ) throws -> String {

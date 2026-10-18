@@ -1,6 +1,7 @@
 import Commander
 import Testing
 
+@testable import IMsgRPC
 @testable import imsg
 
 private let validationRichLinkFixture = PreparedRichLinkPreview(

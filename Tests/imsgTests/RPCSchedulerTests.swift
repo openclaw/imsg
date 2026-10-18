@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import imsg
+@testable import IMsgRPC
 
 @Test(.timeLimit(.minutes(1)))
 func rpcSchedulerCancellationAccountingDropsQueuedReadExactlyOnce() async throws {

@@ -1,4 +1,5 @@
 import Foundation
+import IMsgRPC
 
 enum JSONLines {
   private static let encoder: JSONEncoder = {

@@ -1,6 +1,6 @@
 import IMsgCore
 
-func pluralSuffix(for count: Int) -> String {
+package func pluralSuffix(for count: Int) -> String {
   count == 1 ? "" : "s"
 }
 
@@ -10,7 +10,7 @@ func displayName(for meta: AttachmentMeta) -> String {
   return "(unknown)"
 }
 
-func attachmentMetadataLine(for meta: AttachmentMeta) -> String {
+package func attachmentMetadataLine(for meta: AttachmentMeta) -> String {
   let name = displayName(for: meta)
   var line =
     "  attachment: name=\(name) mime=\(meta.mimeType) missing=\(meta.missing) path=\(meta.originalPath)"
@@ -21,7 +21,7 @@ func attachmentMetadataLine(for meta: AttachmentMeta) -> String {
   return line
 }
 
-func pollDisplayText(for poll: MessagePollEvent) -> String {
+package func pollDisplayText(for poll: MessagePollEvent) -> String {
   switch poll.kind {
   case .created:
     let question = poll.question ?? "poll"
