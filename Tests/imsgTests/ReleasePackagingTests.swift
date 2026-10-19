@@ -7,7 +7,7 @@ func releaseWorkflowPackagesUniversalBuildOutput() throws {
 
   #expect(
     workflow.contains(
-      "uses: openclaw/release-workflows/.github/workflows/release-swift-cli.yml@55c651f600fadc8d565512642c38a4d45890c0a0"
+      "uses: openclaw/release-workflows/.github/workflows/release-swift-cli.yml@fc49859568b3781af7663bee48c003fd987dc08b"
     ))
   #expect(workflow.contains("dry_run: ${{ inputs.dry_run }}"))
   #expect(workflow.contains("minimum-macos-version: 14"))

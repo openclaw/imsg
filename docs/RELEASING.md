@@ -1,6 +1,6 @@
 # Releasing imsg
 
-imsg uses the fleet-standard Swift CLI workflow from `openclaw/release-workflows@v1`. The repository caller supplies imsg's stable artifact, signing-identifier, and Homebrew contracts; the shared workflow owns the protected-source freeze, annotated release tag, builds, signing and notarization, independent verification, exact publication, Homebrew handoff, and closeout.
+imsg pins the fleet-standard Swift CLI workflow to the immutable commit for `openclaw/release-workflows` release `v1.11.8`; advancing the moving `v1` tag does not change imsg's caller. The repository caller supplies imsg's stable artifact, signing-identifier, and Homebrew contracts; the shared workflow owns the protected-source freeze, annotated release tag, builds, signing and notarization, independent verification, exact publication, Homebrew handoff, and closeout.
 
 ## Prerequisites
 

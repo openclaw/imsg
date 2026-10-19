@@ -91,8 +91,8 @@ jobs:
       contents: write
       pull-requests: write
       statuses: read
-    # v1, verified 2026-10-18; preserve the immutable workflow revision.
-    uses: openclaw/release-workflows/.github/workflows/release-swift-cli.yml@55c651f600fadc8d565512642c38a4d45890c0a0
+    # v1.11.8; preserve the immutable workflow revision.
+    uses: openclaw/release-workflows/.github/workflows/release-swift-cli.yml@fc49859568b3781af7663bee48c003fd987dc08b
     with:
       version: ${{ inputs.version }}
       dry_run: ${{ inputs.dry_run }}

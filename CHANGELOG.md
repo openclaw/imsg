@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Pin the shared Swift CLI release workflow to 1.11.8 so Linux release builds trust the exact container checkout and retain the dependency-lockfile drift check.
 - Move macOS CI and release preflight to Xcode 27 runners while retaining macOS 14 compatibility and verifying Intel binaries under Rosetta.
 - Name the rejected `--dylib` path in launch errors instead of listing automatic discovery paths that were not tried (#334, thanks @azuretek).
 - Stop reporting ordinary messages as replies to the previous row; keep reply GUIDs aligned with their quoted thread parent (#347, thanks @logananderson).
