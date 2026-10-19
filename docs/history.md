@@ -133,3 +133,11 @@ See [JSON output](json.md#message) for the canonical schema. Core fields include
 `id`, `chat_id`, `chat_identifier`, `chat_guid`, `chat_name`, `participants`, `is_group`, `guid`, `sender`, `is_from_me`, `text`, `created_at`, and `attachments`.
 
 Optional fields such as `reply_to_guid`, `destination_caller_id`, and `sender_name` appear when available. Native polls include `poll`. Standalone reaction events appear in `watch --reactions`; history may include a `reactions` snapshot on the message they target.
+
+## Skip contact lookups
+
+Pass `--no-contacts` to skip loading Contacts when you only need raw phone numbers or email addresses. This avoids the per-process address-book enumeration cost, including for `--json` output. Names stored in the Messages database itself are unchanged.
+
+```bash
+imsg history --chat-id 42 --no-contacts --json
+```

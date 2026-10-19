@@ -104,3 +104,5 @@ After Homebrew, terminal, or macOS updates, Full Disk Access entries can go stal
 Fix it by toggling the entry **off**, then **on** again. macOS regenerates the underlying TCC record. Do the same after replacing the parent app (e.g. updating Ghostty).
 
 See [Troubleshooting](troubleshooting.md) for the full diagnosis loop.
+
+For SSH AddressBook lookups, imsg reads optional account ownership metadata from `~/Library/Accounts/Accounts4.sqlite` to place child-delegate sources after primary and local contacts. A duplicate phone number or email address therefore uses the primary contact name; child-only contacts remain available. If account metadata is unavailable, lookup retains the existing source order. Both databases are opened read-only.

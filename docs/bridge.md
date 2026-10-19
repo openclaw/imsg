@@ -79,6 +79,10 @@ imsg tapback --chat 'iMessage;-;+15551234567' \
   --message <message-guid> --kind love --remove
 ```
 
+### Editing and unsending self-chat messages
+
+A self-chat can contain both your sent message (`is_from_me: true`) and a received echo (`is_from_me: false`), each with its own GUID. Use the sent copy's GUID for `edit` and `unsend`. The bridge rejects received messages before dispatch, including self-chat echoes, because Messages can silently ignore mutations of those rows. It also rejects a target whose sender ownership cannot be verified.
+
 Bridge send responses identify the newly constructed message even when dispatch is queued. A returned GUID is an acknowledgment, not proof of delivery; an unavailable GUID is returned as an empty string.
 
 ## Native polls

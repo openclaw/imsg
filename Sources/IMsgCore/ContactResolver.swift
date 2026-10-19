@@ -124,7 +124,11 @@ public final class ContactResolver: ContactResolving, @unchecked Sendable {
       }
       let nativeSource = contactSource(store: store)
       let source =
-        isSSH ? nativeSource.allowingAddressBook(at: AddressBookContacts.directory) : nativeSource
+        isSSH
+        ? nativeSource.allowingAddressBook(
+          at: AddressBookContacts.directory,
+          accountsDatabase: AddressBookContacts.accountsDatabaseURL)
+        : nativeSource
       return ContactResolver(region: region, source: source)
     #else
       _ = region

@@ -16,7 +16,8 @@
 
     // SSH can have Full Disk Access without a Contacts.framework grant. Read the
     // existing v22 store in place, including its WAL; never copy or modify it.
-    static func load(directory: URL) throws -> [ContactCatalogRecord] {
+    static func load(directory: URL, accountsDatabase: URL? = nil) throws -> [ContactCatalogRecord]
+    {
       do {
         let manager = FileManager.default
         let entries = try manager.contentsOfDirectory(
@@ -30,6 +31,12 @@
           .sorted { $0.lastPathComponent < $1.lastPathComponent }
         }
         directories.append(directory)
+        let childSources = childDelegateSourceIdentifiers(accountsDatabase: accountsDatabase)
+        let childDirectories = directories.filter {
+          childSources.contains($0.lastPathComponent.lowercased())
+        }
+        directories.removeAll { childSources.contains($0.lastPathComponent.lowercased()) }
+        directories.append(contentsOf: childDirectories)
         let databases = try directories.compactMap { directory -> URL? in
           // Enumerate instead of fileExists, which hides denied directory access.
           let files = try manager.contentsOfDirectory(
@@ -101,7 +108,9 @@
   }
 
   extension ContactCatalogSource {
-    func allowingAddressBook(at directory: URL) -> ContactCatalogSource {
+    func allowingAddressBook(
+      at directory: URL, accountsDatabase: URL? = nil
+    ) -> ContactCatalogSource {
       ContactCatalogSource(
         authorization: {
           switch authorization() {
@@ -113,7 +122,8 @@
           switch authorization() {
           case .authorized: return try load()
           case .addressBook, .notDetermined, .unavailable:
-            return try AddressBookContacts.load(directory: directory)
+            return try AddressBookContacts.load(
+              directory: directory, accountsDatabase: accountsDatabase)
           case .restricted: throw AddressBookContacts.ReadError.unavailable
           }
         },

@@ -20,6 +20,9 @@ enum HistoryCommand {
         ],
         flags: [
           .make(
+            label: "noContacts", names: [.long("no-contacts")],
+            help: "Skip Contacts lookups and return raw handles"),
+          .make(
             label: "attachments", names: [.long("attachments")], help: "include attachment metadata"
           ),
           .make(
@@ -63,7 +66,8 @@ enum HistoryCommand {
 
     let store = try MessageStore(path: dbPath)
     let filtered = try store.messages(chatID: chatID, limit: limit, filter: filter)
-    let contacts = await contactResolverFactory()
+    let contacts: any ContactResolving =
+      values.flag("noContacts") ? NoOpContactResolver() : await contactResolverFactory()
 
     if runtime.jsonOutput {
       let attachmentsByMessageID = try store.attachments(

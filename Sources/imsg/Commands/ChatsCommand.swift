@@ -14,8 +14,11 @@ enum ChatsCommand {
         ],
         flags: [
           .make(
+            label: "noContacts", names: [.long("no-contacts")],
+            help: "Skip Contacts lookups and return raw handles"),
+          .make(
             label: "unread-only", names: [.long("unread-only")],
-            help: "Return only chats with unread inbound messages")
+            help: "Return only chats with unread inbound messages"),
         ]
       )
     ),
@@ -40,7 +43,8 @@ enum ChatsCommand {
     let unreadOnly = values.flag("unread-only")
     let store = try MessageStore(path: dbPath)
     let chats = try store.listChats(limit: limit, unreadOnly: unreadOnly)
-    let contacts = await contactResolverFactory()
+    let contacts: any ContactResolving =
+      values.flag("noContacts") ? NoOpContactResolver() : await contactResolverFactory()
 
     if runtime.jsonOutput {
       for chat in chats {

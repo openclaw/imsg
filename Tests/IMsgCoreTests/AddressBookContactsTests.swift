@@ -44,6 +44,52 @@
       region: "US", source: source.allowingAddressBook(at: directory), refreshInterval: 0)
   }
 
+  @Test(arguments: [true, false])
+  func addressBookPrefersPrimaryContactsOverChildDelegateSources(isChild: Bool) throws {
+    let directory = try addressBookFixtureDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let child = try addressBookFixture(directory, source: "a-child")
+    let primary = try addressBookFixture(directory, source: "z-primary")
+    try addAddressBookContact(
+      child, name: "Child Label", phone: "+14155550111", email: "same@example.invalid")
+    try addAddressBookContact(
+      primary, name: "Primary", phone: "+14155550111", email: "same@example.invalid")
+    let accountsURL = directory.appendingPathComponent("Accounts4.sqlite")
+    let accounts = try Connection(accountsURL.path)
+    try accounts.execute(
+      """
+      CREATE TABLE ZACCOUNT (Z_PK INTEGER PRIMARY KEY, ZIDENTIFIER TEXT, ZPARENTACCOUNT INTEGER);
+      CREATE TABLE ZACCOUNTPROPERTY (ZOWNER INTEGER, ZKEY TEXT, ZVALUE BLOB);
+      INSERT INTO ZACCOUNT VALUES (1, 'child-parent', NULL), (2, 'A-CHILD', 1), (3, 'z-primary', NULL);
+      """)
+    let flag = try NSKeyedArchiver.archivedData(
+      withRootObject: NSNumber(value: isChild), requiringSecureCoding: true)
+    try accounts.run(
+      "INSERT INTO ZACCOUNTPROPERTY VALUES (1, 'isChildDelegate', ?)", Blob(bytes: Array(flag)))
+    let source = ContactCatalogSource(
+      authorization: { .notDetermined }, load: { [] }, observeChanges: { _ in {} })
+    let resolver = ContactResolver(
+      region: "US", source: source.allowingAddressBook(at: directory, accountsDatabase: accountsURL)
+    )
+    let expected = isChild ? "Primary Example" : "Child Label Example"
+    #expect(resolver.displayName(for: "+14155550111") == expected)
+    #expect(resolver.displayName(for: "same@example.invalid") == expected)
+    #expect(resolver.searchByName("Child Label").count == 1)
+  }
+
+  @Test(arguments: [false, true])
+  func addressBookAllowsMissingOrUnsupportedAccountMetadata(corrupt: Bool) throws {
+    let directory = try addressBookFixtureDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let db = try addressBookFixture(directory, source: "account")
+    try addAddressBookContact(db, name: "Ada", phone: "+14155550111", email: "ada@example.invalid")
+    let accountsURL = directory.appendingPathComponent("Accounts4.sqlite")
+    if corrupt { try Data([0xFF]).write(to: accountsURL) }
+    let records = try AddressBookContacts.load(directory: directory, accountsDatabase: accountsURL)
+    #expect(records.map(\.name) == ["Ada Example"])
+    #expect(FileManager.default.fileExists(atPath: accountsURL.path) == corrupt)
+  }
+
   @Test
   func addressBookResolvesLocalAndAccountContactsWithSharedNormalization() throws {
     let directory = try addressBookFixtureDirectory()

@@ -1,5 +1,28 @@
 #pragma mark - Mutate Handlers (v2)
 
+// A self-chat has both a sent message and a received echo with different GUIDs.
+// IMCore accepts mutation calls for the echo but silently leaves the sent copy unchanged.
+static NSString *messageMutationOwnershipError(id item) {
+    NSArray *candidates = @[
+        safelyReadObjectSelector(item, @selector(messageItem)) ?: [NSNull null],
+        safelyReadObjectSelector(item, @selector(_imMessageItem)) ?: [NSNull null],
+        safelyReadObjectSelector(item, @selector(message)) ?: [NSNull null],
+        item
+    ];
+    for (id candidate in candidates) {
+        SEL selector = NSSelectorFromString(@"isFromMe");
+        if (![candidate respondsToSelector:selector]) continue;
+        @try {
+            BOOL fromMe = ((BOOL (*)(id, SEL))objc_msgSend)(candidate, selector);
+            if (fromMe) return nil;
+            return @"Cannot edit or unsend a received message. In a self-chat, select the sent copy (is_from_me=true), not its received echo.";
+        } @catch (__unused NSException *exception) {
+            // Try another backing object when a proxy cannot supply this property.
+        }
+    }
+    return @"Cannot verify that this message was sent by you; edit or unsend was not dispatched.";
+}
+
 /// `edit-message`: rewrite an existing message via the edit selector
 /// appropriate for the running macOS. Preserves BB's "Compatability" typo.
 static NSDictionary *handleEditMessage(NSInteger requestId, NSDictionary *params) {
@@ -35,6 +58,9 @@ static NSDictionary *handleEditMessage(NSInteger requestId, NSDictionary *params
         return errorResponse(requestId,
             [NSString stringWithFormat:@"Message not found: %@", messageGuid]);
     }
+
+    NSString *ownershipError = messageMutationOwnershipError(item);
+    if (ownershipError) return errorResponse(requestId, ownershipError);
 
     @try {
         NSInteger localPartIndex = partIndex;
@@ -138,6 +164,9 @@ static NSDictionary *handleUnsendMessage(NSInteger requestId, NSDictionary *para
         return errorResponse(requestId,
             [NSString stringWithFormat:@"Message part not found: %ld", (long)partIndex]);
     }
+
+    NSString *ownershipError = messageMutationOwnershipError(target);
+    if (ownershipError) return errorResponse(requestId, ownershipError);
 
     @try {
         [chat performSelector:@selector(retractMessagePart:) withObject:target];

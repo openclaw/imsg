@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/stephencelis/CSQLite",
       "state" : {
-        "revision" : "8ad83035460a3d1029a2c5a0cca4f980297a9ca2",
-        "version" : "3.53.3"
+        "revision" : "3fecd9f88f50c3a9baf3456e7d4af1b16e71dc23",
+        "version" : "3.53.4"
       }
     },
     {

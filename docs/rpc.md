@@ -661,7 +661,7 @@ existing iMessage chat; ordinary `send.rich` text does not.
   When audio is true, imsg prepares a CAF/Opus voice message with macOS's built-in `afconvert` before dispatch. Invalid audio fails without sending; the original file is unchanged. See [native voice messages](attachments.md#native-voice-messages).
 - `send.multipart` sends 1–20 text parts. `parts` is a required array of objects containing a non-empty `text` string and optional `text_formatting` array. Top-level `effect` / `effect_id` and `subject` match `imsg send-multipart`. File, attachment, and mention parts are rejected before bridge dispatch.
 - `tapback` sends or removes a standard reaction. Params: `message_id` or `message_guid`, plus `reaction` / `kind` / `emoji`, optional `remove` and non-negative `part_index`. A `p:N/GUID` target selects its embedded part; the reference and native range always refer to that same part.
-- `message.edit` edits `message_id` / `message_guid` with `text`.
+- `message.edit` edits `message_id` / `message_guid` with `text`. Edits and unsends require a sent message; in a self-chat, use the GUID of the `is_from_me: true` copy, not the received echo. Targets whose sender ownership cannot be verified are rejected before dispatch.
 - `message.unsend`, `message.delete`, and `message.notifyAnyways` target `message_id` / `message_guid`.
 - `contacts.shouldShareContact` reads Apple Messages' advisory Name & Photo offer eligibility. The result includes `can_inspect_offer`, `can_share`, and tri-state `should_offer`.
 - `contacts.shareContactCard` explicitly requests Apple Messages Name & Photo sharing. Despite the compatibility name, this does not send a vCard. Success reports `requested: true`, not delivery.

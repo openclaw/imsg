@@ -112,3 +112,11 @@ Replace the examples with real recipients. Previously uncontacted numbers and em
 Every address must resolve and have confirmed iMessage availability. If IDS reports a recipient is not reachable, the command names that address and stops before creating, naming, or sending to a chat. An unresolved IDS result produces a separate error asking you to check the account and connection, then retry. A failed recipient is never silently dropped from a group. `chat-create` does not fall back to SMS; use `imsg send --service sms` for an intentional SMS send.
 
 `--name` sets the chat display name; `--text` sends an initial message. Omit both when checking creation without sending a message or group-name update. The result includes `chatGuid` and the requested participants; an empty chat may not appear in the recent-chats list until it has activity.
+
+## Skip contact lookups
+
+Pass `--no-contacts` to skip loading Contacts when you only need raw phone numbers or email addresses. This avoids the per-process address-book enumeration cost, including for `--json` output. Names stored in the Messages database itself are unchanged.
+
+```bash
+imsg chats --no-contacts --json
+```
