@@ -258,8 +258,10 @@ extension MessageStore {
       ? TypedStreamParser.parseAttributedBody(try dataValue(row, "body")) : rawText
     let isFromMe = try boolValue(row, "is_from_me")
     let destinationCallerID = try stringValue(row, "destination_caller_id")
-    let rawSender = try stringValue(row, "sender")
-    let sender = rawSender.isEmpty ? destinationCallerID : rawSender
+    let sender = Self.resolvedSender(
+      handle: try stringValue(row, "sender"),
+      destinationCallerID: destinationCallerID,
+      isFromMe: isFromMe)
     let service = try stringValue(row, "message_service").nilIfEmpty ?? "unknown"
     let message = Message(
       rowID: rowID,
@@ -328,15 +330,18 @@ extension MessageStore {
     let text =
       rawText.isEmpty
       ? TypedStreamParser.parseAttributedBody(try dataValue(row, "\(prefix)_body")) : rawText
-    let rawSender = try stringValue(row, "\(prefix)_sender")
-    let destination = try stringValue(row, "\(prefix)_destination_caller_id")
+    let isFromMe = try boolValue(row, "\(prefix)_is_from_me")
+    let sender = Self.resolvedSender(
+      handle: try stringValue(row, "\(prefix)_sender"),
+      destinationCallerID: try stringValue(row, "\(prefix)_destination_caller_id"),
+      isFromMe: isFromMe)
     return Message(
       rowID: rowID,
       chatID: chatID,
-      sender: rawSender.isEmpty ? destination : rawSender,
+      sender: sender,
       text: text,
       date: appleDate(from: try int64Value(row, "\(prefix)_date")),
-      isFromMe: try boolValue(row, "\(prefix)_is_from_me"),
+      isFromMe: isFromMe,
       service: try stringValue(row, "\(prefix)_service").nilIfEmpty ?? "unknown",
       handleID: try int64Value(row, "\(prefix)_handle_id"),
       attachmentsCount: 0,

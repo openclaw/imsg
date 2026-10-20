@@ -398,10 +398,8 @@ extension MessageStore {
       resolvedText = transcription
     }
 
-    var resolvedSender = sender
-    if resolvedSender.isEmpty && !destinationCallerID.isEmpty {
-      resolvedSender = destinationCallerID
-    }
+    let resolvedSender = Self.resolvedSender(
+      handle: sender, destinationCallerID: destinationCallerID, isFromMe: isFromMe)
 
     let poll: MessagePollEvent?
     if MessagePollDecoder.isPollCandidate(

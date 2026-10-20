@@ -45,7 +45,7 @@ struct ChatMessagesQuery {
         let placeholders = Array(repeating: "?", count: filter.participants.count).joined(
           separator: ",")
         sql +=
-          " AND COALESCE(NULLIF(h.id,''), \(destinationCallerColumn)) COLLATE NOCASE IN (\(placeholders))"
+          " AND (\(MessageStore.senderSQL(destinationCallerColumn: destinationCallerColumn))) COLLATE NOCASE IN (\(placeholders))"
         for participant in filter.participants {
           bindings.append(participant)
         }

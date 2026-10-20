@@ -97,17 +97,16 @@ extension MessageStore {
         let resolvedChatID = try int64Value(row, "chat_id") ?? chatID ?? 0
         let typeValue = try intValue(row, "associated_message_type") ?? 0
         let associatedGUID = try stringValue(row, "associated_message_guid")
-        var sender = try stringValue(row, "sender")
         let isFromMe = try boolValue(row, "is_from_me")
         let date = try appleDate(from: int64Value(row, "date"))
         let text = try stringValue(row, "text")
         let destinationCallerID = try stringValue(row, "destination_caller_id")
         let body = try dataValue(row, "body")
         let origRowID = try int64Value(row, "orig_rowid")
-
-        if sender.isEmpty && !destinationCallerID.isEmpty {
-          sender = destinationCallerID
-        }
+        let sender = Self.resolvedSender(
+          handle: try stringValue(row, "sender"),
+          destinationCallerID: destinationCallerID,
+          isFromMe: isFromMe)
 
         let resolvedText = text.isEmpty ? TypedStreamParser.parseAttributedBody(body) : text
         let decoded = decodeReaction(

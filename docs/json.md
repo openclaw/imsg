@@ -53,7 +53,7 @@ Returned by `imsg history`, `imsg search`, `imsg watch`, and the JSON-RPC
 | `destination_caller_id` | string | Outgoing only — which of your numbers Messages routed through. |
 | `balloon_bundle_id` | string | Raw Messages `message.balloon_bundle_id`, when present. URL preview rows use `com.apple.messages.URLBalloonProvider`, which lets consumers recognize link-preview payload rows without inferring from message text. |
 | `url_preview` | object | Present when imsg folds an Apple URL-preview balloon row into its originating text row. The outer message keeps the text row's `id`, `guid`, `text`, and `created_at`. |
-| `sender` | string | Raw handle. Empty for some self-sent messages. |
+| `sender` | string | Raw handle of the author. Outgoing messages use your account from `destination_caller_id`, not the recipient; empty for some older self-sent messages. |
 | `sender_name` | string | Resolved Contacts name when permission granted. |
 | `is_from_me` | bool | True for outbound. |
 | `text` | string | Plain text. Recovered from `attributedBody` when `text` column is empty. |

@@ -64,13 +64,14 @@ extension MessageStore {
     var reactionsByMessageID: [Int64: [Reaction]] = [:]
     var matchedRows: [ReactionRow] = []
     let bodyColumn = schema.hasAttributedBody ? "r.attributedBody" : "NULL"
+    let destinationCallerColumn = schema.hasDestinationCallerID ? "r.destination_caller_id" : "NULL"
     // A reaction can be joined to a different chat than its target. Scan the indexed
     // associated-message rows once, then match only the requested GUIDs in memory.
     let sql = """
       SELECT r.ROWID AS reaction_rowid, r.associated_message_guid AS associated_message_guid,
              r.associated_message_type AS associated_message_type, h.id AS sender,
              r.is_from_me AS is_from_me, r.date AS date, IFNULL(r.text, '') AS text,
-             \(bodyColumn) AS body
+             \(destinationCallerColumn) AS destination_caller_id, \(bodyColumn) AS body
       FROM message r
       LEFT JOIN handle h ON r.handle_id = h.ROWID
       WHERE r.associated_message_guid IS NOT NULL

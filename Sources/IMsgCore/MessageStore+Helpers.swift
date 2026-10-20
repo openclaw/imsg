@@ -20,6 +20,22 @@ extension MessageStore {
     return columns
   }
 
+  // Outgoing rows join the recipient's handle, so the local account in
+  // destination_caller_id is the real sender. Keep in sync with senderSQL.
+  static func resolvedSender(handle: String, destinationCallerID: String, isFromMe: Bool) -> String
+  {
+    guard !destinationCallerID.isEmpty, isFromMe || handle.isEmpty else { return handle }
+    return destinationCallerID
+  }
+
+  static func senderSQL(destinationCallerColumn: String) -> String {
+    """
+    CASE WHEN m.is_from_me = 1 AND IFNULL(\(destinationCallerColumn), '') != ''
+      THEN \(destinationCallerColumn)
+      ELSE COALESCE(NULLIF(h.id, ''), \(destinationCallerColumn)) END
+    """
+  }
+
   static func reactionColumnsPresent(in columns: Set<String>) -> Bool {
     return columns.contains("guid")
       && columns.contains("associated_message_guid")

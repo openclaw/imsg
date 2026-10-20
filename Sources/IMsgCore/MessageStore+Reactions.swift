@@ -7,10 +7,11 @@ private struct CurrentReactionsQuery {
 
   init(messageID: MessageID, schema: MessageStoreSchema) {
     let bodyColumn = schema.hasAttributedBody ? "r.attributedBody" : "NULL"
+    let destinationCallerColumn = schema.hasDestinationCallerID ? "r.destination_caller_id" : "NULL"
     self.sql = """
       SELECT r.ROWID AS reaction_rowid, r.associated_message_type AS associated_message_type,
              h.id AS sender, r.is_from_me AS is_from_me, r.date AS date, IFNULL(r.text, '') AS text,
-             \(bodyColumn) AS body
+             \(destinationCallerColumn) AS destination_caller_id, \(bodyColumn) AS body
       FROM message m
       JOIN message r ON r.associated_message_guid = m.guid COLLATE NOCASE
         OR r.associated_message_guid LIKE '%/' || m.guid
@@ -78,11 +79,22 @@ extension MessageStore {
   func decodeReactionRow(_ row: Row, messageID: Int64) throws -> ReactionRow {
     let text = try stringValue(row, "text")
     let body = try dataValue(row, "body")
+    let isFromMe = try boolValue(row, "is_from_me")
+    let handle = try stringValue(row, "sender")
+    // Only outgoing reactions take the local account; a received reaction without a handle
+    // keeps its empty sender so consumers never credit it to the local account.
+    let sender =
+      isFromMe
+      ? Self.resolvedSender(
+        handle: handle,
+        destinationCallerID: try stringValue(row, "destination_caller_id"),
+        isFromMe: true)
+      : handle
     return ReactionRow(
       rowID: try int64Value(row, "reaction_rowid") ?? 0,
       typeValue: try intValue(row, "associated_message_type") ?? 0,
-      sender: try stringValue(row, "sender"),
-      isFromMe: try boolValue(row, "is_from_me"),
+      sender: sender,
+      isFromMe: isFromMe,
       timestamp: try int64Value(row, "date") ?? 0,
       resolvedText: text.isEmpty ? TypedStreamParser.parseAttributedBody(body) : text,
       messageID: messageID)
