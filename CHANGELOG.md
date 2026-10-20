@@ -2,14 +2,18 @@
 
 ## Unreleased
 
-- Prefer primary contacts over child-delegate sources for duplicate handles in SSH AddressBook lookups while retaining child-only contacts (#328, thanks @taklung).
+## 0.18.0 - 2026-10-20
+
+**Highlights:** Skip contact enumeration with `--no-contacts`, get more accurate SSH contact names and reply metadata, and receive clear errors for unsupported edits and unsends.
+
 - Add `--no-contacts` to `chats` and `history` to skip contact enumeration when raw handles suffice (#342, thanks @theanhgen).
-- Update the Linux CSQLite dependency to 3.53.4.
 - Reject edits and unsends targeting received messages, including self-chat echoes, instead of reporting a silent no-op; direct callers to the sent copy (#350, thanks @dwalthour).
-- Pin the shared Swift CLI release workflow to 1.11.8 so Linux release builds trust the exact container checkout and retain the dependency-lockfile drift check.
-- Move macOS CI and release preflight to Xcode 27 runners while retaining macOS 14 compatibility and verifying Intel binaries under Rosetta.
-- Name the rejected `--dylib` path in launch errors instead of listing automatic discovery paths that were not tried (#334, thanks @azuretek).
 - Stop reporting ordinary messages as replies to the previous row; keep reply GUIDs aligned with their quoted thread parent (#347, thanks @logananderson).
+- Prefer primary contacts over child-delegate sources for duplicate handles in SSH AddressBook lookups while retaining child-only contacts (#328, thanks @taklung).
+- Name the rejected `--dylib` path in launch errors instead of listing automatic discovery paths that were not tried (#334, thanks @azuretek).
+- Update the Linux CSQLite dependency to 3.53.4.
+- Move macOS CI and release preflight to Xcode 27 runners while retaining macOS 14 compatibility and verifying Intel binaries under Rosetta.
+- Pin the shared Swift CLI release workflow to 1.11.8 so Linux release builds trust the exact container checkout and retain the dependency-lockfile drift check.
 
 ## 0.17.0 - 2026-10-16
 
