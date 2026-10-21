@@ -33,7 +33,7 @@ func registerMessageSearch(in db: Connection) throws {
     }, nil, nil, nil)
   guard result == SQLITE_OK else {
     throw SQLite.Result.error(
-      message: String(cString: sqlite3_errmsg(db.handle)), code: result, statement: nil)
+      message: String(cString: sqlite3_errmsg(db.handle)), code: result)
   }
 }
 

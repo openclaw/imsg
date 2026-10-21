@@ -41,6 +41,8 @@ jobs:
         run: make test
       - name: Native reply construction (no send)
         run: make test-native-replies
+      - name: Verify Swift 6.1 minimum
+        run: swift package tools-version | grep -Fx "6.1.0"
       - name: Build
         run: make build
       - name: Verify both release architectures

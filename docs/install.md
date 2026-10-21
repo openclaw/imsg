@@ -25,6 +25,8 @@ brew untap steipete/tap   # optional
 
 ## Build from source
 
+Building on macOS requires Swift 6.1 or newer (Xcode 16.3 or newer).
+
 ```bash
 git clone https://github.com/openclaw/imsg.git
 cd imsg

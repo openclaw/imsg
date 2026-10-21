@@ -60,8 +60,7 @@
           records += try loadDatabase(database)
         }
         return records
-      } catch SQLite.Result.error(_, let code, _) where code == SQLITE_BUSY || code == SQLITE_LOCKED
-      {
+      } catch SQLite.Result.error(_, let code) where code == SQLITE_BUSY || code == SQLITE_LOCKED {
         throw ReadError.busy
       } catch {
         // Missing permissions, files, or required columns invalidate old names;
