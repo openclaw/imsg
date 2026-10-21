@@ -64,7 +64,9 @@ extension MessageStore {
       ),
       poll: poll,
       isRead: decoded.isRead,
-      dateRead: decoded.dateRead
+      dateRead: decoded.dateRead,
+      editedAt: decoded.editedAt,
+      unsentAt: decoded.unsentAt
     )
   }
 

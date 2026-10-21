@@ -52,7 +52,7 @@ Use an id from the first command in place of `42`. The [five-minute quickstart](
 | --- | --- |
 | List chats and inspect their identifiers | [Chats](docs/chats.md) and [groups](docs/groups.md) |
 | Read or search local history | [History](docs/history.md) |
-| Stream new messages and tapbacks | [Watch](docs/watch.md) |
+| Stream new messages, edits, unsends, and tapbacks | [Watch](docs/watch.md) |
 | Send text, files, and standard tapbacks | [Send](docs/send.md) and [attachments](docs/attachments.md) |
 | Count messages and media | [Statistics](docs/stats.md) |
 | Consume stable NDJSON or a long-running stdio API | [JSON schema](docs/json.md) and [JSON-RPC](docs/rpc.md) |

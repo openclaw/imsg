@@ -20,6 +20,8 @@ struct MessageStoreSchema: Sendable {
   let hasChatLastAddressedHandleColumn: Bool
   let hasIsReadColumn: Bool
   let hasDateReadColumn: Bool
+  let hasDateEditedColumn: Bool
+  let hasDateRetractedColumn: Bool
   let hasUnreadMessageIndex: Bool
 
   init(connection: Connection) throws {
@@ -51,6 +53,8 @@ struct MessageStoreSchema: Sendable {
     self.hasChatLastAddressedHandleColumn = chatColumns.contains("last_addressed_handle")
     self.hasIsReadColumn = messageColumns.contains("is_read")
     self.hasDateReadColumn = messageColumns.contains("date_read")
+    self.hasDateEditedColumn = messageColumns.contains("date_edited")
+    self.hasDateRetractedColumn = messageColumns.contains("date_retracted")
     self.hasUnreadMessageIndex = try Self.hasUnreadIndex(connection)
   }
 
@@ -111,6 +115,8 @@ struct MessageStoreSchema: Sendable {
       hasChatLastAddressedHandleColumn ?? base.hasChatLastAddressedHandleColumn
     self.hasIsReadColumn = hasIsReadColumn ?? base.hasIsReadColumn
     self.hasDateReadColumn = hasDateReadColumn ?? base.hasDateReadColumn
+    self.hasDateEditedColumn = base.hasDateEditedColumn
+    self.hasDateRetractedColumn = base.hasDateRetractedColumn
     self.hasUnreadMessageIndex = base.hasUnreadMessageIndex
   }
 }

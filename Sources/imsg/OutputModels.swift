@@ -144,6 +144,9 @@ struct MessagePayload: Codable {
   let isReactionAdd: Bool?
   let reactedToGUID: String?
   let isRead: Bool?
+  let editedAt: String?
+  let unsentAt: String?
+  let type: String?
   let dateRead: String?
 
   init(
@@ -166,13 +169,17 @@ struct MessagePayload: Codable {
     self.isFromMe = message.isFromMe
     self.text = message.text
     self.createdAt = CLIISO8601.format(message.date)
-    self.attachments = attachments.map { AttachmentPayload(meta: $0) }
-    self.reactions = reactions.map {
+    self.attachments =
+      message.unsentAt == nil ? attachments.map { AttachmentPayload(meta: $0) } : []
+    self.reactions = (message.unsentAt == nil ? reactions : []).map {
       ReactionPayload(reaction: $0, senderName: reactionSenderNames[$0.rowID])
     }
     self.destinationCallerID = message.destinationCallerID
     self.balloonBundleID = message.balloonBundleID
     self.urlPreview = message.urlPreview.map { URLPreviewPayload(preview: $0) }
+    self.editedAt = message.editedAt.map { CLIISO8601.format($0) }
+    self.unsentAt = message.unsentAt.map { CLIISO8601.format($0) }
+    self.type = message.mutationEvent?.rawValue
     self.poll = message.poll
     if message.isFromMe {
       self.isRead = nil
@@ -227,6 +234,9 @@ struct MessagePayload: Codable {
     case isReactionAdd = "is_reaction_add"
     case reactedToGUID = "reacted_to_guid"
     case isRead = "is_read"
+    case editedAt = "edited_at"
+    case unsentAt = "unsent_at"
+    case type
     case dateRead = "date_read"
   }
 }

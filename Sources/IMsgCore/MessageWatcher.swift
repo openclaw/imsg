@@ -57,6 +57,8 @@ public final class MessageWatcher: Sendable {
     self.didPoll = didPoll
   }
 
+  /// Streams new rows and mutation snapshots. ROWID replay covers insertions only;
+  /// refresh history after reconnecting to reconcile edits and unsends.
   public func stream(
     chatID: Int64? = nil,
     sinceRowID: Int64? = nil,
@@ -99,6 +101,8 @@ private final class WatchState: @unchecked Sendable {
   private let continuation: AsyncThrowingStream<Message, Error>.Continuation
   private let queue = DispatchQueue(label: "imsg.watch", qos: .userInitiated)
 
+  private var mutationDatabaseVersion: MessageDatabaseVersion?
+  private var mutationStamps: [Int64: MessageMutationStamp] = [:]
   private var cursor: Int64
   private var resumeAfterRowID: Int64
   private var urlBalloonDedupe = URLBalloonDedupeState()
@@ -142,6 +146,7 @@ private final class WatchState: @unchecked Sendable {
   func start() {
     queue.async {
       do {
+        self.mutationStamps = try self.store.mutationStamps(chatID: self.chatID)
         if self.cursor == 0 {
           self.cursor = try self.store.maxRowID()
           self.resumeAfterRowID = self.cursor
@@ -269,6 +274,8 @@ private final class WatchState: @unchecked Sendable {
     if stopped { return }
     defer { didPoll() }
     do {
+      try pollMutations()
+      guard !stopped else { return }
       let previousCursor = cursor
       let batch = try store.messagesAfterBatch(
         afterRowID: cursor,
@@ -312,6 +319,58 @@ private final class WatchState: @unchecked Sendable {
     } catch {
       finish(throwing: error)
     }
+  }
+
+  private func pollMutations() throws {
+    guard configuration.batchLimit > 0 else { return }
+    let version = try store.mutationDatabaseVersion()
+    guard version != mutationDatabaseVersion else { return }
+    let current = try store.mutationStamps(chatID: chatID)
+    mutationStamps = mutationStamps.filter { current[$0.key] != nil }
+    // Capture every not-yet-emitted row before the bounded update loop can return.
+    for (rowID, stamp) in current where rowID > cursor {
+      mutationStamps[rowID] = stamp
+    }
+    var processed = 0
+    for rowID in current.keys.sorted() {
+      guard let stamp = current[rowID], stamp != mutationStamps[rowID] else { continue }
+      // Rows still ahead of the creation cursor will be emitted with their current content.
+      guard rowID <= cursor else { continue }
+      if processed >= configuration.batchLimit {
+        queue.async { self.poll() }
+        return
+      }
+      processed += 1
+      guard
+        let (loadedMessage, actualStamp) = try store.mutationMessage(rowID: rowID, chatID: chatID)
+      else {
+        mutationStamps[rowID] = stamp
+        continue
+      }
+      var message = loadedMessage
+      // Wait for late chat joins just as the creation path does.
+      guard message.chatID > 0 else { continue }
+      let event = actualStamp.event(since: mutationStamps[rowID])
+      mutationStamps[rowID] = actualStamp
+      guard let event, filter.allows(message),
+        configuration.includeReactions || !message.isReaction
+      else { continue }
+      message.mutationEvent = event
+      switch continuation.yield(message) {
+      case .enqueued:
+        break
+      case .dropped:
+        finish(throwing: MessageWatcherOverflowError(resumeAfterRowID: resumeAfterRowID))
+        return
+      case .terminated:
+        stopSources()
+        return
+      @unknown default:
+        stopSources()
+        return
+      }
+    }
+    mutationDatabaseVersion = version
   }
 
   private func finish(throwing error: Error) {

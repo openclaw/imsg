@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.19.0 - 2026-10-21
+
+**Highlights:** Send custom emoji tapbacks through capable bridge helpers, and observe edited and unsent messages through the read-only database interface.
+
+- Send and remove custom emoji tapbacks while mapping the six classic emoji, including presentation-selector forms, to classic tapbacks for older-device compatibility; preserve multipart targeting (#348, #332, thanks @logananderson).
+- Report edited and unsent messages in `watch`, history, and read RPC payloads with optional mutation timestamps; return current edited text and clear unsent content (#340, thanks @hyprsh).
+- Upgrade SQLite.swift to 0.17.0 and require Swift 6.1 for macOS source builds; migrate SQLite error handling and retain macOS 14 compatibility (#359).
+
 ## 0.18.0 - 2026-10-20
 
 **Highlights:** Skip contact enumeration with `--no-contacts`, get more accurate SSH contact names and reply metadata, and receive clear errors for unsupported edits and unsends.

@@ -20,6 +20,7 @@ enum MessageDatabaseFixture {
     var includeChatHandleJoin = true
     var includeScheduleColumns = false
     var includeReadState = false
+    var includeMutationDates = false
   }
 
   static func createSchema(_ db: Connection, options: SchemaOptions = SchemaOptions()) throws {
@@ -46,6 +47,9 @@ enum MessageDatabaseFixture {
       ? "is_read INTEGER, date_read INTEGER,"
       : ""
 
+    let mutationColumns =
+      options.includeMutationDates ? "date_edited INTEGER, date_retracted INTEGER," : ""
+
     try db.execute(
       """
       CREATE TABLE message (
@@ -64,6 +68,7 @@ enum MessageDatabaseFixture {
         \(replyToColumn)
         \(scheduleColumns)
         \(readStateColumns)
+        \(mutationColumns)
         date INTEGER,
         is_from_me INTEGER,
         service TEXT

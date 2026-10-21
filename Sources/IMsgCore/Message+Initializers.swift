@@ -1,0 +1,106 @@
+import Foundation
+
+extension Message {
+  // Preserve the existing public initializer function signatures for library clients.
+  public init(
+    rowID: Int64,
+    chatID: Int64,
+    sender: String,
+    text: String,
+    date: Date,
+    isFromMe: Bool,
+    service: String,
+    handleID: Int64?,
+    attachmentsCount: Int,
+    guid: String = "",
+    routing: RoutingMetadata = RoutingMetadata(),
+    balloonBundleID: String? = nil,
+    urlPreview: URLPreviewMetadata? = nil,
+    reaction: ReactionMetadata = ReactionMetadata(),
+    poll: MessagePollEvent? = nil,
+    isRead: Bool? = nil,
+    dateRead: Date? = nil
+  ) {
+    self.init(
+      rowID: rowID,
+      chatID: chatID,
+      sender: sender,
+      text: text,
+      date: date,
+      isFromMe: isFromMe,
+      service: service,
+      handleID: handleID,
+      attachmentsCount: attachmentsCount,
+      guid: guid,
+      routing: routing,
+      balloonBundleID: balloonBundleID,
+      urlPreview: urlPreview,
+      reaction: reaction,
+      poll: poll,
+      isRead: isRead,
+      dateRead: dateRead,
+      editedAt: nil,
+      unsentAt: nil,
+      mutationEvent: nil
+    )
+  }
+
+  public init(
+    rowID: Int64,
+    chatID: Int64,
+    sender: String,
+    text: String,
+    date: Date,
+    isFromMe: Bool,
+    service: String,
+    handleID: Int64?,
+    attachmentsCount: Int,
+    guid: String = "",
+    replyToGUID: String? = nil,
+    threadOriginatorGUID: String? = nil,
+    threadOriginatorPart: String? = nil,
+    destinationCallerID: String? = nil,
+    balloonBundleID: String? = nil,
+    urlPreview: URLPreviewMetadata? = nil,
+    replyToText: String? = nil,
+    replyToSender: String? = nil,
+    isReaction: Bool = false,
+    reactionType: ReactionType? = nil,
+    isReactionAdd: Bool? = nil,
+    reactedToGUID: String? = nil,
+    poll: MessagePollEvent? = nil,
+    isRead: Bool? = nil,
+    dateRead: Date? = nil
+  ) {
+    self.init(
+      rowID: rowID,
+      chatID: chatID,
+      sender: sender,
+      text: text,
+      date: date,
+      isFromMe: isFromMe,
+      service: service,
+      handleID: handleID,
+      attachmentsCount: attachmentsCount,
+      guid: guid,
+      replyToGUID: replyToGUID,
+      threadOriginatorGUID: threadOriginatorGUID,
+      threadOriginatorPart: threadOriginatorPart,
+      destinationCallerID: destinationCallerID,
+      balloonBundleID: balloonBundleID,
+      urlPreview: urlPreview,
+      replyToText: replyToText,
+      replyToSender: replyToSender,
+      isReaction: isReaction,
+      reactionType: reactionType,
+      isReactionAdd: isReactionAdd,
+      reactedToGUID: reactedToGUID,
+      poll: poll,
+      isRead: isRead,
+      dateRead: dateRead,
+      editedAt: nil,
+      unsentAt: nil,
+      mutationEvent: nil
+    )
+  }
+}

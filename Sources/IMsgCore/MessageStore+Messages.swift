@@ -381,8 +381,20 @@ extension MessageStore {
     let threadOriginatorPart = try stringValue(row, columns.threadOriginatorPart)
     let balloonBundleID = try stringValue(row, columns.balloonBundleID)
 
-    var resolvedText = text.isEmpty ? TypedStreamParser.parseAttributedBody(body) : text
-    if isAudioMessage, let transcription = try audioTranscription(for: rowID) {
+    let editedAt = try int64Value(row, columns.dateEdited).flatMap {
+      $0 > 0 ? appleDate(from: $0) : nil
+    }
+    let unsentAt = try int64Value(row, columns.dateRetracted).flatMap {
+      $0 > 0 ? appleDate(from: $0) : nil
+    }
+    // An edited body is authoritative, even when empty or no longer decodable.
+    var resolvedText = text
+    if unsentAt != nil {
+      resolvedText = ""
+    } else if text.isEmpty || (editedAt != nil && !body.isEmpty) {
+      resolvedText = TypedStreamParser.parseAttributedBody(body)
+    }
+    if unsentAt == nil, isAudioMessage, let transcription = try audioTranscription(for: rowID) {
       resolvedText = transcription
     }
 
@@ -432,12 +444,14 @@ extension MessageStore {
       guid: guid,
       associatedGUID: associatedGUID,
       associatedType: associatedType,
-      attachments: attachments,
+      attachments: unsentAt == nil ? attachments : 0,
       threadOriginatorGUID: threadOriginatorGUID,
       threadOriginatorPart: threadOriginatorPart,
       balloonBundleID: balloonBundleID,
-      poll: poll,
+      poll: unsentAt == nil ? poll : nil,
       isRead: isRead,
+      editedAt: editedAt,
+      unsentAt: unsentAt,
       dateRead: dateRead
     )
   }

@@ -71,7 +71,7 @@ enum HistoryCommand {
 
     if runtime.jsonOutput {
       let attachmentsByMessageID = try store.attachments(
-        for: filtered.map(\.rowID),
+        for: filtered.filter { $0.unsentAt == nil }.map(\.rowID),
         options: attachmentOptions
       )
       let reactionsByMessageID = try store.reactions(for: filtered)
@@ -97,7 +97,11 @@ enum HistoryCommand {
       let sender =
         message.isFromMe
         ? message.sender : (contacts.displayName(for: message.sender) ?? message.sender)
-      let body = message.poll.map { pollDisplayText(for: $0) } ?? message.text
+      let content = message.poll.map { pollDisplayText(for: $0) } ?? message.text
+      let body =
+        message.unsentAt != nil
+        ? "[unsent]"
+        : message.editedAt != nil ? "[edited] " + content : content
       StdoutWriter.writeLine("\(timestamp) [\(direction)] \(sender): \(body)")
       if message.attachmentsCount > 0 {
         if showAttachments {

@@ -10,7 +10,7 @@ enum WatchCommand {
 
   static let spec = CommandSpec(
     name: "watch",
-    abstract: "Stream incoming messages",
+    abstract: "Stream messages, edits, and unsends",
     discussion: nil,
     signature: CommandSignatures.withRuntimeFlags(
       CommandSignature(
@@ -141,7 +141,11 @@ enum WatchCommand {
         )
         return
       }
-      let body = message.poll.map { pollDisplayText(for: $0) } ?? message.text
+      let content = message.poll.map { pollDisplayText(for: $0) } ?? message.text
+      let body =
+        message.unsentAt != nil
+        ? "[unsent]"
+        : message.editedAt != nil ? "[edited] " + content : content
       StdoutWriter.writeLine("\(timestamp) [\(direction)] \(sender): \(body)")
       if message.attachmentsCount > 0 {
         if showAttachments {

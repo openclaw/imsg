@@ -41,7 +41,7 @@ Returned by `imsg history`, `imsg search`, `imsg watch`, and the JSON-RPC
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | int | Database-instance-scoped rowid. Use as the `--since-rowid` cursor in watch, but discard saved cursors after replacing or restoring the Messages database. |
+| `id` | int | Database-instance-scoped rowid. New-row events (without `type`) can advance the `--since-rowid` cursor; edited/unsent updates reuse an older ID. Discard saved cursors after replacing or restoring the Messages database. |
 | `chat_id` | int | Always present. Preferred routing handle. |
 | `chat_identifier` | string | Portable handle. |
 | `chat_guid` | string | Portable GUID. |
@@ -63,6 +63,9 @@ Returned by `imsg history`, `imsg search`, `imsg watch`, and the JSON-RPC
 | `poll` | object | Present for native Apple Messages Polls creation and vote rows. See below. |
 | `is_read` | bool | Inbound only — omitted when `is_from_me` is true. |
 | `date_read` | ISO8601 | Inbound only — present when `is_read` is true. |
+| `edited_at` | ISO8601 | Optional timestamp of the current edit. |
+| `unsent_at` | ISO8601 | Optional retraction timestamp; unsent content is empty. |
+| `type` | string | Live mutation updates only: `edited` or `unsent`; omitted for new rows and history snapshots. |
 
 Read state is a database snapshot. A watch notification includes the state present when that message row is emitted; reading it later does not generate a second message notification.
 
@@ -119,6 +122,32 @@ Messages may store a link send as two rows: the user's text row and a later `com
 | `created_at` | ISO8601 | Preview row timestamp. |
 
 Live watch calls do not delay the text message waiting for a preview. If the preview row arrives in a later poll after the text row was already emitted, imsg suppresses the preview row so consumers still receive one notification.
+
+### Edits and unsends
+
+Messages add optional `edited_at` and `unsent_at` ISO8601 timestamps when the
+source database contains positive `date_edited` and `date_retracted` values.
+These fields are omitted on unchanged messages and on older database schemas.
+`text` contains the current attributed body after an edit. If a present edited
+body is empty or undecodable, `text` is empty rather than the stale original text. An unsent message
+has empty `text`, `attachments`, and `reactions`; its original ID, GUID, sender,
+chat, and `created_at` remain available for reconciliation.
+
+Live `watch` output and the message payload inside `watch.subscribe` notifications
+also add `type: "edited"` or `type: "unsent"` when a previously observed row
+changes. Ordinary new-message payloads keep their existing shape and omit `type`.
+The RPC notification method remains `message`. Consumers should update or remove
+the message identified by `id` / `guid`, rather than append another message.
+
+A watch starts with the database's existing mutation state as its baseline.
+`--since-rowid` / `since_rowid` still replays new rows only; it is not a mutation
+cursor. After a disconnect or `watch.overflow`, refresh history to reconcile
+edits and unsends. Several changes between polls can collapse into the latest
+stored state; an unsend takes precedence over an edit. No edit-history archive
+or deletion events are inferred. Chat, participant, and date filters apply to
+the original message, including its original creation date. Timestamp changes
+are compared per row, so delayed iCloud updates and equal timestamps on different
+rows are not skipped.
 
 ### Reaction extensions
 

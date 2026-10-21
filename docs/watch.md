@@ -1,6 +1,6 @@
 ---
 title: Watch
-description: "Stream new iMessage and SMS rows live, with filesystem-event triggers and a poll-based fallback."
+description: "Stream new messages, edits, and unsends with filesystem-event triggers and a poll-based fallback."
 ---
 
 `imsg watch` follows `chat.db` and emits each new message as soon as Messages writes it. It's the right primitive for agents, dashboards, notifiers, and anything that wants near-real-time inbound.
@@ -12,7 +12,7 @@ imsg watch --json
 ```
 
 You'll see every new inbound and outbound message across every chat the database covers.
-Each physical message is emitted once. If Messages links a row to multiple chats, an all-chat watch uses its lowest linked chat ID; `--chat-id` preserves the requested chat's context.
+Each new physical message is emitted once; later edits and unsends are separate updates that reuse its ID/GUID. If Messages links a row to multiple chats, an all-chat watch uses its lowest linked chat ID; `--chat-id` preserves the requested chat's context.
 
 ## Stream one chat
 
@@ -24,7 +24,7 @@ imsg watch --chat-id 42 --json
 
 ## Resuming from a cursor
 
-For long-lived consumers — agents, sync jobs — store the last `id` (rowid) you successfully processed and resume:
+For long-lived consumers — agents, sync jobs — store the highest `id` (rowid) from successfully processed new-message events (where `type` is absent) and resume. Edited/unsent updates can refer to older IDs and must not move this cursor backward:
 
 ```bash
 imsg watch --chat-id 42 --since-rowid 9000 --json
@@ -42,6 +42,19 @@ The watcher keeps a bounded queue of 256 eligible messages per stream. Date and
 participant filters are applied before queue admission, while the physical scan
 cursor still advances across filtered rows. This prevents excluded traffic from
 consuming a subscriber's capacity.
+
+## Edited and unsent messages
+
+The database watcher also observes edits and unsends to existing rows. In JSON,
+these use the normal message payload with `type: "edited"` or `type: "unsent"`,
+plus `edited_at` / `unsent_at` when available. Update the original `id` or `guid`;
+these events do not represent newly inserted messages. Human output labels
+these rows `[edited]` or `[unsent]`.
+
+Existing mutations are a baseline when watching starts, and ROWID replay does
+not replay historical mutations. Refresh `history` after reconnecting or a
+buffer overflow. Multiple edits between polls may appear as only the latest
+state. See the [JSON contract](json.md#edits-and-unsends).
 
 ## Reactions
 
@@ -89,7 +102,7 @@ Poll rows carry `poll.event` values suitable for routing:
 imsg watch --chat-id 42 --debounce 250ms --json
 ```
 
-When Messages writes a message, it often follows up with WAL flushes, attachment metadata updates, and `is_from_me` corrections within a few milliseconds. The debouncer collapses those into one stable emission per row.
+When Messages writes a message, it often follows up with WAL flushes, attachment metadata updates, and `is_from_me` corrections within a few milliseconds. The debouncer collapses those into one stable initial emission per row; later edits and unsends remain separate updates.
 If a row appears before its chat metadata resolves, watch retries it briefly and
 then drops it fail-closed instead of emitting an empty `chat_id=0` payload that
 could look like a direct message.
@@ -110,8 +123,9 @@ then RPC emits a terminal `watch.overflow` notification containing
 `resume_after_rowid` and reason `buffer_limit_exceeded`.
 
 Resume with that value as the exclusive `since_rowid` for `messages.after` or a
-new `watch.subscribe`. The cursor is deliberately conservative: replaying a
-message is possible, but skipping the first dropped eligible message is not.
+new `watch.subscribe`. The cursor is deliberately conservative: replaying an
+inserted message is possible, but skipping the first dropped eligible insertion is not.
+Also refresh history to reconcile edits and unsends; a ROWID cursor cannot replay updates.
 Cancellation and explicit unsubscribe do not report overflow or a generic
 error. Once `watch.unsubscribe` responds, no later notification for that
 subscription can appear.
@@ -125,7 +139,7 @@ The watcher listens for `kqueue` filesystem events on:
 - `~/Library/Messages/chat.db-shm`
 - `~/Library/Messages/`
 
-Whenever any of those files change, the watcher checks for new rows past the cursor.
+Whenever any of those files change, the watcher checks for new rows past the cursor and changed mutation stamps on existing rows.
 The directory watch lets it detect WAL sidecar creation, deletion, and replacement after
 SQLite checkpoints.
 
@@ -167,8 +181,8 @@ imsg watch --bb-events --json
 
 Database messages and bridge events are two independently ordered,
 best-effort streams sharing serialized stdout. Each source preserves its own
-order, but their relative output order has no meaning. Database messages remain
-resumable with `--since-rowid`; bridge events start at the event log's current
+order, but their relative output order has no meaning. Database insertions remain
+resumable with `--since-rowid`; reconcile edits and unsends with history. Bridge events start at the event log's current
 EOF, have no replay cursor, and are not resumable. The CLI securely provisions
 a private empty event log when needed, so it can start before bridge injection
 and receive later events. If the log cannot be created or opened, overflows,

@@ -141,3 +141,11 @@ Pass `--no-contacts` to skip loading Contacts when you only need raw phone numbe
 ```bash
 imsg history --chat-id 42 --no-contacts --json
 ```
+
+## Edits and unsends
+
+History returns the current text of edited messages, with optional `edited_at`
+and `unsent_at` timestamps in JSON. Retracted messages remain identifiable by
+ID/GUID but have empty text, attachments, and reactions. Human output marks them
+`[edited]` or `[unsent]`. The source database must expose the mutation columns;
+older database schemas keep their existing output. See the [JSON contract](json.md#edits-and-unsends).

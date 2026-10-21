@@ -45,7 +45,10 @@ extension Message {
       ),
       poll: poll,
       isRead: isRead,
-      dateRead: dateRead
+      dateRead: dateRead,
+      editedAt: editedAt,
+      unsentAt: unsentAt,
+      mutationEvent: mutationEvent
     )
   }
 }

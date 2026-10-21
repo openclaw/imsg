@@ -26,6 +26,8 @@ struct MessageRowColumns {
   let payloadData: String
   let messageSummaryInfo: String
   let isRead: String
+  let dateEdited: String
+  let dateRetracted: String
   let dateRead: String
 
   static func message(chatID: String?) -> MessageRowColumns {
@@ -51,6 +53,8 @@ struct MessageRowColumns {
       payloadData: MessageRowColumns.payloadData,
       messageSummaryInfo: MessageRowColumns.messageSummaryInfo,
       isRead: "is_read",
+      dateEdited: "date_edited",
+      dateRetracted: "date_retracted",
       dateRead: "date_read"
     )
   }
@@ -75,6 +79,8 @@ struct DecodedMessageRow {
   let balloonBundleID: String
   let poll: MessagePollEvent?
   let isRead: Bool?
+  let editedAt: Date?
+  let unsentAt: Date?
   let dateRead: Date?
 }
 
@@ -121,6 +127,8 @@ struct MessageRowSelection {
       ? "CASE WHEN \(pollCandidatePredicate) THEN m.message_summary_info ELSE NULL END" : "NULL"
     let isReadColumn = schema.hasIsReadColumn ? "m.is_read" : "NULL"
     let dateReadColumn = schema.hasDateReadColumn ? "m.date_read" : "NULL"
+    let dateEditedColumn = schema.hasDateEditedColumn ? "m.date_edited" : "NULL"
+    let dateRetractedColumn = schema.hasDateRetractedColumn ? "m.date_retracted" : "NULL"
     let chatColumn = chatIDColumn.map { ", \($0) AS chat_id" } ?? ""
 
     let selectList = """
@@ -140,6 +148,8 @@ struct MessageRowSelection {
              \(payloadDataColumn) AS \(columns.payloadData),
              \(summaryInfoColumn) AS \(columns.messageSummaryInfo),
              \(isReadColumn) AS \(columns.isRead),
+             \(dateEditedColumn) AS \(columns.dateEdited),
+             \(dateRetractedColumn) AS \(columns.dateRetracted),
              \(dateReadColumn) AS \(columns.dateRead)
       """
     self.selectList = selectList

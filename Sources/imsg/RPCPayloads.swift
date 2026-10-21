@@ -79,14 +79,14 @@ func buildMessagePayload(
   let chatInfo = try store.chatInfo(chatID: message.chatID)
   let participants = try store.participants(chatID: message.chatID)
   let attachments: [AttachmentMeta]
-  if includeAttachments {
+  if includeAttachments && message.unsentAt == nil {
     attachments =
       try prefetchedAttachments ?? store.attachments(for: message.rowID, options: attachmentOptions)
   } else {
     attachments = []
   }
   let reactions: [Reaction]
-  if includeReactions {
+  if includeReactions && message.unsentAt == nil {
     reactions = try prefetchedReactions ?? store.reactions(for: message.rowID)
   } else {
     reactions = []

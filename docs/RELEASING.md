@@ -42,7 +42,7 @@ Once that exact commit is green, run the release preflight. Dry runs are the def
 gh workflow run release.yml --repo openclaw/imsg --ref main -f "version=$(cut -d= -f2 version.env)" -f dry_run=true
 ```
 
-Require that exact run to succeed, then dispatch publication from the same unchanged `main` commit:
+Require that exact run to succeed. Create, verify, and push an SSH-signed annotated version tag for that exact commit using the approved release signing key. The shared workflow reuses the immutable annotated tag and checks its target. Then dispatch publication from the same unchanged `main` commit:
 
 ```bash
 gh workflow run release.yml --repo openclaw/imsg --ref main -f "version=$(cut -d= -f2 version.env)" -f dry_run=false

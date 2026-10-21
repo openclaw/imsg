@@ -50,9 +50,10 @@ private struct SearchMessagesQuery {
       store.schema.hasReactionColumns
       ? " AND \(nonReactionPredicate("m.associated_message_type"))"
       : ""
+    let editedCandidate = store.schema.hasDateEditedColumn ? " OR m.date_edited > 0" : ""
     let attributedBodyCandidate =
       store.schema.hasAttributedBody
-      ? " OR (IFNULL(m.text, '') = '' AND m.attributedBody IS NOT NULL)"
+      ? " OR ((IFNULL(m.text, '') = ''\(editedCandidate)) AND m.attributedBody IS NOT NULL)"
       : ""
     let audioCandidate =
       store.schema.hasAudioMessageColumn && store.schema.hasAttachmentUserInfo

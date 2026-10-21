@@ -409,7 +409,7 @@ Result:
 { "subscription": 1, "buffer_limit": 256 }
 ```
 
-Notifications (one per emitted message):
+Notifications (one per emitted message or mutation update):
 
 ```json
 {
@@ -421,6 +421,11 @@ Notifications (one per emitted message):
   }
 }
 ```
+
+Edited and unsent updates use the same notification envelope, adding `type: "edited"`
+or `type: "unsent"` inside `params.message`. They reuse the original message ID/GUID.
+Only new-row notifications (where `type` is absent) advance the ROWID replay cursor;
+keep the highest processed new-row ID. See [edits and unsends](json.md#edits-and-unsends).
 
 The RPC default debounce (`500ms`) is intentionally higher than the CLI default (`250ms`). RPC's typical caller is an agent that just sent a message and is waiting for the inbound echo to settle (`is_from_me` correction, attachment metadata, …). 500ms is enough for those follow-ups to land before the message is emitted.
 
@@ -459,9 +464,9 @@ ends with one terminal notification:
 
 No generic `error` notification accompanies this overflow. Resume with
 `messages.after` using `since_rowid` equal to `resume_after_rowid`, or create a
-new watch subscription with that cursor. The cursor is at or before the first
-dropped eligible message: duplicate replay is possible, but an eligible
-message is never skipped.
+new watch subscription with that cursor. For insertions, the cursor is at or before the first
+dropped eligible row: duplicate replay is possible, but an eligible insertion is never skipped.
+Also refresh history to reconcile edits and unsends, which ROWID cursors do not replay.
 
 If a live all-chat row appears before Messages has joined it to a chat, RPC watch retries it briefly and then drops it fail-closed instead of emitting an empty `chat_id=0` direct-message-shaped payload.
 
@@ -862,3 +867,14 @@ AppleScript only when the bridge is not ready or returns authoritative
 malformed response, or other uncertain post-publication failure never falls
 back. Use `bridge` when the caller requires private-API delivery and should
 fail instead of falling back. Replies remain bridge-only.
+
+### Message mutation notifications
+
+`messages.history` includes optional `edited_at` and `unsent_at` timestamps.
+`watch.subscribe` continues to use the `message` notification method and adds
+`type: "edited"` or `type: "unsent"` inside the existing `params.message` object
+for changes to previously observed rows. Normal new messages omit `type`.
+The ID/GUID identify the original message, and `created_at` remains its creation
+time. `since_rowid` replays insertions only; refresh history after a disconnect
+or overflow to reconcile mutations. See [edits and unsends](json.md#edits-and-unsends)
+for the full contract and polling limits.
