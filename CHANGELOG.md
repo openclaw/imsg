@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Rotate the injected helper's `.imsg-bridge.log` at 8 MiB to `.imsg-bridge.log.1`, matching the event log, so long-running Messages hosts no longer accumulate gigabytes of handler tracing.
+
 ## 0.19.0 - 2026-10-21
 
 **Highlights:** Send custom emoji tapbacks through capable bridge helpers, and observe edited and unsent messages through the read-only database interface.

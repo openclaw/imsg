@@ -21,11 +21,13 @@ static NSString *kEventsRotated = nil;// .imsg-events.jsonl.1
 // from outside the dylib painful. Append-only file in the sandbox container
 // gives us a stable channel that's readable from outside.
 static NSString *kDebugLogFile = nil; // .imsg-bridge.log
+static NSString *kDebugLogRotated = nil; // .imsg-bridge.log.1
 
 static NSTimer *fileWatchTimer = nil;
 static NSTimer *rpcInboxTimer = nil;
 static BOOL bridgeDidBootstrap = NO;
 static os_unfair_lock eventsLock = OS_UNFAIR_LOCK_INIT;
+static os_unfair_lock debugLogLock = OS_UNFAIR_LOCK_INIT;
 static os_unfair_lock trackedMessageGuidLock = OS_UNFAIR_LOCK_INIT;
 static NSMutableSet<NSString *> *trackedMessageGuids = nil;
 static int lockFd = -1;
@@ -37,6 +39,7 @@ static BOOL bridgeStandingBy = NO;
 static const NSTimeInterval kOwnershipRetryInterval = 1.0;
 
 static const NSUInteger kEventsRotateBytes = 1 * 1024 * 1024;
+static const NSUInteger kDebugLogRotateBytes = 8 * 1024 * 1024;
 static const NSTimeInterval kV2ClaimMaxAge = 10 * 60;
 
 static void initFilePaths(void) {
@@ -54,13 +57,15 @@ static void initFilePaths(void) {
         kEventsFile = [containerPath stringByAppendingPathComponent:@".imsg-events.jsonl"];
         kEventsRotated = [containerPath stringByAppendingPathComponent:@".imsg-events.jsonl.1"];
         kDebugLogFile = [containerPath stringByAppendingPathComponent:@".imsg-bridge.log"];
+        kDebugLogRotated = [containerPath stringByAppendingPathComponent:@".imsg-bridge.log.1"];
     }
 }
 
 /// Append a line to `.imsg-bridge.log` inside the Messages container. NSLog
 /// output is redacted by unified logging when emitted from system apps on
 /// macOS 26, so this is the only reliable diagnostic channel for behavior
-/// inside the injected dylib.
+/// inside the injected dylib. Rotates to `.1` like the event log; per-call
+/// handler tracing otherwise grew this file to gigabytes on long-lived hosts.
 __attribute__((format(NSString, 1, 2)))
 static void debugLog(NSString *fmt, ...) {
     if (!kDebugLogFile) return;
@@ -73,8 +78,14 @@ static void debugLog(NSString *fmt, ...) {
     dispatch_once(&once, ^{ fmtr = [NSISO8601DateFormatter new]; });
     NSString *line = [NSString stringWithFormat:@"%@ %@\n",
                       [fmtr stringFromDate:[NSDate date]], msg];
+    os_unfair_lock_lock(&debugLogLock);
+    struct stat st;
+    if (stat(kDebugLogFile.UTF8String, &st) == 0 && st.st_size >= (off_t)kDebugLogRotateBytes) {
+        rename(kDebugLogFile.UTF8String, kDebugLogRotated.UTF8String);
+    }
     FILE *fp = fopen(kDebugLogFile.UTF8String, "a");
     if (fp) { fputs(line.UTF8String, fp); fclose(fp); }
+    os_unfair_lock_unlock(&debugLogLock);
 }
 
 #pragma mark - Path Hardening

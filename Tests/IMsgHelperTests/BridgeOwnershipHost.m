@@ -17,6 +17,7 @@ int main(int argc, const char *argv[]) {
         kEventsFile = [home stringByAppendingPathComponent:@".imsg-events.jsonl"];
         kEventsRotated = [home stringByAppendingPathComponent:@".imsg-events.jsonl.1"];
         kDebugLogFile = [home stringByAppendingPathComponent:@".imsg-bridge.log"];
+        kDebugLogRotated = [home stringByAppendingPathComponent:@".imsg-bridge.log.1"];
         NSString *stop = [home stringByAppendingPathComponent:
             [NSString stringWithFormat:@"stop-%d", getpid()]];
         bridgeClaimOwnership();
