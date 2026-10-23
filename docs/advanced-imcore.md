@@ -13,7 +13,7 @@ You almost certainly do not need any of this for normal use.
 
 - `imsg read --to <handle> [--chat-id <id>]` — mark a chat as read.
 - `imsg typing --to <handle> [--duration 5s] [--stop true]` — show or stop the typing indicator.
-- `imsg launch [--dylib <path>] [--kill-only] [--force]` — launch Messages.app with the helper dylib injected.
+- `imsg launch [--dylib <path>] [--kill-only] [--force]` — launch Messages.app with the helper dylib injected; opt in to periodic checks with `--install-agent`.
 - `imsg status` — read-only IMCore bridge status.
 - `imsg name-photo status|share --chat <guid>` — inspect the native offer
   eligibility or explicitly share your Messages Name & Photo with a chat.
@@ -114,6 +114,46 @@ bypass the SIP or permission checks.
 `imsg status` is read-only. It does not auto-launch or auto-inject. Run `imsg launch` first.
 
 To revert: re-enable SIP from Recovery mode (`csrutil enable`), then reboot.
+
+## Keep the bridge injected across reboots
+
+macOS can reopen Messages.app after a reboot without the helper injected. On a
+dedicated bridge Mac, opt in to a per-user LaunchAgent to restore the bridge at
+login and check it every five minutes:
+
+```bash
+imsg launch --install-agent
+imsg launch --install-agent --agent-interval 600  # check every ten minutes
+imsg launch --uninstall-agent
+```
+
+Installation requires **SIP disabled** and a discoverable helper dylib, just like
+`imsg launch`; it refuses to install if either check fails. The interval defaults
+to 300 seconds and must be an integer of at least 60 seconds. Reinstall to change
+it. `--agent-interval` requires `--install-agent`; both agent flags are mutually
+exclusive with each other, `--kill-only`, and `--force`.
+
+The agent is saved at
+`~/Library/LaunchAgents/org.openclaw.imsg.bridge.plist` and loaded immediately.
+It runs the absolute path of the invoked executable with `launch`, preserving
+symlinks such as `current` so upgrades continue working. Default helper discovery
+runs afresh each time; source builds that discover a helper relative to the
+current directory retain that working directory for the agent. If you explicitly
+pass `--dylib` during installation, that path is made absolute and saved instead.
+`--json` reports the loaded/unloaded
+state, label, plist path, executable path, and interval in one JSON object.
+
+A healthy helper of the current version is reused under the launch lock, so
+these checks do not restart Messages. A missing, unresponsive, or stale helper
+causes Messages to be relaunched with injection. Successful background checks
+are silent; interactive `imsg launch` keeps its progress output. Diagnostics go
+to `~/Library/Logs/imsg/bridge-agent.log`. Background launches clear this log in
+place once it exceeds 1 MiB, keeping repeated failures from growing it forever.
+Uninstallation is idempotent and leaves Messages and the log alone.
+
+**LaunchAgents start only after the user logs in.** Headless Macs need automatic
+login configured for the Messages user; installing this agent does not enable
+automatic login or bypass any macOS permissions.
 
 ## Read receipts
 

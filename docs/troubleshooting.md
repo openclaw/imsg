@@ -120,6 +120,12 @@ If you want partial fallback names (initials, or formatted handles), do that in 
 
 See [Advanced IMCore features](advanced-imcore.md). Most likely SIP is enabled (required to be off), library validation is rejecting the helper dylib, or macOS 26's `imagent` entitlement check is blocking the IMCore client. These are macOS-level gates `imsg` cannot work around.
 
+If `imsg status` says the bridge is not responding, run `imsg launch` to restore
+injection. macOS may reopen Messages without the helper after a reboot. On a
+dedicated bridge Mac with SIP disabled, the opt-in [bridge login
+agent](advanced-imcore.md#keep-the-bridge-injected-across-reboots) restores it at
+login and checks it periodically: `imsg launch --install-agent`.
+
 RPC `initialize`, `status`, and bridge capability probes never launch or
 restart Messages.app. Bridge-only RPC methods use only an already-running
 bridge: run `imsg launch` outside the supervised child, then call RPC `status`

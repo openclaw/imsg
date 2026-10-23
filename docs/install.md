@@ -75,5 +75,5 @@ If `chats` returns `unable to open database file` or `authorization denied`, jum
 ## What you don't need
 
 - No Node, Python, or Ruby runtime.
-- No background daemon, launch agent, or login item.
+- No background daemon, launch agent, or login item is installed by default. Dedicated bridge Macs can opt in to the [bridge login agent](advanced-imcore.md#keep-the-bridge-injected-across-reboots).
 - No private API patches. Default reads use a read-only handle on `chat.db`; sends use Messages' published AppleScript surface. Only the [advanced IMCore features](advanced-imcore.md) need a helper dylib, and even those are off by default.
