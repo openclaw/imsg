@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.19.1 - 2026-10-22
+
+**Highlights:** Keep the IMCore bridge injected across reboots with an opt-in login agent, report your own account as the sender of outgoing 1:1 messages, and stop the bridge debug log from growing without bound.
+
 - Rotate the injected helper's `.imsg-bridge.log` at 8 MiB to `.imsg-bridge.log.1`, matching the event log, so long-running Messages hosts no longer accumulate gigabytes of handler tracing (#362).
 - Report your own account instead of the recipient as `sender` on outgoing 1:1 messages, reactions, and reaction events, and match `--participants` against that same sender (#358, thanks @regaw-leinad).
 - Add an opt-in bridge login agent with `imsg launch --install-agent` to restore injection after reboots and periodically repair missing or stale helpers, with configurable intervals and bounded logs (#363).
