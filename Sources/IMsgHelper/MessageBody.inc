@@ -182,3 +182,48 @@ static NSMutableAttributedString *buildFormattedAttributed(NSString *text,
     return attr;
 }
 
+/// Return `body` with each mention range marked. Each entry is
+/// `{ "start": int, "length": int, "handle": string }` in UTF-16 units of the
+/// part's text. Messages marks a confirmed mention with
+/// `__kIMMentionConfirmedMention`, whose value is the mentioned person's handle
+/// (phone number or email); the recipient's device notifies that person from
+/// it. Unlike style ranges, an entry that cannot be applied fails the send:
+/// a mention dropped in silence is a notification nobody receives.
+static NSAttributedString *mentionedAttributed(NSAttributedString *body,
+                                               id mentions,
+                                               NSString **error) {
+    if (![mentions isKindOfClass:[NSArray class]]) {
+        if (error) *error = @"mentions must be an array";
+        return nil;
+    }
+    NSMutableAttributedString *mentioned = [body mutableCopy];
+    NSMutableIndexSet *covered = [NSMutableIndexSet indexSet];
+    for (id raw in (NSArray *)mentions) {
+        NSDictionary *mention = [raw isKindOfClass:[NSDictionary class]] ? raw : nil;
+        NSNumber *startNum = mention[@"start"];
+        NSNumber *lengthNum = mention[@"length"];
+        NSString *handle = mention[@"handle"];
+        if (![startNum isKindOfClass:[NSNumber class]]
+            || ![lengthNum isKindOfClass:[NSNumber class]]
+            || ![handle isKindOfClass:[NSString class]] || handle.length == 0) {
+            if (error) *error = @"Each mention needs a start, a length and a handle";
+            return nil;
+        }
+        NSInteger start = startNum.integerValue;
+        NSInteger length = lengthNum.integerValue;
+        if (start < 0 || length <= 0 || (NSUInteger)start > mentioned.length
+            || (NSUInteger)length > mentioned.length - (NSUInteger)start) {
+            if (error) *error = @"Mention range is outside the message text";
+            return nil;
+        }
+        NSRange range = NSMakeRange((NSUInteger)start, (NSUInteger)length);
+        if ([covered intersectsIndexesInRange:range]) {
+            if (error) *error = @"Mention ranges overlap";
+            return nil;
+        }
+        [covered addIndexesInRange:range];
+        [mentioned addAttribute:@"__kIMMentionConfirmedMention" value:handle range:range];
+    }
+    return mentioned;
+}
+

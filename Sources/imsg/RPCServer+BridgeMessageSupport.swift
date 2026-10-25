@@ -89,6 +89,45 @@ func bridgeSupportsEmojiTapbacks(_ status: [String: Any]) -> Bool {
   return selectors?["emojiTapbackMessage"] as? Bool == true
 }
 
+func bridgeSupportsMentions(_ status: [String: Any]) -> Bool {
+  let selectors = status["selectors"] as? [String: Any]
+  return selectors?["sendMentions"] as? Bool == true
+}
+
+/// Validate `{start, length, handle}` mention ranges against `text`, in UTF-16
+/// units, and return them in text order for the bridge. Ranges must lie inside
+/// the text and must not overlap.
+func rpcMentionRanges(_ raw: [[String: Any]], text: String, name: String) throws
+  -> [[String: Any]]
+{
+  let textLength = text.utf16.count
+  var ranges: [(start: Int, length: Int, handle: String)] = []
+  for (index, rawMention) in raw.enumerated() {
+    let field = "\(name)[\(index)]"
+    let mention = try RPCParameters(
+      rawMention, method: field, supportedKeys: ["start", "length", "handle"])
+    guard let start = try mention.integer("start"), start >= 0 else {
+      throw RPCError.invalidParams("\(field).start must be a non-negative integer")
+    }
+    guard let length = try mention.integer("length"), length > 0 else {
+      throw RPCError.invalidParams("\(field).length must be a positive integer")
+    }
+    guard start <= textLength, length <= textLength - start else {
+      throw RPCError.invalidParams("\(field) is outside the text")
+    }
+    guard let handle = try mention.string("handle"), !handle.isEmpty else {
+      throw RPCError.invalidParams("\(field).handle must be a non-empty string")
+    }
+    ranges.append((start, length, handle))
+  }
+  ranges.sort { $0.start < $1.start }
+  for (previous, next) in zip(ranges, ranges.dropFirst())
+  where next.start < previous.start + previous.length {
+    throw RPCError.invalidParams("\(name) ranges must not overlap")
+  }
+  return ranges.map { ["start": $0.start, "length": $0.length, "handle": $0.handle] }
+}
+
 extension RPCServer {
   func bridgeSendVerificationBaseline() async throws -> (
     database: RPCDatabaseResources, rowID: Int64
@@ -202,6 +241,25 @@ extension RPCServer {
     guard bridgeSupportsEmojiTapbacks(status) else {
       throw RPCError.internalError(
         "running bridge does not support emoji tapbacks; restart Messages with the current imsg bridge"
+      )
+    }
+  }
+
+  func requireMentionCapability(action: BridgeAction) async throws {
+    let status: [String: Any]
+    do {
+      status = try await invokeBridge(action: .status, params: [:])
+    } catch {
+      throw DeliveryFailure(
+        disposition: .notStarted,
+        transport: .bridgeV2,
+        operation: action.rawValue,
+        detail: "Bridge capability inspection failed before the send was published."
+      )
+    }
+    guard bridgeSupportsMentions(status) else {
+      throw RPCError.internalError(
+        "running bridge does not support mentions; restart Messages with the current imsg bridge"
       )
     }
   }

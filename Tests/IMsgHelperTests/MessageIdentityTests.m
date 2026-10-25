@@ -258,6 +258,78 @@ int main(void) {
         });
         check([rejected[@"delivery_disposition"] isEqual:@"not_started"] && dispatchedMessage == nil,
               @"V2 preserves a tracked send's proven pre-dispatch rejection");
+        dispatchedMessage = nil;
+        NSDictionary *mentioned = handleSendMessage(7, @{
+            @"chatGuid": @"iMessage;+;chat-test", @"message": @"hi Ann and Ben 👋",
+            @"textFormatting": @[@{@"start": @3, @"length": @3, @"styles": @[@"bold"]}],
+            @"mentions": @[
+                @{@"start": @3, @"length": @3, @"handle": @"+15555550123"},
+                @{@"start": @11, @"length": @3, @"handle": @"ben@example.com"}
+            ]
+        });
+        NSAttributedString *mentionedText = ((IdentityMessage *)dispatchedMessage).text;
+        NSRange annRange = NSMakeRange(0, 0);
+        NSRange benRange = NSMakeRange(0, 0);
+        check([mentioned[@"success"] boolValue], @"A send with mentions succeeds");
+        check([[mentionedText attribute:@"__kIMMentionConfirmedMention" atIndex:3
+                         effectiveRange:&annRange] isEqual:@"+15555550123"]
+                  && NSEqualRanges(annRange, NSMakeRange(3, 3)),
+              @"A phone mention marks exactly its range with the handle");
+        check([[mentionedText attribute:@"__kIMMentionConfirmedMention" atIndex:11
+                         effectiveRange:&benRange] isEqual:@"ben@example.com"]
+                  && NSEqualRanges(benRange, NSMakeRange(11, 3)),
+              @"An email mention marks exactly its range with the handle");
+        check([mentionedText attribute:@"__kIMMentionConfirmedMention" atIndex:7
+                        effectiveRange:NULL] == nil,
+              @"Text between mentions carries no mention");
+        check([[mentionedText attribute:@"__kIMTextBoldAttributeName" atIndex:3
+                         effectiveRange:NULL] isEqual:@1],
+              @"A mention keeps the style ranges sent with it");
+        for (NSArray *mentions in @[
+            @[@{@"start": @15, @"length": @3, @"handle": @"+15555550123"}],
+            @[@{@"start": @3, @"length": @3}],
+            @[@{@"start": @3, @"length": @3, @"handle": @""}],
+            @[@{@"start": @3, @"length": @3, @"handle": @"+15555550123"},
+              @{@"start": @5, @"length": @3, @"handle": @"ben@example.com"}],
+            @[@"+15555550123"]
+        ]) {
+            dispatchedMessage = nil;
+            NSDictionary *invalid = handleSendMessage(8, @{
+                @"chatGuid": @"iMessage;+;chat-test", @"message": @"hi Ann and Ben",
+                @"mentions": mentions
+            });
+            check(![invalid[@"success"] boolValue] && dispatchedMessage == nil,
+                  @"A mention that cannot be marked stops the send");
+            check([invalid[@"delivery_disposition"] isEqual:@"not_started"],
+                  @"An unmarkable mention is a proven pre-dispatch rejection");
+        }
+        dispatchedMessage = nil;
+        NSDictionary *multipartMention = handleSendMultipart(9, @{
+            @"chatGuid": @"iMessage;+;chat-test",
+            @"parts": @[
+                @{@"text": @"first"},
+                @{@"text": @"hi Ann",
+                  @"mentions": @[@{@"start": @3, @"length": @3, @"handle": @"+15555550123"}]}
+            ]
+        });
+        NSAttributedString *multipartText = ((IdentityMessage *)dispatchedMessage).text;
+        NSRange partMentionRange = NSMakeRange(0, 0);
+        check([multipartMention[@"success"] boolValue], @"A multipart send with mentions succeeds");
+        check([[multipartText attribute:@"__kIMMentionConfirmedMention" atIndex:8
+                          effectiveRange:&partMentionRange] isEqual:@"+15555550123"]
+                  && NSEqualRanges(partMentionRange, NSMakeRange(8, 3)),
+              @"A part's mention range is relative to that part's text");
+        check([[multipartText attribute:@"__kIMMessagePartAttributeName" atIndex:8
+                          effectiveRange:NULL] isEqual:@1],
+              @"A mention stays inside its own message part");
+        dispatchedMessage = nil;
+        NSDictionary *multipartInvalid = handleSendMultipart(10, @{
+            @"chatGuid": @"iMessage;+;chat-test",
+            @"parts": @[@{@"text": @"hi",
+                          @"mentions": @[@{@"start": @1, @"length": @3, @"handle": @"+15555550123"}]}]
+        });
+        check(![multipartInvalid[@"success"] boolValue] && dispatchedMessage == nil,
+              @"A multipart mention outside its part stops the send");
         omitGUID = YES;
         NSDictionary *withoutGUID = handleSendMessage(4, @{
             @"chatGuid": @"iMessage;+;chat-test", @"message": @"hello"

@@ -661,10 +661,10 @@ database even with an explicit GUID. Strictly verified `send.rich` file/path
 mode and `send.multipart` also require it. Rich-link mode requires a stored
 existing iMessage chat; ordinary `send.rich` text does not.
 
-- `send.rich` sends text with optional `effect`, `subject`, `reply_to`, `part_index`, `dd_scan`, and `text_formatting`. It also accepts `file` or `path` and securely stages the file before sending it through the attachment bridge while preserving those same caption/effect/subject/reply/part/formatting semantics. Attachment capability is checked before staging or publishing the send. Alternatively, pass only one chat target plus an HTTP(S) `url` to send an Apple URL-preview balloon. URL mode is iMessage-only and rejects text, file, and other send modifiers; metadata or image lookup failure falls back to a metadata-only card, never a plain-message send.
+- `send.rich` sends text with optional `effect`, `subject`, `reply_to`, `part_index`, `dd_scan`, `text_formatting`, and [`mentions`](#mentions). It also accepts `file` or `path` and securely stages the file before sending it through the attachment bridge while preserving those same caption/effect/subject/reply/part/formatting semantics; `mentions` is not accepted with a file. Attachment capability is checked before staging or publishing the send. Alternatively, pass only one chat target plus an HTTP(S) `url` to send an Apple URL-preview balloon. URL mode is iMessage-only and rejects text, file, and other send modifiers; metadata or image lookup failure falls back to a metadata-only card, never a plain-message send.
 - `send.attachment` sends `file` or `path`, with optional `audio` / `is_audio` / `as_voice`. Pass `reply_to` (or `replyTo`, `reply_to_guid`, or `message_guid`) to reply to an existing message. An optional non-negative integer `part_index` / `partIndex` selects that message's part and is invalid without a reply target.
   When audio is true, imsg prepares a CAF/Opus voice message with macOS's built-in `afconvert` before dispatch. Invalid audio fails without sending; the original file is unchanged. See [native voice messages](attachments.md#native-voice-messages).
-- `send.multipart` sends 1–20 text parts. `parts` is a required array of objects containing a non-empty `text` string and optional `text_formatting` array. Top-level `effect` / `effect_id` and `subject` match `imsg send-multipart`. File, attachment, and mention parts are rejected before bridge dispatch.
+- `send.multipart` sends 1–20 text parts. `parts` is a required array of objects containing a non-empty `text` string and optional `text_formatting` and [`mentions`](#mentions) arrays. Top-level `effect` / `effect_id` and `subject` match `imsg send-multipart`. File, attachment, and `mention` parts are rejected before bridge dispatch.
 - `tapback` sends or removes a standard reaction, or a custom emoji reaction when the value is a single emoji with no standard kind (requires `selectors.emojiTapbackMessage`). Params: `message_id` or `message_guid`, plus `reaction` / `kind` / `emoji`, optional `remove` and non-negative `part_index`. A `p:N/GUID` target selects its embedded part; the reference and native range always refer to that same part.
 
 Classic emoji ❤️, 👍, 👎, 😂, ‼️, and ❓ (including presentation-selector variants) send the matching classic tapback for older-device compatibility. Other emoji, including 🤣 and skin-tone variants such as 👍🏽, send as custom emoji tapbacks. Named classic kinds and their text aliases remain supported.
@@ -672,6 +672,26 @@ Classic emoji ❤️, 👍, 👎, 😂, ‼️, and ❓ (including presentation-
 - `message.unsend`, `message.delete`, and `message.notifyAnyways` target `message_id` / `message_guid`.
 - `contacts.shouldShareContact` reads Apple Messages' advisory Name & Photo offer eligibility. The result includes `can_inspect_offer`, `can_share`, and tri-state `should_offer`.
 - `contacts.shareContactCard` explicitly requests Apple Messages Name & Photo sharing. Despite the compatibility name, this does not send a vCard. Success reports `requested: true`, not delivery.
+
+#### Mentions
+
+`send.rich` `mentions` and a `send.multipart` part's `mentions` mark ranges of
+that text as mentions of chat participants. The bridge sets the attribute
+Messages sets when you mention someone in the app, so the recipient's Messages
+treats the range as a mention of that person and can notify them:
+
+```json
+{"jsonrpc":"2.0","id":"4","method":"send.rich","params":{"chat_guid":"iMessage;+;chat0000","text":"dinner, Ann?","mentions":[{"start":8,"length":3,"handle":"+15555550123"}]}}
+```
+
+Each mention is `{start, length, handle}`. `start` and `length` count UTF-16
+code units of the text, as `text_formatting` does. `handle` is the person's
+phone number or email address as the chat lists it. Ranges must lie inside the
+text and must not overlap. An empty array sends no mentions.
+
+Mentions require `selectors.sendMentions` from the running bridge. A helper
+without it is refused before dispatch, rather than sending the text with no
+one notified.
 
 The two `contacts.*` compatibility methods accept `chat_id`, `chat_identifier`,
 or `chat_guid`. Sharing discloses the local Messages profile to every chat
