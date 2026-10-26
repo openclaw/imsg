@@ -813,6 +813,29 @@ accepts a bare message GUID or `p:N/GUID`; `part_index` must agree with an
 embedded part and is invalid without `attach_to`. Unknown parameters and
 non-object params fail with invalid params rather than falling back.
 
+An attached sticker can be placed on its bubble. All four values are optional
+numbers and require `attach_to`; a value left out keeps the default, a centered
+sticker at its natural size with no rotation:
+
+| Param | Range | Meaning |
+| --- | --- | --- |
+| `x` | -3 to 3 | Sticker center across the bubble: `0` is the left edge, `1` the right edge. Default `0.5`. |
+| `y` | -3 to 3 | Sticker center down the bubble: `0` is the top edge, `1` the bottom edge. Default `0.5`. |
+| `scale` | 0.1 to 4 | Size multiplier. Default `1`. |
+| `rotation` | -180 to 180 | Clockwise rotation in degrees. Default `0`. |
+
+Values outside `0` to `1` hang the sticker past the bubble's edge, as stickers
+placed by hand in Messages do.
+
+```json
+{"jsonrpc":"2.0","id":"placed","method":"send.sticker","params":{"chat_id":42,"file":"~/Desktop/sticker.png","attach_to":"MESSAGE_GUID","x":0.9,"y":0.1,"scale":0.5,"rotation":15}}
+```
+
+Placement requires the running helper's `selectors.stickerPlacement`. RPC
+checks it before staging the file and refuses an older helper with "running
+bridge does not support sticker placement; restart Messages with the current
+imsg bridge", because that helper would center the sticker instead.
+
 ## Objects
 
 ### Chat

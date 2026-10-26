@@ -313,6 +313,8 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         && [chatClass instancesRespondToSelector:@selector(sendMessage:)];
     BOOL stickerSend = stickerSetIsSticker && stickerSetUserInfo
         && stickerSetAttribution && attachmentSend;
+    BOOL stickerAttach = stickerSend && stickerTargetMembership && stickerTargetLookup
+        && stickerAssociatedMessage;
     NSDictionary *selectors = @{
         @"editMessageItemTranslation": @(gHasEditMessageItemTranslation),
         @"editMessageItem": @(gHasEditMessageItem),
@@ -364,9 +366,10 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"stickerAttachmentMessage": @(stickerAttachmentMessage),
         @"stickerAssociatedMessage": @(stickerAssociatedMessage),
         @"stickerSend": @(stickerSend),
-        @"stickerAttach": @(
-            stickerSend && stickerTargetMembership && stickerTargetLookup
-                && stickerAssociatedMessage),
+        @"stickerAttach": @(stickerAttach),
+        // An attached sticker's placement rides in the sticker user info the
+        // attach path already writes, so it needs no selector of its own.
+        @"stickerPlacement": @(stickerAttach),
         @"urlPreviewMessage": @(urlPreviewMessageInitializerAvailable()),
         @"sendRichLinkAction": @YES,
         @"pollUpdateMessage": @(

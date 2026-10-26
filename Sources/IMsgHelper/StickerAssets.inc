@@ -3,6 +3,9 @@ static const NSUInteger kMaxStickerDimension = 618;
 static const NSUInteger kMaxStickerFrames = 100;
 static const unsigned long long kMaxStickerDecodedPixels = 25000000ULL;
 static NSString * const kDefaultStickerParentPreviewWidth = @"163.73095703";
+static const double kMaxStickerPlacementOffset = 3.0;
+static const double kMinStickerPlacementScale = 0.1;
+static const double kMaxStickerPlacementScale = 4.0;
 
 static NSString *actualUserHomeDirectory(void) {
     struct passwd *entry = getpwuid(getuid());
@@ -304,10 +307,61 @@ static BOOL stickerMessageBelongsToChat(IMChat *chat, NSString *messageGuid) {
     return ((BOOL (*)(id, SEL, id))objc_msgSend)(chat, selector, messageGuid);
 }
 
+static BOOL stickerPlacementNumber(id value, double minimum, double maximum,
+                                   double *outValue) {
+    if (![value isKindOfClass:[NSNumber class]]
+        || CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID()) {
+        return NO;
+    }
+    double number = [(NSNumber *)value doubleValue];
+    if (!isfinite(number) || number < minimum || number > maximum) return NO;
+    *outValue = number;
+    return YES;
+}
+
+/// Validates an attached sticker's placement and returns the geometry keys
+/// Messages reads from the sticker user info: `sxs`/`sys`, the sticker's
+/// center as a fraction of the target bubble's width and height from its
+/// top-left corner; `ssa`, its scale; and `sro`, its clockwise rotation in
+/// radians. Every key is required, and values outside the bounds fail closed.
+static NSDictionary *stickerPlacementGeometry(id raw, NSString **outErr) {
+    NSSet *keys = [NSSet setWithArray:@[@"x", @"y", @"scale", @"rotation"]];
+    if (![raw isKindOfClass:[NSDictionary class]]
+        || ![[NSSet setWithArray:[(NSDictionary *)raw allKeys]] isEqualToSet:keys]) {
+        if (outErr) *outErr = @"placement must have exactly x, y, scale, and rotation";
+        return nil;
+    }
+    NSDictionary *placement = raw;
+    double x = 0, y = 0, scale = 0, rotation = 0;
+    if (!stickerPlacementNumber(placement[@"x"], -kMaxStickerPlacementOffset,
+                                kMaxStickerPlacementOffset, &x)
+        || !stickerPlacementNumber(placement[@"y"], -kMaxStickerPlacementOffset,
+                                   kMaxStickerPlacementOffset, &y)) {
+        if (outErr) *outErr = @"placement x and y must be numbers from -3 to 3";
+        return nil;
+    }
+    if (!stickerPlacementNumber(placement[@"scale"], kMinStickerPlacementScale,
+                                kMaxStickerPlacementScale, &scale)) {
+        if (outErr) *outErr = @"placement scale must be a number from 0.1 to 4";
+        return nil;
+    }
+    if (!stickerPlacementNumber(placement[@"rotation"], -M_PI, M_PI, &rotation)) {
+        if (outErr) *outErr = @"placement rotation must be a number of radians from -pi to pi";
+        return nil;
+    }
+    return @{
+        @"sro": [NSString stringWithFormat:@"%.8f", rotation],
+        @"ssa": [NSString stringWithFormat:@"%.8f", scale],
+        @"sxs": [NSString stringWithFormat:@"%.8f", x],
+        @"sys": [NSString stringWithFormat:@"%.8f", y]
+    };
+}
+
 static NSDictionary *stickerUserInfo(NSDictionary *metadata) {
     NSString *hash = metadata[@"hash"];
     NSString *md5 = metadata[@"md5"];
     NSString *filename = metadata[@"filename"];
+    NSDictionary *geometry = metadata[@"placement"];
     return @{
         @"pid": @"com.apple.messages.MSMessageExtensionBalloonPlugin:0000000000:com.apple.Stickers.UserGenerated.MessagesExtension",
         @"safi": @0,
@@ -322,12 +376,12 @@ static NSDictionary *stickerUserInfo(NSDictionary *metadata) {
         // this geometry tuple. Until a stable target-layout selector is known,
         // retain the proven centered default rather than misusing image width.
         @"spw": kDefaultStickerParentPreviewWidth,
-        @"sro": @"0.00000000",
-        @"ssa": @"1.00000000",
+        @"sro": geometry[@"sro"] ?: @"0.00000000",
+        @"ssa": geometry[@"ssa"] ?: @"1.00000000",
         @"stickerEffectType": @(-1),
         @"suri": [NSString stringWithFormat:@"sticker:///imsg/%@", hash],
-        @"sxs": @"0.50000000",
-        @"sys": @"0.50000000"
+        @"sxs": geometry[@"sxs"] ?: @"0.50000000",
+        @"sys": geometry[@"sys"] ?: @"0.50000000"
     };
 }
 

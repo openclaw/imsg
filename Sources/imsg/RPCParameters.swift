@@ -39,6 +39,18 @@ struct RPCParameters {
     return parsed
   }
 
+  func double(_ key: String, aliases: [String] = []) throws -> Double? {
+    guard let (name, value) = try selected(key, aliases: aliases) else { return nil }
+    guard
+      let number = value as? NSNumber,
+      CFGetTypeID(number) != CFBooleanGetTypeID(),
+      number.doubleValue.isFinite
+    else {
+      throw RPCError.invalidParams("\(name) must be a number")
+    }
+    return number.doubleValue
+  }
+
   func boolean(_ key: String, aliases: [String] = []) throws -> Bool? {
     guard let (name, value) = try selected(key, aliases: aliases) else { return nil }
     guard

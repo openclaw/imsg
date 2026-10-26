@@ -56,6 +56,50 @@ struct StickerSendTarget: Equatable {
   }
 }
 
+/// Where an attached sticker sits on its target bubble: its center as a
+/// fraction of the bubble's width and height from the top-left corner, a scale
+/// multiplier, and a clockwise rotation in degrees. Each value left out keeps
+/// the default, a centered sticker at its natural size with no rotation.
+struct StickerPlacement: Equatable {
+  static let offsetRange: ClosedRange<Double> = -3...3
+  static let scaleRange: ClosedRange<Double> = 0.1...4
+  static let rotationRange: ClosedRange<Double> = -180...180
+
+  let x: Double
+  let y: Double
+  let scale: Double
+  let rotation: Double
+
+  /// Returns nil when no value is given, so a sticker without placement sends
+  /// exactly as before.
+  static func resolve(
+    x: Double?, y: Double?, scale: Double?, rotation: Double?, hasTarget: Bool
+  ) throws -> StickerPlacement? {
+    guard x != nil || y != nil || scale != nil || rotation != nil else { return nil }
+    guard hasTarget else { throw StickerSendValidationError.placementWithoutTarget }
+    let values: [(String, Double?, ClosedRange<Double>)] = [
+      ("x", x, offsetRange), ("y", y, offsetRange), ("scale", scale, scaleRange),
+      ("rotation", rotation, rotationRange),
+    ]
+    for (name, value, range) in values {
+      if let value, !value.isFinite || !range.contains(value) {
+        throw StickerSendValidationError.invalidPlacement(name: name, range: range)
+      }
+    }
+    return StickerPlacement(x: x ?? 0.5, y: y ?? 0.5, scale: scale ?? 1, rotation: rotation ?? 0)
+  }
+
+  /// The helper takes rotation in radians, the unit Messages stores.
+  var bridgeParams: [String: Any] {
+    ["x": x, "y": y, "scale": scale, "rotation": rotation * .pi / 180]
+  }
+}
+
+func bridgeSupportsStickerPlacement(_ status: [String: Any]) -> Bool {
+  let selectors = status["selectors"] as? [String: Any]
+  return selectors?["stickerPlacement"] as? Bool == true
+}
+
 func isStickerIMessageService(_ service: String) -> Bool {
   let normalized = service.lowercased()
   return normalized == "imessage" || normalized == "imessagelite"
@@ -85,6 +129,9 @@ enum StickerSendValidationError: LocalizedError, CustomStringConvertible, Equata
   case conflictingParts(embedded: Int, explicit: Int)
   case targetNotInChat
   case iMessageRequired
+  case placementWithoutTarget
+  case invalidPlacement(name: String, range: ClosedRange<Double>)
+  case placementUnsupported
 
   var errorDescription: String? { description }
 
@@ -102,6 +149,17 @@ enum StickerSendValidationError: LocalizedError, CustomStringConvertible, Equata
       return "sticker target does not belong to the selected chat"
     case .iMessageRequired:
       return "stickers require an iMessage chat"
+    case .placementWithoutTarget:
+      return "x, y, scale, and rotation require --attach-to / attach_to"
+    case .invalidPlacement(let name, let range):
+      let bound = { (value: Double) in
+        value == value.rounded() ? String(Int(value)) : String(value)
+      }
+      return
+        "\(name) must be a number from \(bound(range.lowerBound)) to \(bound(range.upperBound))"
+    case .placementUnsupported:
+      return "running bridge does not support sticker placement; "
+        + "restart Messages with the current imsg bridge"
     }
   }
 }

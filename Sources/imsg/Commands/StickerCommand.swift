@@ -9,9 +9,10 @@ enum StickerCommand {
     discussion: """
       Requires `imsg launch` (SIP-disabled, dylib injected). Sends the file as a
       sticker-attributed IMCore transfer. `--attach-to` associates the sticker
-      with an existing message bubble. Accepts PNG/APNG, GIF, or JPEG images up
-      to 500 KiB, 618x618 pixels, 100 frames, and 25 million total decoded
-      pixels. Stickers are iMessage-only.
+      with an existing message bubble; `--x`, `--y`, `--scale`, and `--rotation`
+      place it there. Accepts PNG/APNG, GIF, or JPEG images up to 500 KiB,
+      618x618 pixels, 100 frames, and 25 million total decoded pixels. Stickers
+      are iMessage-only.
       """,
     signature: CommandSignatures.withRuntimeFlags(
       CommandSignature(
@@ -24,12 +25,25 @@ enum StickerCommand {
           .make(
             label: "targetPart", names: [.long("target-part")],
             help: "target bubble part index (default 0)"),
+          .make(
+            label: "x", names: [.long("x")],
+            help: "sticker center across the bubble: 0 left, 1 right (default 0.5)"),
+          .make(
+            label: "y", names: [.long("y")],
+            help: "sticker center down the bubble: 0 top, 1 bottom (default 0.5)"),
+          .make(
+            label: "scale", names: [.long("scale")],
+            help: "sticker size multiplier, 0.1 to 4 (default 1)"),
+          .make(
+            label: "rotation", names: [.long("rotation")],
+            help: "clockwise rotation in degrees, -180 to 180 (default 0)"),
         ]
       )
     ),
     usageExamples: [
       "imsg send-sticker --chat 'iMessage;-;+15551234567' --file ~/Pictures/sticker.png",
       "imsg send-sticker --chat 'iMessage;-;+15551234567' --file ~/Pictures/sticker.png --attach-to MSG_GUID --target-part 0",
+      "imsg send-sticker --chat 'iMessage;-;+15551234567' --file ~/Pictures/sticker.png --attach-to MSG_GUID --x 0.9 --y 0.1 --scale 0.5 --rotation 15",
     ]
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
@@ -79,6 +93,13 @@ enum StickerCommand {
       rawTarget: values.option("attachTo"),
       explicitPart: explicitPart
     )
+    let placement = try StickerPlacement.resolve(
+      x: values.optionDouble("x"),
+      y: values.optionDouble("y"),
+      scale: values.optionDouble("scale"),
+      rotation: values.optionDouble("rotation"),
+      hasTarget: target != nil
+    )
     let dbPath = values.option("db") ?? MessageStore.defaultPath
     let chatGUID: String
     if let directGUID = directStickerChatGUID(chat) {
@@ -97,6 +118,9 @@ enum StickerCommand {
         throw StickerSendValidationError.targetNotInChat
       }
     }
+    if placement != nil, !bridgeSupportsStickerPlacement(try await invokeBridge(.status, [:])) {
+      throw StickerSendValidationError.placementUnsupported
+    }
 
     let expanded = (file as NSString).expandingTildeInPath
     let asset = try prepareSticker(expanded)
@@ -112,6 +136,9 @@ enum StickerCommand {
     ]
     if let target {
       params["selectedMessageGuid"] = target.messageGUID
+    }
+    if let placement {
+      params["placement"] = placement.bridgeParams
     }
 
     _ = try await BridgeOutput.invokeAndEmit(

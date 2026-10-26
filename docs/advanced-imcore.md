@@ -26,8 +26,9 @@ You almost certainly do not need any of this for normal use.
   prefers the bridge for private attachment sends, with AppleScript fallback
   for normal files when no reply target is requested.
 - `imsg send-sticker --chat <guid> --file <path> [--attach-to <message-guid>]
-  [--target-part <index>]` — sends a validated sticker-attributed image transfer
-  through the bridge.
+  [--target-part <index>] [--x <n>] [--y <n>] [--scale <n>] [--rotation <deg>]`
+  — sends a validated sticker-attributed image transfer through the bridge, on
+  its own or placed on a message bubble.
 - `imsg poll send|vote|unvote ...` — create native Polls balloons and cast or
   remove selections.
 
@@ -247,6 +248,11 @@ It reads every frame without following symlinks and
 stages a private snapshot under Messages' attachments directory. Content
 bytes—not the filename—define sticker identity. `--attach-to`
 optionally associates the sticker with an exact bubble part; `--target-part`
-defaults to `0` and is invalid without a target. Check `imsg status --json`:
-standalone sends require `selectors.stickerSend`, while attached stickers also
-require `selectors.stickerAttach`.
+defaults to `0` and is invalid without a target. `--x` and `--y` place the
+sticker's center as a fraction of the bubble's width and height from its
+top-left corner (default `0.5`, from `-3` to `3`), `--scale` multiplies its size
+(default `1`, from `0.1` to `4`), and `--rotation` turns it clockwise in degrees
+(default `0`, from `-180` to `180`); all four require a target. Check
+`imsg status --json`: standalone sends require `selectors.stickerSend`, attached
+stickers also require `selectors.stickerAttach`, and placed stickers require
+`selectors.stickerPlacement`.

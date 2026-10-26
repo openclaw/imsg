@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Place an attached sticker on its bubble with `x`, `y`, `scale`, and `rotation` on `send.sticker` and `--x`, `--y`, `--scale`, and `--rotation` on `imsg send-sticker`; capable helpers report `selectors.stickerPlacement`, and older helpers are refused before staging.
+
 ## 0.19.1 - 2026-10-22
 
 **Highlights:** Keep the IMCore bridge injected across reboots with an opt-in login agent, report your own account as the sender of outgoing 1:1 messages, and stop the bridge debug log from growing without bound.

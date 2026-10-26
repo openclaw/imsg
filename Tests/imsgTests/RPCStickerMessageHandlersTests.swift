@@ -54,6 +54,63 @@ func rpcSendStickerStagesFileAndReturnsTransferGuid() async throws {
 }
 
 @Test
+func rpcSendStickerPlacesAttachedStickerOnlyThroughCapableBridge() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPCWithStickerTarget()
+  for capable in [true, false] {
+    let output = TestRPCOutput()
+    var actions: [BridgeAction] = []
+    var sentPlacement: [String: Any]?
+    var staged = false
+    let server = RPCServer(
+      store: store,
+      verbose: false,
+      output: output,
+      invokeBridge: { action, params in
+        actions.append(action)
+        if action == .status {
+          return ["selectors": ["stickerPlacement": capable]]
+        }
+        sentPlacement = params["placement"] as? [String: Any]
+        return ["messageGuid": "sticker-guid", "transferGuid": "transfer-guid"]
+      },
+      stageSticker: { _ in
+        staged = true
+        return PreparedStickerAsset(
+          stagedPath: "/tmp/staged-sticker.png",
+          sha256: String(repeating: "b", count: 64),
+          pixelWidth: 64,
+          pixelHeight: 64,
+          uti: "public.png",
+          byteCount: 100,
+          accessibilityLabel: "Sticker"
+        )
+      }
+    )
+
+    await server.handleLineForTesting(
+      #"{"jsonrpc":"2.0","id":"placed","method":"send.sticker","params":{"#
+        + #""chat_id":1,"file":"sticker.png","attach_to":"parent-guid","x":1,"y":0,"rotation":45}}"#
+    )
+
+    if capable {
+      #expect(actions == [.status, .sendSticker])
+      #expect(sentPlacement?["x"] as? Double == 1)
+      #expect(sentPlacement?["y"] as? Double == 0)
+      #expect(sentPlacement?["scale"] as? Double == 1)
+      #expect((sentPlacement?["rotation"] as? Double).map { abs($0 - .pi / 4) < 1e-12 } == true)
+      #expect(output.errors.isEmpty)
+    } else {
+      #expect(actions == [.status])
+      #expect(!staged)
+      let error = output.errors.first?["error"] as? [String: Any]
+      #expect(error?["code"] as? Int == -32603)
+      #expect(
+        (error?["data"] as? String)?.contains("does not support sticker placement") == true)
+    }
+  }
+}
+
+@Test
 func rpcSendStickerPrefersIMessageForSharedIdentifierAndSendsStandalone() async throws {
   let store = try CommandTestDatabase.makeStoreForRPCWithStickerTarget(
     includeSMSDuplicate: true)
@@ -191,6 +248,13 @@ func rpcSendStickerRejectsUnshippedAliasesAndMalformedRequests() async throws {
     #"{"jsonrpc":"2.0","id":"orphan-part","method":"send.sticker","params":{"chat_id":1,"file":"x.png","part_index":1}}"#,
     #"{"jsonrpc":"2.0","id":"sms","method":"send.sticker","params":{"chat_guid":"SMS;-;+123","file":"x.png"}}"#,
     #"{"jsonrpc":"2.0","id":"wrong-chat","method":"send.sticker","params":{"chat_id":1,"file":"x.png","attach_to":"other-guid"}}"#,
+    #"{"jsonrpc":"2.0","id":"orphan-placement","method":"send.sticker","params":{"chat_id":1,"file":"x.png","x":0.5}}"#,
+    #"{"jsonrpc":"2.0","id":"string-x","method":"send.sticker","params":{"chat_id":1,"file":"x.png","attach_to":"parent-guid","x":"0.5"}}"#,
+    #"{"jsonrpc":"2.0","id":"bool-scale","method":"send.sticker","params":{"chat_id":1,"file":"x.png","attach_to":"parent-guid","scale":true}}"#,
+    #"{"jsonrpc":"2.0","id":"null-y","method":"send.sticker","params":{"chat_id":1,"file":"x.png","attach_to":"parent-guid","y":null}}"#,
+    #"{"jsonrpc":"2.0","id":"far-y","method":"send.sticker","params":{"chat_id":1,"file":"x.png","attach_to":"parent-guid","y":-3.5}}"#,
+    #"{"jsonrpc":"2.0","id":"zero-scale","method":"send.sticker","params":{"chat_id":1,"file":"x.png","attach_to":"parent-guid","scale":0}}"#,
+    #"{"jsonrpc":"2.0","id":"wide-rotation","method":"send.sticker","params":{"chat_id":1,"file":"x.png","attach_to":"parent-guid","rotation":181}}"#,
   ]
   for request in requests {
     await server.handleLineForTesting(request)

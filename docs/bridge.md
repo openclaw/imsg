@@ -57,16 +57,21 @@ falls back after publication has an uncertain outcome, including timeout,
 cancellation, a vanished or claimed request, or a malformed response.
 `--audio` and `--reply-to` remain bridge-only.
 
-Send a validated sticker on its own or attach it to an existing bubble part:
+Send a validated sticker on its own, attach it to an existing bubble part, or place it on that bubble:
 
 ```bash
 imsg send-sticker --chat 'iMessage;-;+15551234567' \
   --file ~/Pictures/sticker.png
 imsg send-sticker --chat 'iMessage;-;+15551234567' \
   --file ~/Pictures/sticker.png --attach-to <message-guid> --target-part 0
+imsg send-sticker --chat 'iMessage;-;+15551234567' \
+  --file ~/Pictures/sticker.png --attach-to <message-guid> \
+  --x 0.9 --y 0.1 --scale 0.5 --rotation 15
 ```
 
 Stickers are iMessage-only. They accept PNG/APNG, GIF, or JPEG images up to 500 KiB, 618×618 pixels, 100 frames, and 25 million decoded pixels. Standalone sends require `selectors.stickerSend`; attached stickers also require `selectors.stickerAttach`.
+
+`--x` and `--y` place an attached sticker's center as a fraction of the bubble's width and height from its top-left corner, so `0 0` is the top-left corner and `1 1` the bottom-right; values from `-3` to `3` let it hang past the edge. `--scale` multiplies its size from `0.1` to `4`, and `--rotation` turns it clockwise from `-180` to `180` degrees. Each defaults to a centered sticker at its natural size with no rotation. Placement requires `selectors.stickerPlacement`; imsg refuses it against an older helper, which would center the sticker.
 
 For stickers and rich-link images, the bridge rejects pipes, symlinks, and files with extra hard links before reading them. If an image changes during the read, the command reports an error; finish writing the image before retrying.
 
