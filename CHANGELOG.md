@@ -2,8 +2,12 @@
 
 ## Unreleased
 
-- Report `send.sticker` and `send.attachment` refusals before dispatch as retry-safe `not_started` failures instead of unknown delivery outcomes (#367, thanks @kilianc).
+## 0.20.0 - 2026-10-26
+
+**Highlights:** Send Shooting Star and the corrected Balloons, Love, and Celebration screen effects, and safely retry attachment or sticker sends refused before dispatch.
+
 - Send Apple's identifiers for the `balloons`, `love`, and `celebration` screen effects, which previously sent identifiers Messages does not recognize and played nothing, and add `shootingstar` for Shooting Star (#368, thanks @kilianc).
+- Report `send.sticker` and `send.attachment` refusals before dispatch as retry-safe `not_started` failures instead of unknown delivery outcomes (#367, thanks @kilianc).
 
 ## 0.19.1 - 2026-10-22
 
