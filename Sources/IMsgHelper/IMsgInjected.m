@@ -136,6 +136,7 @@ imCreateThreadIdentifierFn(void) {
 #include "ChatHandlers.inc"
 #include "AccountHandlers.inc"
 #include "HandleHandlers.inc"
+#include "ICloudSyncHandlers.inc"
 #include "Routing.inc"
 #include "LegacyIPC.inc"
 #include "EventObservers.inc"

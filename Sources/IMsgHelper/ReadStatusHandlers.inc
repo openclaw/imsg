@@ -232,6 +232,7 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
     }
 
     NSDictionary *nicknameSelectors = nicknameSharingSelectorStatus();
+    NSDictionary *icloudSelectors = icloudSyncSelectorStatus();
     Class stickerTransferClass = NSClassFromString(@"IMFileTransfer");
     Class transferCenterClass = NSClassFromString(@"IMFileTransferCenter");
     Class chatClass = NSClassFromString(@"IMChat");
@@ -354,6 +355,8 @@ static NSDictionary* handleStatus(NSInteger requestId, NSDictionary *params) {
         @"removeParticipant": @(removeParticipant),
         @"leaveChat": @([chatClass instancesRespondToSelector:@selector(leaveChat)]),
         @"checkIMessageAvailability": @(handleCheck),
+        @"icloudSyncStatus": icloudSelectors[@"status"],
+        @"icloudSync": icloudSelectors[@"sync"],
         @"nicknameLookup": nicknameSelectors[@"nickname_lookup"],
         @"namePhotoShouldOffer": nicknameSelectors[@"should_offer"],
         @"namePhotoShare": nicknameSelectors[@"share"],

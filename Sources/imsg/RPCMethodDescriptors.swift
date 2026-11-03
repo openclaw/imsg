@@ -51,6 +51,7 @@ enum RPCDispatchRoute: Sendable, Equatable {
   case messageNotifyAnyways, messageSendStatus, chatsCreate, chatsDelete, chatsMarkUnread
   case groupRename, groupSetIcon, groupAddParticipant, groupRemoveParticipant, groupLeave
   case contactsShouldShare, contactsShare, contactsSetNamePhoto, handlesCheck
+  case icloudStatus, icloudSync
 }
 
 struct RPCMethodDescriptor: Sendable, Equatable {
@@ -211,6 +212,12 @@ let rpcMethodDescriptors: [RPCMethodDescriptor] = [
     "handles.check", route: .handlesCheck, lane: .read,
     bridge: .selector("checkIMessageAvailability", requiresRegistry: false),
     macOSOnly: true),
+  RPCMethodDescriptor(
+    "icloud.status", route: .icloudStatus, lane: .read,
+    bridge: .selector("icloudSyncStatus", requiresRegistry: false), macOSOnly: true),
+  RPCMethodDescriptor(
+    "icloud.sync", route: .icloudSync, lane: .mutation,
+    bridge: .selector("icloudSync", requiresRegistry: false), macOSOnly: true),
 ]
 
 let kSupportedRPCMethods: [String] =

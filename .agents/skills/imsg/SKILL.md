@@ -12,7 +12,7 @@ description: "iMessage/SMS: local history, contacts, live watch, and requested s
 - Every read command supports `--json` and emits **NDJSON** (one object per line). Pipe to `jq -s` to get an array. Stdout carries only JSON; progress and warnings go to stderr.
 - Two capability tiers:
   - **Standard** (normal permissions): `chats`, `group`, `history`, `watch`, `search`, `send`, `react`, `nickname --local`, `account --local`, `whois --local`.
-  - **Bridge** (SIP disabled + `imsg launch` dylib injection): `send-rich`, `send-multipart`, `send-attachment`, `send-sticker`, `tapback`, `poll`, `edit`, `unsend`, `delete-message`, `read`, `typing`, `notify-anyways`, `chat-*`, `name-photo`, and default-mode `account`/`whois`/`nickname`.
+  - **Bridge** (SIP disabled + `imsg launch` dylib injection): `send-rich`, `send-multipart`, `send-attachment`, `send-sticker`, `tapback`, `poll`, `edit`, `unsend`, `delete-message`, `read`, `typing`, `notify-anyways`, `chat-*`, `name-photo`, `icloud`, and default-mode `account`/`whois`/`nickname`.
 - Check availability with `imsg status --json` before using bridge commands. Stickers additionally require `send.sticker` in `rpc_methods` and `selectors.stickerSend`; attaching one requires `selectors.stickerAttach`, and placing it with `--x`/`--y`/`--scale`/`--rotation` requires `selectors.stickerPlacement`. If the bridge is down, use a standard command only when it preserves the requested semantics; otherwise stop and explain. Never turn a reply/effect/subject into a plain send or a GUID-targeted tapback into `react`, and never suggest disabling SIP unprompted.
 - Full command and flag reference: `imsg completions llm`.
 

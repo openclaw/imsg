@@ -18,6 +18,10 @@ struct IMsgBridgeProtocolTests {
     #expect(BridgeAction.createChat.rawValue == "create-chat")
     #expect(BridgeAction.searchMessages.rawValue == "search-messages")
     #expect(BridgeAction.checkImessageAvailability.rawValue == "check-imessage-availability")
+    #expect(BridgeAction.getICloudSyncStatus.rawValue == "get-icloud-sync-status")
+    #expect(BridgeAction.startICloudSync.rawValue == "start-icloud-sync")
+    #expect(!BridgeAction.getICloudSyncStatus.isMutation)
+    #expect(BridgeAction.startICloudSync.isMutation)
     // Legacy compat: the integer-id v1 protocol still uses these names.
     #expect(BridgeAction.typing.rawValue == "typing")
     #expect(BridgeAction.read.rawValue == "read")
