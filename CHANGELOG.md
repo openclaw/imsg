@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Schedule weekly CodeQL main scans while retaining PR and manual analysis.
+
 ## 0.20.0 - 2026-10-26
 
 **Highlights:** Send Shooting Star and the corrected Balloons, Love, and Celebration screen effects, and safely retry attachment or sticker sends refused before dispatch.
