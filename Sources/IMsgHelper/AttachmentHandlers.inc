@@ -189,6 +189,19 @@ static NSDictionary *handleSendSticker(NSInteger requestId, NSDictionary *params
     if (!selectedMessageGuid.length && targetPartIndex != 0) {
         return notStartedResponse(requestId, @"targetPartIndex requires selectedMessageGuid");
     }
+    id rawPlacement = params[@"placement"];
+    NSDictionary *placementGeometry = nil;
+    if (rawPlacement) {
+        if (!selectedMessageGuid.length) {
+            return errorResponseWithDisposition(requestId,
+                @"placement requires selectedMessageGuid", @"not_started");
+        }
+        NSString *placementErr = nil;
+        placementGeometry = stickerPlacementGeometry(rawPlacement, &placementErr);
+        if (!placementGeometry) {
+            return errorResponseWithDisposition(requestId, placementErr, @"not_started");
+        }
+    }
     if (!stickerAttachmentMessageInitializerAvailable()) {
         return notStartedResponse(requestId,
             @"Sticker attachment message initializer unavailable");
@@ -215,6 +228,7 @@ static NSDictionary *handleSendSticker(NSInteger requestId, NSDictionary *params
     }
     NSMutableDictionary *verifiedMetadata = [assetMetadata mutableCopy];
     verifiedMetadata[@"accessibilityLabel"] = accessibilityLabel;
+    if (placementGeometry) verifiedMetadata[@"placement"] = placementGeometry;
 
     IMChat *chat = resolveChatByGuid(chatGuid);
     if (!chat) {

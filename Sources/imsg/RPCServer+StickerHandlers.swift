@@ -7,7 +7,8 @@ extension RPCServer {
       params,
       method: "send.sticker",
       supportedKeys: RPCParameterKeys.combining(
-        RPCParameterKeys.chatTarget, ["file", "attach_to", "part_index"])
+        RPCParameterKeys.chatTarget,
+        ["file", "attach_to", "part_index", "x", "y", "scale", "rotation"])
     )
     let targetInput = try params.chatTarget()
     guard let file = try params.string("file"), !file.isEmpty else {
@@ -15,9 +16,14 @@ extension RPCServer {
     }
     let explicitPart = try params.integer("part_index")
     let rawTarget = try params.string("attach_to")
+    let (x, y) = (try params.double("x"), try params.double("y"))
+    let (scale, rotation) = (try params.double("scale"), try params.double("rotation"))
     let target: StickerSendTarget?
+    let placement: StickerPlacement?
     do {
       target = try StickerSendTarget.resolve(rawTarget: rawTarget, explicitPart: explicitPart)
+      placement = try StickerPlacement.resolve(
+        x: x, y: y, scale: scale, rotation: rotation, hasTarget: target != nil)
     } catch let error as StickerSendValidationError {
       throw RPCError.invalidParams(error.description)
     }
@@ -57,6 +63,9 @@ extension RPCServer {
         throw RPCError.invalidParams(StickerSendValidationError.targetNotInChat.description)
       }
     }
+    if placement != nil {
+      try await requireStickerPlacementCapability()
+    }
 
     let asset: PreparedStickerAsset
     do {
@@ -82,6 +91,9 @@ extension RPCServer {
     if let target {
       bridgeParams["selectedMessageGuid"] = target.messageGUID
     }
+    if let placement {
+      bridgeParams["placement"] = placement.bridgeParams
+    }
     let data = try await invokeBridge(action: .sendSticker, params: bridgeParams)
     var result: [String: Any] = ["ok": true]
     if let guid = data["messageGuid"] as? String, !guid.isEmpty {
@@ -92,5 +104,24 @@ extension RPCServer {
       result["transfer_guid"] = transferGuid
     }
     respond(id: id, result: result)
+  }
+
+  /// An older helper ignores `placement` and centers the sticker, so a placed
+  /// sticker is refused before staging unless the running helper reads it.
+  func requireStickerPlacementCapability() async throws {
+    let status: [String: Any]
+    do {
+      status = try await invokeBridge(action: .status, params: [:])
+    } catch {
+      throw DeliveryFailure(
+        disposition: .notStarted,
+        transport: .bridgeV2,
+        operation: BridgeAction.sendSticker.rawValue,
+        detail: "Bridge capability inspection failed before the sticker was published."
+      )
+    }
+    guard bridgeSupportsStickerPlacement(status) else {
+      throw RPCError.internalError(StickerSendValidationError.placementUnsupported.description)
+    }
   }
 }
