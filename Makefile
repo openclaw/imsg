@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help format lint test test-helper test-native-replies build imsg clean build-dylib docs-site
+.PHONY: help format lint test test-helper test-native-replies test-native-subjects build imsg clean build-dylib docs-site
 
 help:
 	@printf "%s\n" \
@@ -51,6 +51,13 @@ test-native-replies:
 		-framework Foundation -framework AppKit -framework ImageIO -framework LinkPresentation \
 		Tests/IMsgHelperTests/NativeThreadedReplyProbe.m -o .build/helper-tests/NativeThreadedReplyProbe
 	.build/helper-tests/NativeThreadedReplyProbe
+
+test-native-subjects:
+	@mkdir -p .build/helper-tests
+	clang -fobjc-arc -Wno-arc-performSelector-leaks -Wno-incomplete-implementation \
+		-framework Foundation -framework AppKit -framework ImageIO -framework LinkPresentation \
+		Tests/IMsgHelperTests/NativeSubjectProbe.m -o .build/helper-tests/NativeSubjectProbe
+	.build/helper-tests/NativeSubjectProbe
 
 build:
 	scripts/generate-version.sh

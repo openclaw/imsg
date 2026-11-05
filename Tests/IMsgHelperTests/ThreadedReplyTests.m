@@ -27,14 +27,13 @@ static NSUInteger legacyInitializations;
 @property long long associatedMessageType;
 @property NSRange associatedMessageRange;
 @property NSDictionary *messageSummaryInfo;
-@property NSAttributedString *subject;
+@property NSString *subject;
 @property NSString *expressiveSendStyleID;
 @property NSArray *fileTransferGUIDs;
 @property unsigned long long flags;
 @property NSString *guid;
 @end
 @implementation ReplyTestItem
-- (void)setMessageSubject:(NSAttributedString *)subject { self.subject = subject; }
 - (id)initWithSender:(id)sender time:(NSDate *)time body:(NSAttributedString *)body
          attributes:(id)attributes fileTransferGUIDs:(NSArray *)files
               flags:(unsigned long long)flags error:(id)error guid:(NSString *)guid
@@ -50,6 +49,7 @@ static NSUInteger legacyInitializations;
 
 @interface ReplyTestMessage : NSObject
 @property ReplyTestItem *item;
+@property NSAttributedString *messageSubject;
 @property NSString *threadIdentifier;
 @property id threadOriginator;
 @end
@@ -63,6 +63,9 @@ static NSUInteger legacyInitializations;
 + (id)messageFromIMMessageItem:(ReplyTestItem *)item sender:(id)sender subject:(id)subject {
     ReplyTestMessage *message = [self new];
     message.item = item;
+    // IMMessage's subject argument is a handle; the subject line comes from the item.
+    message.messageSubject = item.subject
+        ? [[NSAttributedString alloc] initWithString:item.subject] : nil;
     message.threadIdentifier = item.threadIdentifier;
     message.threadOriginator = item.threadOriginator;
     return message;
@@ -75,7 +78,8 @@ static NSUInteger legacyInitializations;
  expressiveSendStyleID:(NSString *)effect {
     if ((self = [super init])) {
         self.item = [ReplyTestItem new];
-        self.item.body = body; self.item.subject = subject;
+        self.item.body = body; self.item.subject = [subject string];
+        self.messageSubject = subject;
         self.item.fileTransferGUIDs = files; self.item.flags = flags;
         self.item.expressiveSendStyleID = effect;
         self.item.guid = guid;
@@ -138,7 +142,8 @@ int main(void) {
             check([reply.threadIdentifier isEqual:thread], @"The native thread identifier survives construction");
             check([reply.item.body.string isEqual:body.string], @"Reply text survives construction");
             check(reply.item.flags == 0x10000dULL, @"Replies retain normal subject finalization flags");
-            check([reply.item.subject.string isEqual:subject.string], @"Reply subject survives construction");
+            check([reply.item.subject isEqual:subject.string], @"Reply item subject survives construction");
+            check([reply.messageSubject.string isEqual:subject.string], @"Reply message subject survives wrapping");
             check([reply.item.expressiveSendStyleID isEqual:@"effect"], @"Reply effect survives construction");
             check([reply.item.guid isEqual:@"reply-guid"], @"Reply identity survives construction");
             check(legacyInitializations == (mode.integerValue == 2 ? 1 : 0),
@@ -204,6 +209,12 @@ int main(void) {
             nil, 0, NSMakeRange(0, 0), nil, @[], NO, NO, nil);
         check(plain != nil && !plain.threadIdentifier && plain.item.associatedMessageType == 0,
               @"Plain messages remain unthreaded");
+        check(!plain.messageSubject && !plain.item.subject, @"Plain messages remain without a subject");
+        ReplyTestMessage *withSubject = buildIMMessage(body, subject, nil, nil, nil,
+            nil, 0, NSMakeRange(0, 0), nil, @[], NO, NO, nil);
+        check([withSubject.messageSubject.string isEqual:subject.string] &&
+              [withSubject.item.subject isEqual:subject.string],
+              @"Standalone subjects survive both item construction and wrapping");
         fprintf(stdout, "Threaded reply construction: %lu failure(s)\n", (unsigned long)failures);
         return failures ? 1 : 0;
     }

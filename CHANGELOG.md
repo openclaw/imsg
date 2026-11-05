@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve subjects on standalone messages and threaded replies with the current IMCore item setter (#376, thanks @webmasu).
+
 - Allow rich links in unified chats with stale service labels while retaining the helper's live iMessage service check (#375, thanks @webmasu).
 
 - Preserve the configured bridge readiness timeout when installing or replacing the login agent (#374, thanks @webmasu).
