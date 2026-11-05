@@ -151,6 +151,11 @@ imsg delete-message --chat 'iMessage;-;+15551234567' --message <message-guid>
 imsg notify-anyways --chat 'iMessage;-;+15551234567' --message <message-guid>
 ```
 
+`delete-message` moves the message to Recently Deleted, including messages older than the loaded
+transcript. Tapbacks and unsent messages can't be deleted and return an error. If the
+requested message has no transcript entry of its own, deletion is refused; a containing
+thread or parent message is never used as its replacement.
+
 Manage chats and participants:
 
 ```bash
