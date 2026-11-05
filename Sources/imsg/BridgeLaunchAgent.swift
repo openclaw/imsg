@@ -19,10 +19,12 @@ struct BridgeLaunchAgent {
   let logPath: String
   private let arguments: [String]
   private let workingDirectory: String?
+  private let readyTimeout: String?
 
   init(
     executable: String, currentDirectory: String, homeDirectory: String,
-    interval: Int = defaultInterval, dylib: String? = nil, automaticDylib: String? = nil
+    interval: Int = defaultInterval, dylib: String? = nil, automaticDylib: String? = nil,
+    environment: [String: String] = ProcessInfo.processInfo.environment
   ) throws {
     guard interval >= Self.minimumInterval else {
       throw Failure("--agent-interval must be at least \(Self.minimumInterval) seconds.")
@@ -41,6 +43,14 @@ struct BridgeLaunchAgent {
     } else {
       workingDirectory = nil
     }
+    // Slow hosts set a longer readiness wait for `imsg launch`; keep it for the agent's runs.
+    let timeout = environment[LaunchReadinessTimeout.environmentKey]?
+      .trimmingCharacters(in: .whitespaces)
+    if let timeout, let seconds = TimeInterval(timeout), seconds.isFinite, seconds > 0 {
+      readyTimeout = timeout
+    } else {
+      readyTimeout = nil
+    }
   }
 
   var propertyList: [String: Any] {
@@ -54,6 +64,9 @@ struct BridgeLaunchAgent {
       "StandardErrorPath": logPath,
     ]
     if let workingDirectory { plist["WorkingDirectory"] = workingDirectory }
+    if let readyTimeout {
+      plist["EnvironmentVariables"] = [LaunchReadinessTimeout.environmentKey: readyTimeout]
+    }
     return plist
   }
 

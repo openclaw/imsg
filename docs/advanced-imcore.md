@@ -135,6 +135,13 @@ exclusive with each other, `--kill-only`, and `--force`.
 
 The agent is saved at
 `~/Library/LaunchAgents/org.openclaw.imsg.bridge.plist` and loaded immediately.
+If `IMSG_LAUNCH_READY_TIMEOUT` is set when you install it, the agent keeps that
+value for its own launches, which helps slow hosts such as virtual machines.
+
+```bash
+IMSG_LAUNCH_READY_TIMEOUT=60 imsg launch --install-agent
+```
+
 It runs the absolute path of the invoked executable with `launch`, preserving
 symlinks such as `current` so upgrades continue working. Default helper discovery
 runs afresh each time; source builds that discover a helper relative to the
