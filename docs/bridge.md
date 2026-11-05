@@ -177,6 +177,11 @@ Group-photo files use the same secure staging as other attachments. The source m
 
 `chat-add-member` uses the same handle creation and IDS check. An unreachable or unresolved recipient is rejected before Messages sends a group invitation.
 
+`chat-delete` prefers Messages' Recently Deleted operation when available. Older
+systems retain the legacy deletion paths, which may remove the chat permanently.
+The response's `method` identifies the selector used; a failed Recently Deleted
+operation is reported without retrying through a permanent-removal path.
+
 ## Account and identity
 
 Inspect the active account, local history, and address capabilities:

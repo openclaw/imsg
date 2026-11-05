@@ -4,6 +4,34 @@ import Testing
 @testable import IMsgCore
 @testable import imsg
 
+@Test(arguments: ["deleteChatRecoverable", "deleteChat", "removeChat"])
+func rpcChatDeletionAcceptsEachSupportedRegistrySelector(selector: String) async throws {
+  let store = try CommandTestDatabase.makeStoreForRPCWithPollVote()
+  let output = TestRPCOutput()
+  let calls = RPCStatusInvocationCounter()
+  let server = RPCServer(
+    store: store, verbose: false, output: output,
+    invokeBridge: { action, params in
+      if action == .status {
+        return rpcStatusBridgeSnapshot(selectors: [selector: true])
+      }
+      #expect(action == .deleteChat)
+      #expect(params["chatGuid"] as? String == "iMessage;+;synthetic-chat")
+      calls.increment()
+      return ["deleted": true]
+    },
+    isBridgeReady: { true }
+  )
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"status","method":"status"}"#)
+  #expect(rpcStatusMethods(try rpcStatusResult(output)).contains("chats.delete"))
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"delete","method":"chats.delete","params":{"chat_guid":"iMessage;+;synthetic-chat"}}"#
+  )
+  #expect(output.errors.isEmpty)
+  #expect(calls.value == 1)
+}
+
 @Test
 func rpcStatusCalculatesDynamicMethodsAcrossResourceStates() async throws {
   let store = try CommandTestDatabase.makeStoreForRPCWithPollVote()

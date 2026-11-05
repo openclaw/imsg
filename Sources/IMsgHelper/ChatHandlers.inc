@@ -250,22 +250,31 @@ static NSDictionary *handleDeleteChat(NSInteger requestId, NSDictionary *params)
     if (!chat) return errorResponse(requestId, @"Chat not found");
     Class regClass = NSClassFromString(@"IMChatRegistry");
     id reg = regClass ? [regClass performSelector:@selector(sharedInstance)] : nil;
+    SEL recoverableSelector = NSSelectorFromString(
+        @"moveMessagesInChatsToRecentlyDeleted:deleteDate:synchronously:completionHandler:");
     SEL deleteSelector = NSSelectorFromString(@"deleteChat:");
     SEL removeSelector = NSSelectorFromString(@"_chat_remove:");
     SEL selectedSelector = NULL;
-    if ([reg respondsToSelector:deleteSelector]) {
+    if ([reg respondsToSelector:recoverableSelector]) {
+        selectedSelector = recoverableSelector;
+    } else if ([reg respondsToSelector:deleteSelector]) {
         selectedSelector = deleteSelector;
     } else if ([reg respondsToSelector:removeSelector]) {
-        // macOS 26 removed deleteChat:, while Messages still uses the
-        // daemon-aware registry removal path exposed as _chat_remove:.
+        // Retain the older registry path only when recoverable deletion is unavailable.
         selectedSelector = removeSelector;
     }
     if (!reg || selectedSelector == NULL) {
         return errorResponse(requestId,
-            @"Chat deletion is unavailable (deleteChat: and _chat_remove: missing)");
+            @"Chat deletion is unavailable (Recently Deleted, deleteChat:, and _chat_remove: missing)");
     }
     @try {
-        [reg performSelector:selectedSelector withObject:chat];
+        if (selectedSelector == recoverableSelector) {
+            // A failed recovery operation must never fall through to permanent removal.
+            ((void (*)(id, SEL, NSArray *, NSDate *, BOOL, id))objc_msgSend)(
+                reg, selectedSelector, @[chat], [NSDate date], YES, nil);
+        } else {
+            [reg performSelector:selectedSelector withObject:chat];
+        }
     } @catch (NSException *ex) { return errorResponse(requestId, ex.reason ?: @"failed"); }
     return successResponse(requestId, @{
         @"chatGuid": chatGuid,

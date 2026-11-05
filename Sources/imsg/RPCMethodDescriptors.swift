@@ -137,7 +137,7 @@ let rpcMethodDescriptors: [RPCMethodDescriptor] = [
     macOSOnly: true),
   RPCMethodDescriptor(
     "chats.delete", route: .chatsDelete, lane: .mutation,
-    bridge: .anySelector("deleteChat", "removeChat"), macOSOnly: true),
+    bridge: .anySelector("deleteChatRecoverable", "deleteChat", "removeChat"), macOSOnly: true),
   RPCMethodDescriptor(
     "chats.markUnread", route: .chatsMarkUnread, lane: .mutation,
     bridge: .selector("markChatUnread"), macOSOnly: true),
