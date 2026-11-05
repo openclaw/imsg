@@ -9,6 +9,7 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
     id ddScanValue = params[@"ddScan"];
     id attributedBodyValue = params[@"attributedBody"];
     id textFormattingValue = params[@"textFormatting"];
+    id mentionsValue = params[@"mentions"];
     id clientMessageGuidValue = params[@"clientMessageGuid"];
     if (![chatGuidValue isKindOfClass:[NSString class]] ||
         (messageValue && ![messageValue isKindOfClass:[NSString class]]) ||
@@ -21,6 +22,7 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
         (ddScanValue && ![ddScanValue isKindOfClass:[NSNumber class]]) ||
         (attributedBodyValue && ![attributedBodyValue isKindOfClass:[NSString class]]) ||
         (textFormattingValue && ![textFormattingValue isKindOfClass:[NSArray class]]) ||
+        (mentionsValue && ![mentionsValue isKindOfClass:[NSArray class]]) ||
         (clientMessageGuidValue &&
          ![clientMessageGuidValue isKindOfClass:[NSString class]])) {
         return errorResponse(requestId, @"Invalid send-message parameter types");
@@ -38,6 +40,7 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
     BOOL ddScan = [ddScanNum boolValue];
     NSString *attributedBodyB64 = attributedBodyValue;
     NSArray *textFormatting = textFormattingValue;
+    NSArray *mentions = mentionsValue;
     NSString *clientMessageGuid = nil;
     if (clientMessageGuidValue) {
         NSUUID *clientUUID = [[NSUUID alloc] initWithUUIDString:clientMessageGuidValue];
@@ -57,7 +60,7 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
     }
     if (richLinkPreview &&
         (effectId.length || subject.length || selectedMessageGuid.length || partIndex != 0 ||
-         attributedBodyB64.length || textFormatting.count || !ddScan)) {
+         attributedBodyB64.length || textFormatting.count || mentions.count || !ddScan)) {
         return errorResponse(requestId, @"Rich links do not support send modifiers");
     }
 
@@ -82,6 +85,13 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
             body = buildFormattedAttributed(message, textFormatting, partIndex);
         } else {
             body = buildPlainAttributed(message, partIndex);
+        }
+    }
+    if (mentions.count) {
+        NSString *mentionError = nil;
+        body = mentionedAttributed(body, mentions, &mentionError);
+        if (!body) {
+            return errorResponseWithDisposition(requestId, mentionError, @"not_started");
         }
     }
     NSAttributedString *subjectAttr = subject.length

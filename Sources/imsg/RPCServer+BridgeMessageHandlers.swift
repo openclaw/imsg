@@ -9,7 +9,7 @@ extension RPCServer {
       RPCParameterKeys.partIndex,
       [
         "text", "message", "file", "path", "url", "dd_scan", "ddScan", "effect_id",
-        "effectId", "effect", "subject", "text_formatting", "textFormatting",
+        "effectId", "effect", "subject", "text_formatting", "textFormatting", "mentions",
       ]
     )
     let params = try RPCParameters(params, method: "send.rich", supportedKeys: supportedKeys)
@@ -31,6 +31,11 @@ extension RPCServer {
     let reply = try params.string(
       "reply_to", aliases: ["replyTo", "reply_to_guid", "message_guid"])
     let formatting = try params.objectArray("text_formatting", aliases: ["textFormatting"])
+    let mentions = try rpcMentionRanges(
+      params.objectArray("mentions") ?? [], text: text, name: "mentions")
+    if !mentions.isEmpty, !file.isEmpty {
+      throw RPCError.invalidParams("mentions is not supported with file")
+    }
     let chatGUID = try await resolveChatGUIDParam(params)
     var bridgeParams: [String: Any] = [
       "chatGuid": chatGUID,
@@ -50,8 +55,14 @@ extension RPCServer {
     if let formatting {
       bridgeParams["textFormatting"] = formatting
     }
+    if !mentions.isEmpty {
+      bridgeParams["mentions"] = mentions
+    }
 
     if file.isEmpty {
+      if !mentions.isEmpty {
+        try await requireMentionCapability(action: .sendMessage)
+      }
       let sentAt = Date()
       let data = try await invokeBridge(action: .sendMessage, params: bridgeParams)
       let database = await databaseResources.available()
@@ -104,7 +115,7 @@ extension RPCServer {
     let incompatibleKeys = [
       "text", "message", "dd_scan", "ddScan", "effect_id", "effectId", "effect", "subject",
       "reply_to", "replyTo", "reply_to_guid", "message_guid", "part_index", "partIndex",
-      "text_formatting", "textFormatting", "file", "path",
+      "text_formatting", "textFormatting", "mentions", "file", "path",
     ]
     if let unsupported = incompatibleKeys.first(where: params.contains) {
       throw RPCError.invalidParams("\(unsupported) is not supported with url")

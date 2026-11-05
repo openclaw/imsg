@@ -29,6 +29,14 @@ static NSDictionary *handleSendMultipart(NSInteger requestId, NSDictionary *para
         } else {
             seg = buildPlainAttributed(text, partIndex);
         }
+        id partMentions = part[@"mentions"];
+        if (partMentions) {
+            NSString *mentionError = nil;
+            seg = mentionedAttributed(seg, partMentions, &mentionError);
+            if (!seg) {
+                return errorResponseWithDisposition(requestId, mentionError, @"not_started");
+            }
+        }
         [body appendAttributedString:seg];
         partIndex++;
     }
