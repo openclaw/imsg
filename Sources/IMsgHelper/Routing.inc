@@ -59,6 +59,8 @@ static NSDictionary* dispatchAction(NSInteger legacyId, NSString *action,
         return handleShouldOfferNicknameSharing(legacyId, params);
     if ([action isEqualToString:@"share-nickname"])
         return handleShareNickname(legacyId, params);
+    if ([action isEqualToString:@"set-personal-nickname"])
+        return handleSetPersonalNickname(legacyId, params);
     if ([action isEqualToString:@"check-imessage-availability"])
         return handleCheckIMessageAvailability(legacyId, params);
     if ([action isEqualToString:@"download-purged-attachment"])

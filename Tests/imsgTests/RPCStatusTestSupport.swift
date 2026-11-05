@@ -62,6 +62,7 @@ func fullRPCStatusBridgeSelectors() -> [String: Bool] {
     "deleteChat": true,
     "namePhotoShouldOffer": true,
     "namePhotoShare": true,
+    "namePhotoSet": true,
   ]
 }
 

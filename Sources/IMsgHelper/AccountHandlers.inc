@@ -78,6 +78,27 @@ static NSString *nicknameSharingMutationSelectorName(Class nnClass) {
         : nil;
 }
 
+static BOOL protocolDeclaresInstanceMethod(NSString *protocolName, SEL selector) {
+    Protocol *protocol = NSProtocolFromString(protocolName);
+    if (!protocol) return NO;
+    return protocol_getMethodDescription(protocol, selector, YES, YES).name != NULL
+        || protocol_getMethodDescription(protocol, selector, NO, YES).name != NULL;
+}
+
+static BOOL personalNicknameSetAvailable(void) {
+    Class daemonClass = NSClassFromString(@"IMDaemonController");
+    return [NSClassFromString(@"IMNickname")
+               instancesRespondToSelector:@selector(initWithFirstName:lastName:avatar:pronouns:)]
+        && [NSClassFromString(@"IMNicknameAvatarImage")
+               instancesRespondToSelector:@selector(initWithImageName:imageFilePath:sensitivityAnalysis:)]
+        && [NSClassFromString(@"IMMeCardSharingStateController")
+               instancesRespondToSelector:@selector(setSharingEnabled:)]
+        && daemonClass && [(id)daemonClass respondsToSelector:@selector(sharedController)]
+        && [daemonClass instancesRespondToSelector:@selector(remoteDaemon)]
+        && protocolDeclaresInstanceMethod(@"IMDaemonAnyProtocol",
+                                          @selector(setNewPersonalNickname:));
+}
+
 static NSDictionary *nicknameSharingSelectorStatus(void) {
     Class nnClass = NSClassFromString(@"IMNicknameController");
     BOOL hasSharedInstance = nnClass && [(id)nnClass respondsToSelector:@selector(sharedInstance)];
@@ -91,6 +112,7 @@ static NSDictionary *nicknameSharingSelectorStatus(void) {
         @"nickname_lookup": @(hasSharedInstance && hasLookup),
         @"should_offer": @(hasSharedInstance && hasShouldOffer),
         @"share": @(hasSharedInstance && shareSelector != nil),
+        @"set": @(hasSharedInstance && personalNicknameSetAvailable()),
         @"share_selector": shareSelector ?: [NSNull null]
     };
 }
@@ -337,3 +359,127 @@ static NSDictionary *handleShareNickname(NSInteger requestId, NSDictionary *para
     }
 }
 
+/// Sets the account's personal Name & Photo, the record that Name & Photo
+/// Sharing sends to chats, and optionally turns sharing on or off. Messages
+/// asks imagent to store the record through IMDaemonController's remote daemon;
+/// IMNicknameController's updatePersonalNickname: is only the daemon's echo
+/// back to Messages and stores nothing on its own.
+///
+/// `photoPath` must be staged under ~/Library/Messages/Attachments/imsg.
+/// IMTransferAgent uploads the photo and moves it into Messages' nickname
+/// cache, and its sandbox cannot read a file inside the Messages container.
+/// The answer waits for imagent's echo so `stored` reports what Messages now
+/// holds rather than that a request was sent.
+///
+/// A receiving device's BlastDoor validates the record before showing it, and
+/// a value Messages itself never writes fails that validation. Records Messages
+/// writes name the avatar image `NickNameImage` and leave out an empty last name.
+static NSDictionary *handleSetPersonalNickname(NSInteger requestId, NSDictionary *params) {
+    NSString *firstName = params[@"firstName"];
+    if (![firstName isKindOfClass:[NSString class]] || firstName.length == 0) {
+        return errorResponse(requestId, @"Missing firstName");
+    }
+    if ((params[@"lastName"] && ![params[@"lastName"] isKindOfClass:[NSString class]])
+        || (params[@"photoPath"] && (![params[@"photoPath"] isKindOfClass:[NSString class]]
+                                      || ![params[@"photoPath"] length]))) {
+        return errorResponse(requestId, @"lastName and photoPath must be strings; photoPath must not be empty");
+    }
+    NSString *lastName = [params[@"lastName"] isKindOfClass:[NSString class]]
+            && [params[@"lastName"] length] > 0
+        ? params[@"lastName"]
+        : nil;
+    NSString *photoPath = [params[@"photoPath"] isKindOfClass:[NSString class]]
+        ? params[@"photoPath"]
+        : nil;
+    id sharing = params[@"sharingEnabled"];
+    if (sharing && (![sharing isKindOfClass:[NSNumber class]]
+                    || CFGetTypeID((__bridge CFTypeRef)sharing) != CFBooleanGetTypeID())) {
+        return errorResponse(requestId, @"sharingEnabled must be a boolean");
+    }
+    if (!personalNicknameSetAvailable()) {
+        return errorResponse(requestId, @"Setting Name & Photo is unavailable");
+    }
+    if (photoPath.length > 0) {
+        if (!richLinkPathIsTrusted(photoPath)) {
+            return errorResponse(requestId,
+                @"photoPath must be staged under ~/Library/Messages/Attachments/imsg");
+        }
+        if (![[NSFileManager defaultManager] isReadableFileAtPath:photoPath]) {
+            return errorResponse(requestId, @"Could not read photoPath");
+        }
+    }
+
+    @try {
+        id controller = sharedNicknameController();
+        if (!controller) return errorResponse(requestId, @"IMNicknameController unavailable");
+        if (!waitForNicknameControllerLoad(controller, 2.0)) {
+            return errorResponse(requestId,
+                @"Personal Name & Photo is still loading; retry the request");
+        }
+
+        id avatar = nil;
+        if (photoPath.length > 0) {
+            avatar = ((id (*)(id, SEL, id, id, id))objc_msgSend)(
+                [NSClassFromString(@"IMNicknameAvatarImage") alloc],
+                @selector(initWithImageName:imageFilePath:sensitivityAnalysis:),
+                @"NickNameImage", photoPath, nil);
+            if (!avatar) return errorResponse(requestId, @"Could not build the avatar");
+        }
+        id nickname = ((id (*)(id, SEL, id, id, id, id))objc_msgSend)(
+            [NSClassFromString(@"IMNickname") alloc],
+            @selector(initWithFirstName:lastName:avatar:pronouns:),
+            firstName, lastName, avatar, nil);
+        if (!nickname) return errorResponse(requestId, @"Could not build the nickname");
+
+        id daemon = ((id (*)(id, SEL))objc_msgSend)(
+            NSClassFromString(@"IMDaemonController"), @selector(sharedController));
+        id remote = ((id (*)(id, SEL))objc_msgSend)(daemon, @selector(remoteDaemon));
+        if (!remote) return errorResponse(requestId, @"Messages has no daemon connection");
+
+        id previous = ((id (*)(id, SEL))objc_msgSend)(controller, @selector(personalNickname));
+        ((void (*)(id, SEL, id))objc_msgSend)(remote, @selector(setNewPersonalNickname:), nickname);
+        if (sharing) {
+            id state = [[NSClassFromString(@"IMMeCardSharingStateController") alloc] init];
+            ((void (*)(id, SEL, BOOL))objc_msgSend)(state, @selector(setSharingEnabled:),
+                                                    [sharing boolValue]);
+        }
+
+        // imagent stores the record, uploads the photo, and echoes the new
+        // personal nickname to every client. A different object carrying the
+        // requested first name is that echo.
+        id personal = previous;
+        BOOL stored = NO;
+        NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:10.0];
+        while (!stored && [deadline timeIntervalSinceNow] > 0) {
+            NSDate *nextCheck = [NSDate dateWithTimeIntervalSinceNow:0.1];
+            if ([NSThread isMainThread]) {
+                [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:nextCheck];
+            } else {
+                [NSThread sleepForTimeInterval:0.1];
+            }
+            personal = ((id (*)(id, SEL))objc_msgSend)(controller, @selector(personalNickname));
+            stored = personal != previous
+                && [nicknameStringProperty(personal, @selector(firstName)) isEqualToString:firstName]
+                && [(nicknameStringProperty(personal, @selector(lastName)) ?: @"")
+                        isEqualToString:lastName ?: @""];
+        }
+
+        BOOL hasPhoto = avatar != nil;
+        NSMutableDictionary *result = [@{
+            @"requested": @YES,
+            @"stored": @(stored),
+            @"has_photo": @(hasPhoto)
+        } mutableCopy];
+        if (sharing) result[@"sharing_enabled"] = @([sharing boolValue]);
+        if (stored) {
+            result[@"first_name"] = nicknameStringProperty(personal, @selector(firstName)) ?: @"";
+            NSString *storedLastName = nicknameStringProperty(personal, @selector(lastName));
+            if (storedLastName.length > 0) result[@"last_name"] = storedLastName;
+        }
+        return successResponse(requestId, result);
+    } @catch (NSException *exception) {
+        return errorResponse(requestId,
+            [NSString stringWithFormat:@"Setting Name & Photo failed: %@",
+                                       exception.reason ?: @"unknown exception"]);
+    }
+}

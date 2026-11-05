@@ -213,9 +213,10 @@ Inspect or explicitly share the local Messages Name & Photo:
 ```bash
 imsg name-photo status --chat 'iMessage;-;+15551234567'
 imsg name-photo share --chat 'iMessage;-;+15551234567'
+imsg name-photo set --first-name Ada --photo ~/Pictures/ada.jpg --sharing on
 ```
 
-`status` reports whether Messages would offer its native sharing action; it is not a durable record of prior sharing. `share` discloses the local profile to every chat participant and reports a request, not a delivery receipt. Call it only after explicit user confirmation of the destination.
+`status` reports whether Messages would offer its native sharing action; it is not a durable record of prior sharing. `share` discloses the local profile to every chat participant and reports a request, not a delivery receipt. Call it only after explicit user confirmation of the destination. `set` replaces that local profile and reports `stored: true` once Messages holds the new record; use `share` to push it into a chat.
 
 ## Live bridge events
 

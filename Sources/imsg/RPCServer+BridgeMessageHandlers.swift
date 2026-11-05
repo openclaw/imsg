@@ -346,6 +346,50 @@ extension RPCServer {
     respond(id: id, result: data.merging(["ok": true]) { current, _ in current })
   }
 
+  func handleNamePhotoSet(params: [String: Any], id: Any?) async throws {
+    let params = try RPCParameters(
+      params,
+      method: "contacts.setNamePhoto",
+      supportedKeys: ["first_name", "last_name", "file", "sharing"]
+    )
+    guard let firstName = try params.string("first_name"), !firstName.isEmpty else {
+      throw RPCError.invalidParams("first_name is required")
+    }
+    var bridgeParams: [String: Any] = ["firstName": firstName]
+    if let lastName = try params.string("last_name") {
+      bridgeParams["lastName"] = lastName
+    }
+    if let sharing = try params.boolean("sharing") {
+      bridgeParams["sharingEnabled"] = sharing
+    }
+    let file = try params.string("file")
+    if let file, file.isEmpty {
+      throw RPCError.invalidParams("file must be a non-empty string")
+    }
+    do {
+      try await NamePhotoCommand.requireSetCapability(invokeBridge: invokeBridge)
+    } catch {
+      throw DeliveryFailure(
+        disposition: .notStarted, transport: .bridgeV2,
+        operation: BridgeAction.setPersonalNickname.rawValue,
+        detail: String(describing: error))
+    }
+    if let file {
+      do {
+        bridgeParams["photoPath"] = try stageAttachment((file as NSString).expandingTildeInPath)
+      } catch {
+        throw DeliveryFailure(
+          disposition: .notStarted,
+          transport: .bridgeV2,
+          operation: BridgeAction.setPersonalNickname.rawValue,
+          detail: "The photo could not be staged before bridge dispatch."
+        )
+      }
+    }
+    let data = try await invokeBridge(action: .setPersonalNickname, params: bridgeParams)
+    respond(id: id, result: data.merging(["ok": true]) { current, _ in current })
+  }
+
   private func invokeMessageGUIDBridgeAction(
     action: BridgeAction,
     params: [String: Any],

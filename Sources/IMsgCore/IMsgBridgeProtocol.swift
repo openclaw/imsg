@@ -32,7 +32,8 @@ public enum IMsgBridgeProtocol {
   public static func defaultResponseTimeout(for action: BridgeAction) -> TimeInterval {
     switch action {
     case .sendMessage, .sendRichLink, .sendMultipart, .sendAttachment, .sendSticker, .sendPoll,
-      .sendPollVote, .sendPollUnvote, .sendReaction, .createChat, .shareNickname:
+      .sendPollVote, .sendPollUnvote, .sendReaction, .createChat, .shareNickname,
+      .setPersonalNickname:
       return defaultSendResponseTimeout
     default:
       return defaultResponseTimeout
@@ -92,6 +93,7 @@ public enum BridgeAction: String, Sendable, CaseIterable {
   case getNicknameInfo = "get-nickname-info"
   case shouldOfferNicknameSharing = "should-offer-nickname-sharing"
   case shareNickname = "share-nickname"
+  case setPersonalNickname = "set-personal-nickname"
   case checkImessageAvailability = "check-imessage-availability"
   case downloadPurgedAttachment = "download-purged-attachment"
 

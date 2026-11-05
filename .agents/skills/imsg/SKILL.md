@@ -69,7 +69,12 @@ imsg send --to "+15551234567" --text "message" --service auto
 imsg send --chat-id ID --text "message"        # prefer for groups: no address ambiguity
 imsg send --to "+15551234567" --file ~/Desktop/pic.jpg
 imsg name-photo share --chat GUID                  # shares YOUR Name & Photo; explicit request only
+imsg name-photo set --first-name NAME --photo PATH # replaces YOUR Name & Photo; explicit request only
 ```
+
+`name-photo set` replaces the account-wide profile. Never run it implicitly during startup,
+status, discovery, or to repair a missing profile. Omitting a last name or photo removes it;
+only invoke the setter with the user's explicit identity-change request.
 
 - `--service auto` prefers iMessage and falls back to SMS for text-only phone sends; `--no-sms-fallback` disables that.
 - `imsg react --chat-id ID --reaction like` (AppleScript) only targets the **most recent incoming message** and needs Accessibility permission. To react to a specific message by GUID, use bridge `tapback`.
