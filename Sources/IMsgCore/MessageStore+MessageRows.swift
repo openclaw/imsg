@@ -122,9 +122,13 @@ struct MessageRowSelection {
     let payloadDataColumn =
       schema.hasPayloadDataColumn
       ? "CASE WHEN \(pollCandidatePredicate) THEN m.payload_data ELSE NULL END" : "NULL"
+    // Edited rows need it for retracted parts.
+    let summaryInfoPredicate =
+      schema.hasDateEditedColumn
+      ? "(\(pollCandidatePredicate) OR m.date_edited > 0)" : pollCandidatePredicate
     let summaryInfoColumn =
       schema.hasMessageSummaryInfoColumn
-      ? "CASE WHEN \(pollCandidatePredicate) THEN m.message_summary_info ELSE NULL END" : "NULL"
+      ? "CASE WHEN \(summaryInfoPredicate) THEN m.message_summary_info ELSE NULL END" : "NULL"
     let isReadColumn = schema.hasIsReadColumn ? "m.is_read" : "NULL"
     let dateReadColumn = schema.hasDateReadColumn ? "m.date_read" : "NULL"
     let dateEditedColumn = schema.hasDateEditedColumn ? "m.date_edited" : "NULL"

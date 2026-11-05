@@ -10,7 +10,7 @@ private func mutationFixture() throws -> MessageStore {
     db,
     options: .init(
       includeAttributedBody: true, includeReactionColumns: true,
-      includeMutationDates: true))
+      includeMessageSummaryInfo: true, includeMutationDates: true))
   try db.run(
     "INSERT INTO chat(ROWID, chat_identifier, guid) VALUES (1, 'one', 'chat-one'), (2, 'two', 'chat-two')"
   )
@@ -225,4 +225,123 @@ func historyDoesNotRestoreStaleTextWhenEditedBodyIsEmptyOrMalformed() throws {
   #expect(edited.count == 2)
   #expect(edited.allSatisfy { $0.text.isEmpty && $0.editedAt != nil && $0.unsentAt == nil })
   #expect(try store.messages(chatID: 2, limit: 10).first?.text == "original")
+}
+
+private func summaryInfo(parts: Int, retracted: [Int]) throws -> Blob {
+  let originalParts = Dictionary(
+    uniqueKeysWithValues: (0..<parts).map { ("\($0)", ["lo": $0, "le": 1]) })
+  let data = try PropertyListSerialization.data(
+    fromPropertyList: ["otr": originalParts, "rp": retracted], format: .binary, options: 0)
+  return Blob(bytes: Array(data))
+}
+
+@Test
+func unsendRecordedOnlyAsRetractedPartsIsUnsent() throws {
+  let store = try mutationFixture()
+  try store.withConnection { db in
+    try db.run(
+      """
+      UPDATE message SET text = NULL, date_edited = 2000000000, message_summary_info = ?
+      WHERE ROWID = 1
+      """, try summaryInfo(parts: 1, retracted: [0]))
+    try db.run(
+      "UPDATE message SET date_edited = 2000000000, message_summary_info = ? WHERE ROWID = 2",
+      try summaryInfo(parts: 2, retracted: [1]))
+  }
+  let messages = try store.messages(chatID: 1, limit: 10)
+  let unsent = try #require(messages.first { $0.rowID == 1 })
+  #expect(unsent.text.isEmpty)
+  #expect(unsent.unsentAt == Date(timeIntervalSince1970: MessageStore.appleEpochOffset + 2))
+  let partial = try #require(messages.first { $0.rowID == 2 })
+  #expect(partial.text == "original")
+  #expect(partial.editedAt != nil)
+  #expect(partial.unsentAt == nil)
+
+  let stamps = try store.mutationStamps(chatID: 1)
+  #expect(stamps[1]?.event(since: nil) == .unsent)
+  #expect(stamps[1]?.event(since: MessageMutationStamp(edited: 1, retracted: 0)) == .unsent)
+  #expect(stamps[2]?.event(since: nil) == .edited)
+  #expect(try store.mutationMessage(rowID: 1, chatID: 1)?.1 == stamps[1])
+}
+
+@Test
+func unsendNeedsEveryOriginalPartRetracted() throws {
+  func retracted(_ summaryInfo: Data, dateEdited: Int64 = 2, dateRetracted: Int64 = 0) -> Int64 {
+    MessageMutationStamp(
+      dateEdited: dateEdited, dateRetracted: dateRetracted, summaryInfo: summaryInfo
+    ).retracted
+  }
+  func plist(_ info: [String: Any]) throws -> Data {
+    try PropertyListSerialization.data(fromPropertyList: info, format: .binary, options: 0)
+  }
+  let part: [String: Any] = ["lo": 0, "le": 1]
+  #expect(retracted(try plist(["otr": ["0": part], "rp": [0]])) == 2)
+  #expect(retracted(try plist(["otr": ["0": part], "rp": [0]]), dateEdited: 0) == 0)
+  #expect(retracted(try plist(["otr": ["0": part, "1": part], "rp": [1]])) == 0)
+  #expect(retracted(try plist(["otr": ["0": part], "ep": [0]])) == 0)
+  #expect(retracted(try plist(["rp": [0]])) == 0)
+  #expect(retracted(try plist(["otr": [String: Any](), "rp": [0]])) == 0)
+  #expect(retracted(try plist(["otr": ["0": part], "rp": "0"])) == 0)
+  #expect(retracted(try plist(["otr": ["0": part], "rp": [Int]()])) == 0)
+  #expect(retracted(try plist(["otr": ["0": part, "x": part], "rp": [0]])) == 0)
+  #expect(retracted(try plist(["otr": [part], "rp": [0]])) == 0)
+  #expect(retracted(Data([0, 1, 2])) == 0)
+  #expect(retracted(Data()) == 0)
+  #expect(retracted(Data(), dateRetracted: 3) == 3)
+}
+
+@Test(.timeLimit(.minutes(1)))
+func watcherReportsAnEditThenAnUnsendRecordedOnlyAsRetractedParts() async throws {
+  let store = try mutationFixture()
+  // An unsend from before the watcher started is a baseline, not a fresh watch event.
+  try store.withConnection { db in
+    try db.run(
+      """
+      UPDATE message SET text = NULL, date_edited = 9000000000, message_summary_info = ?
+      WHERE ROWID = 2
+      """, try summaryInfo(parts: 1, retracted: [0]))
+  }
+  let polls = WatcherPollController()
+  defer { polls.releaseAll() }
+  let baseline = polls.pauseNextPoll()
+  let stream = MessageWatcher(store: store, didPoll: polls.didPoll).stream(
+    chatID: 1, configuration: .init(debounceInterval: 0, fallbackPollInterval: 0.01))
+  await polls.waitUntilPaused(baseline)
+  let collector = Task { () throws -> [Message] in
+    var result: [Message] = []
+    for try await message in stream {
+      result.append(message)
+      if result.count == 3 { break }
+    }
+    return result
+  }
+  defer { collector.cancel() }
+  try store.withConnection { db in
+    try db.run("UPDATE message SET text = 'edited', date_edited = 2000000000 WHERE ROWID = 1")
+  }
+  polls.release(baseline)
+  await polls.waitForPoll(baseline + 1)
+  try store.withConnection { db in
+    try db.run(
+      """
+      UPDATE message SET text = NULL, date_edited = 3000000000, message_summary_info = ?
+      WHERE ROWID = 1
+      """, try summaryInfo(parts: 1, retracted: [0]))
+  }
+  // Later polls must not repeat the unsend before the next new message.
+  await polls.waitForPoll(baseline + 4)
+  try store.withConnection { db in
+    try db.run(
+      """
+      INSERT INTO message(ROWID, handle_id, text, guid, date, is_from_me, service)
+      VALUES (4, 1, 'next', 'message-4', 4000000000, 0, 'iMessage')
+      """)
+    try db.run("INSERT INTO chat_message_join VALUES (1, 4)")
+  }
+  let result = try await collector.value
+  #expect(result.map(\.rowID) == [1, 1, 4])
+  #expect(result.map(\.mutationEvent) == [.edited, .unsent, nil])
+  #expect(result[0].text == "edited")
+  #expect(result[1].text.isEmpty)
+  #expect(result[1].unsentAt == Date(timeIntervalSince1970: MessageStore.appleEpochOffset + 3))
 }
