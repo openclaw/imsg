@@ -4,6 +4,15 @@ public enum MessageService: String, Sendable, CaseIterable {
   case auto
   case imessage
   case sms
+
+  func matchesReceiptService(_ value: String) -> Bool {
+    switch self {
+    case .auto: return true
+    case .imessage: return ["imessage", "imessagelite"].contains(value.lowercased())
+    // The AppleScript SMS account can relay over RCS on current macOS.
+    case .sms: return ["sms", "rcs"].contains(value.lowercased())
+    }
+  }
 }
 
 public struct MessageSendOptions: Sendable {
