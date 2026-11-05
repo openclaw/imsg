@@ -56,12 +56,14 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
     if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
     if (!message) message = @"";
     if (clientMessageGuid.length && richLinkPreview) {
-        return errorResponse(requestId, @"Caller-owned message GUIDs support text messages only");
+        return errorResponseWithDisposition(requestId,
+            @"Caller-owned message GUIDs support text messages only", @"not_started");
     }
     if (richLinkPreview &&
         (effectId.length || subject.length || selectedMessageGuid.length || partIndex != 0 ||
          attributedBodyB64.length || textFormatting.count || mentions.count || !ddScan)) {
-        return errorResponse(requestId, @"Rich links do not support send modifiers");
+        return errorResponseWithDisposition(requestId,
+            @"Rich links do not support send modifiers", @"not_started");
     }
 
     IMChat *chat = resolveChatByGuid(chatGuid);
@@ -75,7 +77,8 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
         NSString *serviceName = serviceNameForChat(chat, chatGuid).lowercaseString;
         if (!([serviceName isEqualToString:@"imessage"] ||
               [serviceName isEqualToString:@"imessagelite"])) {
-            return errorResponse(requestId, @"Rich links require an iMessage chat");
+            return errorResponseWithDisposition(requestId,
+                @"Rich links require an iMessage chat", @"not_started");
         }
     }
 
