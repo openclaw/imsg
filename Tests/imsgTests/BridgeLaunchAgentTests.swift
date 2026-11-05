@@ -7,7 +7,8 @@ import Testing
 @Test
 func bridgeAgentDefaultPropertyList() throws {
   let agent = try BridgeLaunchAgent(
-    executable: "bin/imsg", currentDirectory: "/opt/imsg", homeDirectory: "/Users/fixture")
+    executable: "bin/imsg", currentDirectory: "/opt/imsg", homeDirectory: "/Users/fixture",
+    environment: [:])
   let expected: [String: Any] = [
     "Label": "org.openclaw.imsg.bridge",
     "ProgramArguments": ["/opt/imsg/bin/imsg", "launch"],
@@ -30,6 +31,45 @@ func bridgeAgentCustomIntervalAndDylib(interval: Int) throws {
   #expect(
     agent.propertyList["ProgramArguments"] as? [String]
       == ["/opt/imsg/current/imsg", "launch", "--dylib", "/opt/imsg/helpers/custom.dylib"])
+}
+
+@Test(
+  arguments: [
+    ("60", "60"), (" 90 ", "90"), ("601", "601"), ("0", nil), ("-5", nil),
+    ("nan", nil), ("inf", nil), ("soon", nil), ("", nil),
+  ])
+func bridgeAgentKeepsLaunchReadyTimeout(raw: String, persisted: String?) throws {
+  let agent = try BridgeLaunchAgent(
+    executable: "/opt/imsg/current/imsg", currentDirectory: "/opt/imsg",
+    homeDirectory: "/Users/fixture", environment: ["IMSG_LAUNCH_READY_TIMEOUT": raw])
+  let environment = agent.propertyList["EnvironmentVariables"] as? [String: String]
+  #expect(environment == persisted.map { ["IMSG_LAUNCH_READY_TIMEOUT": $0] })
+}
+
+@Test
+func bridgeAgentUpgradePersistsTimeoutWithoutChangingLaunchArguments() throws {
+  let directory = try agentTestDirectory()
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let previous = try BridgeLaunchAgent(
+    executable: "/opt/imsg/current/imsg", currentDirectory: "/",
+    homeDirectory: directory.path, dylib: "/opt/imsg/current/helper.dylib", environment: [:])
+  try previous.install(userID: 501, runLaunchctl: { _ in 0 })
+  let upgraded = try BridgeLaunchAgent(
+    executable: previous.program, currentDirectory: "/", homeDirectory: directory.path,
+    dylib: "/opt/imsg/current/helper.dylib", environment: ["IMSG_LAUNCH_READY_TIMEOUT": "60"])
+  try upgraded.install(userID: 501) { arguments in
+    if arguments.first == "bootstrap" {
+      let data = try Data(contentsOf: URL(fileURLWithPath: upgraded.plistPath))
+      let plist = try #require(
+        PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+      #expect(
+        plist["EnvironmentVariables"] as? [String: String] == ["IMSG_LAUNCH_READY_TIMEOUT": "60"])
+      #expect(
+        plist["ProgramArguments"] as? [String] == previous.propertyList["ProgramArguments"]
+          as? [String])
+    }
+    return 0
+  }
 }
 
 @Test(arguments: [".build/release/helper.dylib", "/opt/imsg/lib/helper.dylib"], [false, true])

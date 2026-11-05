@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve the configured bridge readiness timeout when installing or replacing the login agent (#374, thanks @webmasu).
+
 - Pin Swift CodeQL tracing to macOS 26 while retaining Xcode 27 for normal build and test jobs.
 
 - Verify sent messages in unified chats with stale service labels while requiring receipts from the effective iMessage or SMS/RCS service (#373, thanks @webmasu).

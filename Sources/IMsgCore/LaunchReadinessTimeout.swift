@@ -7,7 +7,7 @@ import Foundation
 /// Reporting that as a failure is actively harmful: a supervisor that relaunches
 /// on a non-zero exit will start a second Messages.app while the first is still
 /// coming up, and two injected instances then compete for the same bridge queue.
-enum LaunchReadinessTimeout {
+package enum LaunchReadinessTimeout {
   /// Seconds to wait when nothing overrides it.
   static let defaultSeconds: TimeInterval = 15
 
@@ -15,7 +15,7 @@ enum LaunchReadinessTimeout {
   static let maximumSeconds: TimeInterval = 600
 
   /// Environment variable that overrides the default.
-  static let environmentKey = "IMSG_LAUNCH_READY_TIMEOUT"
+  package static let environmentKey = "IMSG_LAUNCH_READY_TIMEOUT"
 
   /// Resolve the timeout, falling back to the default for anything unusable.
   static func resolve(
