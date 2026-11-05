@@ -48,6 +48,56 @@ static id findMessageItemInObject(id object,
     return nil;
 }
 
+/// The chat's own transcript items for `messageGuid`, one per part (a photo
+/// and its caption are two). Empty when the message is not in the loaded
+/// transcript.
+static NSArray *findLoadedChatItems(IMChat *chat, NSString *messageGuid) {
+    NSArray *items = nil;
+    if ([chat respondsToSelector:@selector(chatItems)]) {
+        items = [chat performSelector:@selector(chatItems)];
+    }
+    NSMutableArray *parts = [NSMutableArray array];
+    for (id item in items) {
+        // A recursive match may belong to a reply nested below this item.
+        // Parts have p:<index>/<guid> IDs; their own backing item holds the message GUID.
+        id backing = safelyReadObjectSelector(item, @selector(_item));
+        id guid = safelyReadObjectSelector(backing ?: item, @selector(guid));
+        if ([guid isKindOfClass:[NSString class]] && [guid isEqualToString:messageGuid]) {
+            [parts addObject:item];
+        }
+    }
+    return parts;
+}
+
+/// Load the transcript around `messageGuid`, so a message older than the
+/// loaded window becomes part of the chat's items. NO when it can't run here.
+static BOOL loadChatItemsAroundMessage(IMChat *chat, NSString *messageGuid) {
+    SEL sel = NSSelectorFromString(@"loadMessagesBeforeAndAfterGUID:"
+        "numberOfMessagesToLoadBeforeGUID:numberOfMessagesToLoadAfterGUID:"
+        "loadImmediately:threadIdentifier:");
+    if (![chat respondsToSelector:sel]) return NO;
+    NSMethodSignature *sig = [chat methodSignatureForSelector:sel];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    [inv setSelector:sel];
+    [inv setTarget:chat];
+    NSString *guid = messageGuid;
+    [inv setArgument:&guid atIndex:2];
+    NSUInteger before = 5;
+    NSUInteger after = 5;
+    [inv setArgument:&before atIndex:3];
+    [inv setArgument:&after atIndex:4];
+    BOOL immediately = YES;
+    [inv setArgument:&immediately atIndex:5];
+    id threadIdentifier = nil;
+    [inv setArgument:&threadIdentifier atIndex:6];
+    @try {
+        [inv invoke];
+    } @catch (__unused NSException *exception) {
+        return NO;
+    }
+    return YES;
+}
+
 static id findMessageItem(IMChat *chat, NSString *messageGuid) {
     if (!chat || !messageGuid.length) {
         return nil;

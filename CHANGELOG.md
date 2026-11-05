@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Load older messages into the transcript before deleting every part, and refuse unsupported reactions and unsent placeholders before dispatch (#379, thanks @logananderson).
+
 - Emit incoming typing events when the chat transcript's typing indicator appears or disappears (#378, thanks @logananderson).
 
 - Preserve subjects on standalone messages and threaded replies with the current IMCore item setter (#376, thanks @webmasu).

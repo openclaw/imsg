@@ -674,7 +674,7 @@ existing iMessage chat; ordinary `send.rich` text does not.
 
 Classic emoji ❤️, 👍, 👎, 😂, ‼️, and ❓ (including presentation-selector variants) send the matching classic tapback for older-device compatibility. Other emoji, including 🤣 and skin-tone variants such as 👍🏽, send as custom emoji tapbacks. Named classic kinds and their text aliases remain supported.
 - `message.edit` edits `message_id` / `message_guid` with `text`. Edits and unsends require a sent message; in a self-chat, use the GUID of the `is_from_me: true` copy, not the received echo. Targets whose sender ownership cannot be verified are rejected before dispatch.
-- `message.unsend`, `message.delete`, and `message.notifyAnyways` target `message_id` / `message_guid`.
+- `message.unsend`, `message.delete`, and `message.notifyAnyways` target `message_id` / `message_guid`. `message.delete` moves the message to Recently Deleted. Tapbacks, unsent messages, and messages it can't load into the transcript are rejected before dispatch.
 - `contacts.shouldShareContact` reads Apple Messages' advisory Name & Photo offer eligibility. The result includes `can_inspect_offer`, `can_share`, and tri-state `should_offer`.
 - `contacts.shareContactCard` explicitly requests Apple Messages Name & Photo sharing. Despite the compatibility name, this does not send a vCard. Success reports `requested: true`, not delivery.
 

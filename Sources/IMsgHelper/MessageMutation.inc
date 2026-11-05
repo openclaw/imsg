@@ -181,7 +181,9 @@ static NSDictionary *handleUnsendMessage(NSInteger requestId, NSDictionary *para
     });
 }
 
-/// `delete-message`: remove a single message from the chat.
+/// `delete-message`: remove a single message from the chat. `deleteChatItems:`
+/// silently ignores anything but the chat's own loaded transcript items, so an
+/// older message is loaded into the transcript and every part is deleted.
 static NSDictionary *handleDeleteMessage(NSInteger requestId, NSDictionary *params) {
     NSString *chatGuid = params[@"chatGuid"];
     NSString *messageGuid = params[@"messageGuid"];
@@ -200,13 +202,42 @@ static NSDictionary *handleDeleteMessage(NSInteger requestId, NSDictionary *para
         return errorResponse(requestId, @"deleteChatItems: not available");
     }
 
-    id item = findMessageItem(chat, messageGuid);
-    if (!item) {
-        return errorResponse(requestId,
+    id message = nil;
+    loadParentFirstChatItem(messageGuid, &message);
+    if (!message && !findMessageItem(chat, messageGuid)) {
+        return notStartedResponse(requestId,
             [NSString stringWithFormat:@"Message not found: %@", messageGuid]);
     }
+    id messageItem = safelyReadObjectSelector(message, @selector(_imMessageItem));
+    Class associatedClass = NSClassFromString(@"IMAssociatedMessageItem");
+    if (associatedClass && [messageItem isKindOfClass:associatedClass]) {
+        return notStartedResponse(requestId, [NSString stringWithFormat:
+            @"Tapbacks and other reactions can't be deleted on their own: %@", messageGuid]);
+    }
+
+    NSArray *parts = findLoadedChatItems(chat, messageGuid);
+    if (parts.count == 0 && loadChatItemsAroundMessage(chat, messageGuid)) {
+        for (NSInteger attempts = 0; attempts < 20 && parts.count == 0; attempts++) {
+            [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                     beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+            parts = findLoadedChatItems(chat, messageGuid);
+        }
+    }
+    if (parts.count == 0) {
+        return notStartedResponse(requestId, [NSString stringWithFormat:
+            @"Couldn't load this message in Messages; open the conversation in Messages "
+            "and delete it there: %@", messageGuid]);
+    }
+    Class retractionClass = NSClassFromString(@"IMMessageRetractionChatItem");
+    for (id part in parts) {
+        if (retractionClass && [part isKindOfClass:retractionClass]) {
+            return notStartedResponse(requestId, [NSString stringWithFormat:
+                @"Messages with an unsent part can't be deleted: %@", messageGuid]);
+        }
+    }
+
     @try {
-        [chat performSelector:sel withObject:@[item]];
+        [chat performSelector:sel withObject:parts];
     } @catch (NSException *ex) {
         return errorResponse(requestId, ex.reason ?: @"delete-message failed");
     }
