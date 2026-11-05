@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Place attached stickers on message bubbles with bounded position, scale, and rotation controls in the CLI and RPC (#366, thanks @kilianc).
+
 - Mention people in RPC `send.rich` and `send.multipart` text with validated UTF-16 ranges and explicit bridge capability checks (#365, thanks @kilianc).
 
 - Update PhoneNumberKit to 5.0.13.
