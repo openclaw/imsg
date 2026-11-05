@@ -103,6 +103,8 @@ extension RPCServer {
         try await handleNamePhotoStatus(params: params, id: id)
       case .contactsShare:
         try await handleNamePhotoShare(params: params, id: id)
+      case .contactsSetNamePhoto:
+        try await handleNamePhotoSet(params: params, id: id)
       case .handlesCheck:
         try await handleHandlesCheck(params: params, id: id)
       }

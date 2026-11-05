@@ -677,6 +677,7 @@ Classic emoji ❤️, 👍, 👎, 😂, ‼️, and ❓ (including presentation-
 - `message.unsend`, `message.delete`, and `message.notifyAnyways` target `message_id` / `message_guid`. `message.delete` moves the message to Recently Deleted. Tapbacks, unsent messages, and messages it can't load into the transcript are rejected before dispatch.
 - `contacts.shouldShareContact` reads Apple Messages' advisory Name & Photo offer eligibility. The result includes `can_inspect_offer`, `can_share`, and tri-state `should_offer`.
 - `contacts.shareContactCard` explicitly requests Apple Messages Name & Photo sharing. Despite the compatibility name, this does not send a vCard. Success reports `requested: true`, not delivery.
+- `contacts.setNamePhoto` explicitly replaces the account-wide Name & Photo. Params: required `first_name`, optional `last_name`, `file` (photo), and `sharing` (boolean). Requires `selectors.namePhotoSet` before staging; no chat target. Omitting the last name or photo removes that field, while omitting `sharing` preserves its setting. Never call it implicitly during startup, status, discovery, or profile repair. Returns `requested`, `stored`, `has_photo`, and, when stored, the name fields. `stored` confirms a matching name echo, not photo upload or recipient visibility; `has_photo` describes the request. This does not push the profile into a chat; use `contacts.shareContactCard` for that.
 
 The two `contacts.*` compatibility methods accept `chat_id`, `chat_identifier`,
 or `chat_guid`. Sharing discloses the local Messages profile to every chat

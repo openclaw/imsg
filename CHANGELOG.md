@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Explicitly replace the account-wide Messages Name & Photo with `name-photo set` or `contacts.setNamePhoto`, with capability checks and no automatic identity changes (#377, thanks @kilianc).
+
 - Place attached stickers on message bubbles with bounded position, scale, and rotation controls in the CLI and RPC (#366, thanks @kilianc).
 
 - Mention people in RPC `send.rich` and `send.multipart` text with validated UTF-16 ranges and explicit bridge capability checks (#365, thanks @kilianc).

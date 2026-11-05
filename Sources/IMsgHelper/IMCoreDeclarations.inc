@@ -252,6 +252,30 @@ static NSAttributedString *annotateBodyForRichLink(NSAttributedString *body,
                              forceSend:(BOOL)forceSend;
 @end
 
+@interface IMNickname : NSObject
+- (instancetype)initWithFirstName:(NSString *)firstName
+                         lastName:(NSString *)lastName
+                           avatar:(id)avatar
+                         pronouns:(id)pronouns;
+- (NSString *)firstName;
+- (NSString *)lastName;
+@end
+
+@interface IMNicknameAvatarImage : NSObject
+- (instancetype)initWithImageName:(NSString *)imageName
+                    imageFilePath:(NSString *)imageFilePath
+              sensitivityAnalysis:(id)sensitivityAnalysis;
+@end
+
+@interface IMMeCardSharingStateController : NSObject
+- (void)setSharingEnabled:(BOOL)enabled;
+@end
+
+@interface IMDaemonController : NSObject
++ (instancetype)sharedController;
+- (id)remoteDaemon;
+@end
+
 @interface IDSIDQueryController : NSObject
 + (instancetype)sharedInstance;
 + (instancetype)sharedController;

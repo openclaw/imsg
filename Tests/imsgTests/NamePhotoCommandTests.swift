@@ -111,6 +111,102 @@ func namePhotoShareInvokesExplicitSharingAction() async throws {
 }
 
 @Test
+func namePhotoSetStagesPhotoAndInvokesSetAction() async throws {
+  let values = ParsedValues(
+    positional: ["set"],
+    options: [
+      "firstName": ["Ada"],
+      "lastName": ["Lovelace"],
+      "photo": ["/tmp/ada.jpg"],
+      "sharing": ["on"],
+    ],
+    flags: []
+  )
+  var stagedFrom: String?
+  var capturedAction: BridgeAction?
+  var capturedParams: [String: Any] = [:]
+
+  let (output, _) = try await StdoutCapture.capture {
+    try await NamePhotoCommand.run(
+      values: values,
+      runtime: RuntimeOptions(parsedValues: values),
+      invokeBridge: { action, params in
+        if action == .status { return ["selectors": ["namePhotoSet": true]] }
+        capturedAction = action
+        capturedParams = params
+        return ["requested": true, "stored": true, "has_photo": true, "sharing_enabled": true]
+      },
+      stagePhoto: { path in
+        stagedFrom = path
+        return "/Users/ada/Library/Messages/Attachments/imsg/staged/ada.jpg"
+      }
+    )
+  }
+
+  #expect(stagedFrom == "/tmp/ada.jpg")
+  #expect(capturedAction == .setPersonalNickname)
+  #expect(capturedParams["firstName"] as? String == "Ada")
+  #expect(capturedParams["lastName"] as? String == "Lovelace")
+  #expect(
+    capturedParams["photoPath"] as? String
+      == "/Users/ada/Library/Messages/Attachments/imsg/staged/ada.jpg")
+  #expect(capturedParams["sharingEnabled"] as? Bool == true)
+  #expect(output.contains("name-photo: set stored=true has_photo=true sharing_enabled=true"))
+}
+
+@Test
+func namePhotoSetWithoutPhotoOrSharingSendsOnlyTheName() async throws {
+  let values = ParsedValues(positional: ["set"], options: ["firstName": ["Ada"]], flags: [])
+  var capturedParams: [String: Any] = [:]
+
+  _ = try await StdoutCapture.capture {
+    try await NamePhotoCommand.run(
+      values: values,
+      runtime: RuntimeOptions(parsedValues: values),
+      invokeBridge: { action, params in
+        if action == .status { return ["selectors": ["namePhotoSet": true]] }
+        capturedParams = params
+        return ["requested": true, "stored": false, "has_photo": false]
+      },
+      stagePhoto: { _ in
+        Issue.record("set without --photo must not stage a file")
+        return ""
+      }
+    )
+  }
+
+  #expect(capturedParams.keys.sorted() == ["firstName"])
+}
+
+@Test
+func namePhotoSetRejectsMissingFirstNameAndUnknownSharing() async {
+  let cases: [(options: [String: [String]], expected: String)] = [
+    ([:], "--first-name"),
+    (["firstName": ["Ada"], "sharing": ["yes"]], "sharing"),
+    (["firstName": ["Ada"], "photo": [""]], "photo"),
+    (["firstName": ["Ada"], "chat": ["iMessage;+;fixture"]], "chat"),
+  ]
+  for testCase in cases {
+    let values = ParsedValues(positional: ["set"], options: testCase.options, flags: [])
+    do {
+      try await NamePhotoCommand.run(
+        values: values,
+        runtime: RuntimeOptions(parsedValues: values),
+        invokeBridge: { _, _ in
+          Issue.record("refused set must not reach the bridge")
+          return [:]
+        }
+      )
+      Issue.record("expected set to refuse \(testCase.options)")
+    } catch let error as ParsedValuesError {
+      #expect(error.description.contains(testCase.expected))
+    } catch {
+      Issue.record("unexpected error: \(error)")
+    }
+  }
+}
+
+@Test
 func namePhotoCommandRejectsMissingChatAndUnknownAction() async {
   let missingChat = ParsedValues(positional: ["status"], options: [:], flags: [])
   do {
@@ -149,6 +245,48 @@ func rpcAdvertisesNamePhotoCompatibilityMethods() {
 
   #expect(methods.contains("contacts.shouldShareContact"))
   #expect(methods.contains("contacts.shareContactCard"))
+  #expect(methods.contains("contacts.setNamePhoto"))
+}
+
+@Test
+func rpcSetNamePhotoStagesFileAndInvokesSetAction() async throws {
+  let store = try CommandTestDatabase.makeStoreForRPC()
+  let output = TestRPCOutput()
+  var calls: [(BridgeAction, [String: Any])] = []
+  var stagedFrom: String?
+  let server = RPCServer(
+    store: store,
+    verbose: false,
+    output: output,
+    invokeBridge: { action, params in
+      if action == .status { return ["selectors": ["namePhotoSet": true]] }
+      calls.append((action, params))
+      return ["requested": true, "stored": true, "has_photo": true]
+    },
+    stageAttachment: { path in
+      stagedFrom = path
+      return "/staged/ada.jpg"
+    }
+  )
+
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"set","method":"contacts.setNamePhoto","params":{"first_name":"Ada","file":"/tmp/ada.jpg","sharing":true}}"#
+  )
+  await server.handleLineForTesting(
+    #"{"jsonrpc":"2.0","id":"missing","method":"contacts.setNamePhoto","params":{"file":"/tmp/ada.jpg"}}"#
+  )
+
+  #expect(stagedFrom == "/tmp/ada.jpg")
+  #expect(calls.count == 1)
+  #expect(calls.first?.0 == .setPersonalNickname)
+  #expect(calls.first?.1["firstName"] as? String == "Ada")
+  #expect(calls.first?.1["photoPath"] as? String == "/staged/ada.jpg")
+  #expect(calls.first?.1["sharingEnabled"] as? Bool == true)
+  let result = output.responses.first?["result"] as? [String: Any]
+  #expect(result?["ok"] as? Bool == true)
+  #expect(result?["stored"] as? Bool == true)
+  let error = output.errors.first?["error"] as? [String: Any]
+  #expect(error?["code"] as? Int == -32602)
 }
 
 @Test
@@ -290,6 +428,32 @@ func injectedHelperUsesGuardedNamePhotoSelectorFamilies() throws {
   #expect(!shareBody.contains("else {"))
   #expect(shareBody.contains("objc_msgSend"))
   #expect(shareBody.contains(#"@"requested": @YES"#))
+
+  let availableBody = try #require(
+    bridgeFunctionBody(named: "personalNicknameSetAvailable", in: source)
+  )
+  #expect(availableBody.contains(#"protocolDeclaresInstanceMethod(@"IMDaemonAnyProtocol""#))
+  #expect(availableBody.contains("@selector(setNewPersonalNickname:)"))
+  #expect(availableBody.contains("@selector(remoteDaemon)"))
+
+  let setBody = try #require(
+    bridgeFunctionBody(named: "handleSetPersonalNickname", in: source)
+  )
+  #expect(setBody.contains("personalNicknameSetAvailable()"))
+  #expect(setBody.contains("richLinkPathIsTrusted(photoPath)"))
+  #expect(setBody.contains("@selector(initWithImageName:imageFilePath:sensitivityAnalysis:)"))
+  #expect(setBody.contains("@selector(initWithFirstName:lastName:avatar:pronouns:)"))
+  // Receivers' BlastDoor rejects a record whose values Messages never writes.
+  #expect(setBody.contains(#"@"NickNameImage", photoPath, nil"#))
+  #expect(!setBody.contains("NSUUID"))
+  #expect(setBody.contains(#"&& [params[@"lastName"] length] > 0"#))
+  #expect(setBody.contains("@selector(setNewPersonalNickname:), nickname"))
+  #expect(setBody.contains("@selector(setSharingEnabled:)"))
+  #expect(setBody.contains("personal != previous"))
+  // A comparison boxes as an integer, which JSON writes as 1 rather than true.
+  #expect(setBody.contains(#"@"has_photo": @(hasPhoto)"#))
+  #expect(!setBody.contains("updatePersonalNickname:"))
+  #expect(!setBody.contains("imageData:"))
 }
 
 @Test

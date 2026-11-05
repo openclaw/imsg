@@ -161,7 +161,7 @@ enum StatusCommand {
           "  Chat: imsg chat-create, chat-name, chat-photo, chat-add/remove-member, chat-leave/delete, chat-mark"
         )
         StdoutWriter.writeLine("  Introspect: imsg account, whois, nickname")
-        StdoutWriter.writeLine("  Name & Photo: imsg name-photo status|share")
+        StdoutWriter.writeLine("  Name & Photo: imsg name-photo status|share|set")
         StdoutWriter.writeLine("  Local DB: imsg search")
         StdoutWriter.writeLine("  Watch with events: imsg watch --bb-events")
       } else {
