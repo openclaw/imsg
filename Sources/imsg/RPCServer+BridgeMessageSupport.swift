@@ -239,8 +239,7 @@ extension RPCServer {
     guard let info, !info.guid.isEmpty else {
       throw RPCError.invalidParams("rich links require an existing chat")
     }
-    let service = info.service.lowercased()
-    guard service == "imessage" || service == "imessagelite" else {
+    guard SendRichCommand.isRichLinkChatCandidate(info) else {
       throw RPCError.invalidParams("rich links require an iMessage chat")
     }
     return info
