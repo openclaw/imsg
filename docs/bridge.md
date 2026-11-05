@@ -216,6 +216,10 @@ there is no ordering guarantee relative to database messages. RPC clients can
 subscribe separately with `bridge.events.subscribe` and cancel its shared
 subscription ID with `watch.unsubscribe`.
 
+`started-typing` and `stopped-typing` follow the typing indicator in a chat's
+Messages transcript: they report other participants, not the local account,
+and carry only `data.chatGuid`.
+
 ## IPC layout
 
 The bridge uses a UUID-keyed request queue so concurrent CLI invocations cannot overwrite one another:
