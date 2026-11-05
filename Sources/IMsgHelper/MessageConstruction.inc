@@ -24,9 +24,14 @@ static void applyItemExtendedFields(id item,
                                     NSRange associatedMessageRange,
                                     NSDictionary *summaryInfo) {
     if (!item) return;
-    if (subject.length
-        && [item respondsToSelector:@selector(setMessageSubject:)]) {
-        [item performSelector:@selector(setMessageSubject:) withObject:subject];
+    if (subject.length) {
+        // IMMessageItem stores a plain NSString subject. On macOS 26 it has
+        // setSubject:, not IMMessage's attributed setMessageSubject: selector.
+        if ([item respondsToSelector:@selector(setSubject:)]) {
+            [item performSelector:@selector(setSubject:) withObject:subject.string];
+        } else if ([item respondsToSelector:@selector(setMessageSubject:)]) {
+            [item performSelector:@selector(setMessageSubject:) withObject:subject];
+        }
     }
     if (effectId.length
         && [item respondsToSelector:@selector(setExpressiveSendStyleID:)]) {
