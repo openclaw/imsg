@@ -27,10 +27,18 @@ extension SendRichCommand {
     guard let chatInfo = try store.chatInfo(matchingExactTarget: chat) else {
       throw ParsedValuesError.invalidOption("chat")
     }
-    let service = chatInfo.service.lowercased()
-    guard service == "imessage" || service == "imessagelite" else {
+    guard isRichLinkChatCandidate(chatInfo) else {
       throw ParsedValuesError.invalidOption("chat")
     }
+  }
+
+  static func isRichLinkChatCandidate(_ info: ChatInfo) -> Bool {
+    // Unified any; chats can retain a stale SMS service in chat.db. The helper
+    // checks the resolved live account and rejects non-iMessage rich links.
+    let guid = info.guid.lowercased()
+    let service = info.service.lowercased()
+    return guid.hasPrefix("any;-;") || guid.hasPrefix("any;+;")
+      || service == "imessage" || service == "imessagelite"
   }
 
   static func enrichedSentMessageResponse(

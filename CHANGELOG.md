@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Allow rich links in unified chats with stale service labels while retaining the helper's live iMessage service check (#375, thanks @webmasu).
+
 - Preserve the configured bridge readiness timeout when installing or replacing the login agent (#374, thanks @webmasu).
 
 - Pin Swift CodeQL tracing to macOS 26 while retaining Xcode 27 for normal build and test jobs.
