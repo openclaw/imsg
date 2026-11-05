@@ -381,12 +381,9 @@ extension MessageStore {
     let threadOriginatorPart = try stringValue(row, columns.threadOriginatorPart)
     let balloonBundleID = try stringValue(row, columns.balloonBundleID)
 
-    let editedAt = try int64Value(row, columns.dateEdited).flatMap {
-      $0 > 0 ? appleDate(from: $0) : nil
-    }
-    let unsentAt = try int64Value(row, columns.dateRetracted).flatMap {
-      $0 > 0 ? appleDate(from: $0) : nil
-    }
+    let stamp = try mutationStamp(row, columns: columns)
+    let editedAt = stamp.edited > 0 ? appleDate(from: stamp.edited) : nil
+    let unsentAt = stamp.retracted > 0 ? appleDate(from: stamp.retracted) : nil
     // An edited body is authoritative, even when empty or no longer decodable.
     var resolvedText = text
     if unsentAt != nil {

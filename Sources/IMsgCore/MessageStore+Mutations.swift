@@ -18,6 +18,27 @@ struct MessageMutationStamp: Equatable {
   }
 }
 
+extension MessageMutationStamp {
+  // Messages usually leaves date_retracted at 0 and records an unsend as retracted parts (rp).
+  // Unsending only some of the original parts (otr) leaves the rest, so that stays an edit.
+  init(dateEdited: Int64, dateRetracted: Int64, summaryInfo: Data) {
+    edited = dateEdited
+    if dateRetracted > 0 {
+      retracted = dateRetracted
+    } else if dateEdited > 0,
+      let info = try? PropertyListSerialization.propertyList(
+        from: summaryInfo, options: [], format: nil) as? [String: Any],
+      let originalParts = info["otr"] as? [String: Any], !originalParts.isEmpty,
+      let retractedParts = info["rp"] as? [Int],
+      originalParts.keys.allSatisfy({ Int($0).map(retractedParts.contains) == true })
+    {
+      retracted = dateEdited
+    } else {
+      retracted = 0
+    }
+  }
+}
+
 extension MessageStore {
   func mutationDatabaseVersion() throws -> MessageDatabaseVersion {
     try withConnection { db in
@@ -33,6 +54,7 @@ extension MessageStore {
     guard schema.hasDateEditedColumn || schema.hasDateRetractedColumn else { return [:] }
     let edited = schema.hasDateEditedColumn ? "m.date_edited" : "0"
     let retracted = schema.hasDateRetractedColumn ? "m.date_retracted" : "0"
+    let summaryInfo = schema.hasMessageSummaryInfoColumn ? "m.message_summary_info" : "NULL"
     let scope =
       chatID == nil
       ? ""
@@ -44,13 +66,14 @@ extension MessageStore {
       var stamps: [Int64: MessageMutationStamp] = [:]
       for row in try db.prepare(
         """
-        SELECT m.ROWID, COALESCE(\(edited), 0), COALESCE(\(retracted), 0)
+        SELECT m.ROWID, COALESCE(\(edited), 0), COALESCE(\(retracted), 0), \(summaryInfo)
         FROM message m WHERE (\(edited) > 0 OR \(retracted) > 0) \(scope)
         """, chatID.map { [$0 as Binding?] } ?? [])
       {
         guard let rowID = row[0] as? Int64 else { continue }
         stamps[rowID] = MessageMutationStamp(
-          edited: row[1] as? Int64 ?? 0, retracted: row[2] as? Int64 ?? 0)
+          dateEdited: row[1] as? Int64 ?? 0, dateRetracted: row[2] as? Int64 ?? 0,
+          summaryInfo: (row[3] as? Blob).map { Data($0.bytes) } ?? Data())
       }
       return stamps
     }
@@ -70,12 +93,14 @@ extension MessageStore {
       var parents: ReplyParentCache = [:]
       var polls = PollOptionTextCache()
       let message = try message(from: decoded, db, parentCache: &parents, pollOptionCache: &polls)
-      return (
-        message,
-        MessageMutationStamp(
-          edited: try int64Value(row, selection.columns.dateEdited) ?? 0,
-          retracted: try int64Value(row, selection.columns.dateRetracted) ?? 0)
-      )
+      return (message, try mutationStamp(row, columns: selection.columns))
     }
+  }
+
+  func mutationStamp(_ row: Row, columns: MessageRowColumns) throws -> MessageMutationStamp {
+    MessageMutationStamp(
+      dateEdited: try int64Value(row, columns.dateEdited) ?? 0,
+      dateRetracted: try int64Value(row, columns.dateRetracted) ?? 0,
+      summaryInfo: try dataValue(row, columns.messageSummaryInfo))
   }
 }

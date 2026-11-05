@@ -127,6 +127,9 @@ Live watch calls do not delay the text message waiting for a preview. If the pre
 
 Messages add optional `edited_at` and `unsent_at` ISO8601 timestamps when the
 source database contains positive `date_edited` and `date_retracted` values.
+Messages usually leaves `date_retracted` at 0 and records an unsend as retracted
+parts in `message_summary_info`; when every part is retracted, `unsent_at` is the
+`date_edited` time. Unsending only some parts of a message is reported as an edit.
 These fields are omitted on unchanged messages and on older database schemas.
 `text` contains the current attributed body after an edit. If a present edited
 body is empty or undecodable, `text` is empty rather than the stale original text. An unsent message

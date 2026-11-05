@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Detect complete unsends stored as retracted message parts, keeping watch, history, and RPC content suppression consistent (#371, fixes #370, thanks @logananderson).
+
 - Schedule weekly CodeQL main scans while retaining PR and manual analysis.
 
 ## 0.20.0 - 2026-10-26
