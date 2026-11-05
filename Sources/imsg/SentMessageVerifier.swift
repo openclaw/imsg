@@ -91,18 +91,28 @@ enum SentMessageVerifier {
 
     if options.text.isEmpty, !options.attachmentPath.isEmpty {
       return try store.sentAttachmentReceipt(
-        matchingPath: options.attachmentPath, chatID: verificationChatID, since: date)
+        matchingPath: options.attachmentPath, chatID: verificationChatID, since: date,
+        service: options.service)
     }
     return try store.latestSentMessage(
-      matchingText: options.text, chatID: verificationChatID, since: date)
+      matchingText: options.text, chatID: verificationChatID, since: date, service: options.service)
   }
 
   static func verificationChatID(store: MessageStore, options: MessageSendOptions) throws -> Int64?
   {
     let target = options.chatGUID.isEmpty ? options.chatIdentifier : options.chatGUID
     if !target.isEmpty { return try store.chatInfo(matchingTarget: target)?.id }
-    return try ChatTargetResolver.existingDirectChat(
-      store: store, recipient: options.recipient, service: options.service)?.id
+    if let chat = try ChatTargetResolver.existingDirectChat(
+      store: store, recipient: options.recipient, service: options.service)
+    {
+      return chat.id
+    }
+    // Messages keeps one "any;-;<handle>" chat per contact and leaves service_name at the
+    // service first used there, so an iMessage send can land in an SMS-labelled chat.
+    // Receipt matching below still requires the effective send service and outgoing text.
+    let recipient = options.recipient.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !recipient.isEmpty else { return nil }
+    return try store.chatInfo(matchingExactGUID: "any;-;\(recipient)")?.id
   }
 
   static func throwIfMisroutedChatSend(

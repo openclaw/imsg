@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Verify sent messages in unified chats with stale service labels while requiring receipts from the effective iMessage or SMS/RCS service (#373, thanks @webmasu).
+
 - Detect complete unsends stored as retracted message parts, keeping watch, history, and RPC content suppression consistent (#371, fixes #370, thanks @logananderson).
 
 - Schedule weekly CodeQL main scans while retaining PR and manual analysis.

@@ -80,7 +80,7 @@ imsg send --to "+14155551212" --text "hi" --no-sms-fallback
 
 - `auto` — `imsg` first checks local Messages history for the handle's observed service when `chat.db` is readable. Existing SMS-only phone threads use SMS; known iMessage handles use iMessage; unknown handles, or sessions without Full Disk Access, try iMessage. For text-only direct phone sends, an iMessage attempt retries once over SMS only when the AppleScript transport proves that target/service resolution failed before the first `send` began. A timeout, signal, lost result, nonzero exit, or error during/after `send` has an uncertain outcome and never falls back.
 - `imessage` — force iMessage. Fails fast if the recipient isn't on iMessage.
-- `sms` — force SMS relay. Requires Text Message Forwarding enabled on your iPhone for this Mac.
+- `sms` — select the SMS relay account. Requires Text Message Forwarding enabled on your iPhone for this Mac. macOS can use RCS through that account; verification accepts SMS or RCS receipts and rejects iMessage receipts for this route.
 
 SMS fallback is intentionally narrow: it does not run for explicit `--service imessage`, `--service sms`, explicit chat-target sends, email recipients, or attachment sends. For groups, omit `--service`. Group sends always use the chat's existing service.
 

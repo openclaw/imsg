@@ -5,6 +5,12 @@ extension MessageStore {
   public func sentAttachmentReceipt(matchingPath path: String, chatID: Int64, since date: Date)
     throws -> Message?
   {
+    try sentAttachmentReceipt(matchingPath: path, chatID: chatID, since: date, service: .auto)
+  }
+
+  package func sentAttachmentReceipt(
+    matchingPath path: String, chatID: Int64, since date: Date, service: MessageService
+  ) throws -> Message? {
     guard !path.isEmpty else { return nil }
     let absolutePath = NSString(string: path).expandingTildeInPath
     let home = FileManager.default.homeDirectoryForCurrentUser.path + "/"
@@ -31,6 +37,7 @@ extension MessageStore {
       guard try rows.failableNext() == nil else { return nil }
       let decoded = try decodeMessageRow(
         row, columns: selection.columns, fallbackChatID: chatID)
+      guard service.matchesReceiptService(decoded.service) else { return nil }
       return Message(
         rowID: decoded.rowID,
         chatID: chatID,

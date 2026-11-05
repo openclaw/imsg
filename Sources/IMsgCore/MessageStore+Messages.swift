@@ -257,6 +257,12 @@ extension MessageStore {
   public func latestSentMessage(matchingText text: String, chatID: Int64?, since date: Date)
     throws -> Message?
   {
+    try latestSentMessage(matchingText: text, chatID: chatID, since: date, service: .auto)
+  }
+
+  package func latestSentMessage(
+    matchingText text: String, chatID: Int64?, since date: Date, service: MessageService
+  ) throws -> Message? {
     guard !text.isEmpty else { return nil }
 
     let query = try LatestSentMessageQuery(
@@ -274,7 +280,7 @@ extension MessageStore {
           columns: query.selection.columns,
           fallbackChatID: query.fallbackChatID
         )
-        guard decoded.text == text else { continue }
+        guard decoded.text == text, service.matchesReceiptService(decoded.service) else { continue }
         let poll = try enrichedPollEvent(
           decoded.poll,
           db: db,
