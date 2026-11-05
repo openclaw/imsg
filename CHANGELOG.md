@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update PhoneNumberKit to 5.0.13.
+
 - Prefer recoverable chat deletion through Messages’ Recently Deleted operation, without falling back to permanent removal after a failed recoverable deletion (#381, thanks @thurstonsand).
 
 - Load older messages into the transcript before deleting every part, and refuse unsupported reactions and unsent placeholders before dispatch (#379, thanks @logananderson).
