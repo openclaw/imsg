@@ -64,6 +64,105 @@ func stickerCommandStagesFileAndForwardsAttachTarget() async throws {
 }
 
 @Test
+func stickerCommandPlacesAttachedStickerOnlyThroughCapableBridge() async throws {
+  let attached: [String: [String]] = [
+    "chat": ["iMessage;-;+15551234567"], "file": ["sticker.png"], "attachTo": ["parent-guid"],
+  ]
+  let cases:
+    [(
+      name: String, options: [String: [String]], capable: Bool, placement: [String: Double]?,
+      error: String?
+    )] = [
+      (
+        "every value",
+        attached.merging(["x": ["-0.25"], "y": ["1.2"], "scale": ["0.5"], "rotation": ["-90"]]) {
+          $1
+        },
+        true, ["x": -0.25, "y": 1.2, "scale": 0.5, "rotation": -Double.pi / 2], nil
+      ),
+      (
+        "defaults for the rest", attached.merging(["rotation": ["30"]]) { $1 }, true,
+        ["x": 0.5, "y": 0.5, "scale": 1, "rotation": Double.pi / 6], nil
+      ),
+      (
+        "bounds",
+        attached.merging(["x": ["-3"], "y": ["3"], "scale": ["4"], "rotation": ["180"]]) { $1 },
+        true, ["x": -3, "y": 3, "scale": 4, "rotation": Double.pi], nil
+      ),
+      (
+        "older helper", attached.merging(["x": ["0.9"]]) { $1 }, false, nil,
+        "running bridge does not support sticker placement"
+      ),
+      (
+        "no target", ["chat": attached["chat"]!, "file": attached["file"]!, "x": ["0.9"]], true,
+        nil,
+        "require --attach-to / attach_to"
+      ),
+      (
+        "out of range", attached.merging(["scale": ["5"]]) { $1 }, true, nil,
+        "scale must be a number from 0.1 to 4"
+      ),
+      (
+        "not a number", attached.merging(["y": ["nan"]]) { $1 }, true, nil,
+        "Invalid value for option: --y"
+      ),
+    ]
+
+  for testCase in cases {
+    let values = ParsedValues(positional: [], options: testCase.options, flags: [])
+    var actions: [BridgeAction] = []
+    var sentPlacement: [String: Any]?
+    var staged = false
+    do {
+      _ = try await StdoutCapture.capture {
+        try await StickerCommand.run(
+          values: values,
+          runtime: RuntimeOptions(parsedValues: values),
+          invokeBridge: { action, params in
+            actions.append(action)
+            if action == .status {
+              return ["selectors": ["stickerPlacement": testCase.capable]]
+            }
+            sentPlacement = params["placement"] as? [String: Any]
+            return ["messageGuid": "sent-guid", "transferGuid": "transfer-guid"]
+          },
+          resolveChat: { chat, _ in (chat, "iMessage") },
+          messageBelongsToChat: { _, _, _ in true },
+          prepareSticker: { _ in
+            staged = true
+            return PreparedStickerAsset(
+              stagedPath: "/staged/sticker.png",
+              sha256: String(repeating: "a", count: 64),
+              pixelWidth: 64,
+              pixelHeight: 64,
+              uti: "public.png",
+              byteCount: 100,
+              accessibilityLabel: "Sticker"
+            )
+          }
+        )
+      }
+      #expect(testCase.error == nil, "\(testCase.name): sent")
+    } catch {
+      #expect(
+        testCase.error.map { String(describing: error).contains($0) } == true,
+        "\(testCase.name): \(error)")
+    }
+
+    guard let expected = testCase.placement else {
+      #expect(!actions.contains(.sendSticker) && !staged, "\(testCase.name): nothing sent")
+      continue
+    }
+    #expect(actions == [.status, .sendSticker], "\(testCase.name)")
+    for (key, value) in expected {
+      let sent = sentPlacement?[key] as? Double
+      #expect(sent.map { abs($0 - value) < 1e-12 } == true, "\(testCase.name): \(key)")
+    }
+    #expect(sentPlacement?.count == 4, "\(testCase.name)")
+  }
+}
+
+@Test
 func stickerTargetNormalizesPartsAndRejectsConflicts() throws {
   #expect(
     try StickerSendTarget.resolve(rawTarget: "parent-guid", explicitPart: nil)

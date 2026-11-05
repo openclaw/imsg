@@ -38,6 +38,14 @@ extension ParsedValues {
     try integerOption(label, name: name, minimum: minimum)
   }
 
+  func optionDouble(_ label: String, name: String? = nil) throws -> Double? {
+    guard let raw = option(label) else { return nil }
+    guard let value = Double(raw), value.isFinite else {
+      throw ParsedValuesError.invalidOption(name ?? label)
+    }
+    return value
+  }
+
   func optionChatID() throws -> Int64? {
     try optionInt64("chatID", name: "chat-id", minimum: 1)
   }
