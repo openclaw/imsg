@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Mention people in RPC `send.rich` and `send.multipart` text with validated UTF-16 ranges and explicit bridge capability checks (#365, thanks @kilianc).
+
 - Update PhoneNumberKit to 5.0.13.
 
 - Prefer recoverable chat deletion through Messages’ Recently Deleted operation, without falling back to permanent removal after a failed recoverable deletion (#381, thanks @thurstonsand).

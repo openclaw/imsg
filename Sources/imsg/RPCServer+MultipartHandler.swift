@@ -17,17 +17,18 @@ extension RPCServer {
     }
 
     var parts: [[String: Any]] = []
+    var hasMentions = false
     parts.reserveCapacity(rawParts.count)
     for (index, rawPart) in rawParts.enumerated() {
       if let key = rawPart.keys.sorted().first(where: {
-        ["file", "attachment", "mention", "mentions"].contains($0)
+        ["file", "attachment", "mention"].contains($0)
       }) {
         throw RPCError.invalidParams("\(key) parts are not supported")
       }
       let part = try RPCParameters(
         rawPart,
         method: "send.multipart parts[\(index)]",
-        supportedKeys: ["text", "text_formatting", "textFormatting"]
+        supportedKeys: ["text", "text_formatting", "textFormatting", "mentions"]
       )
       guard let text = try part.string("text"), !text.isEmpty else {
         throw RPCError.invalidParams("parts[\(index)].text must be a non-empty string")
@@ -37,6 +38,12 @@ extension RPCServer {
         "text_formatting", aliases: ["textFormatting"])
       {
         bridgePart["textFormatting"] = formatting
+      }
+      let mentions = try rpcMentionRanges(
+        part.objectArray("mentions") ?? [], text: text, name: "parts[\(index)].mentions")
+      if !mentions.isEmpty {
+        bridgePart["mentions"] = mentions
+        hasMentions = true
       }
       parts.append(bridgePart)
     }
@@ -52,6 +59,9 @@ extension RPCServer {
       bridgeParams["subject"] = subject
     }
 
+    if hasMentions {
+      try await requireMentionCapability(action: .sendMultipart)
+    }
     let verification = try await bridgeSendVerificationBaseline()
     let data = try await invokeBridge(action: .sendMultipart, params: bridgeParams)
     var result = try await verifiedBridgeSendResponse(
