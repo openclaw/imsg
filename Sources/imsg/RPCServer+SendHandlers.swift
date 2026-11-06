@@ -45,7 +45,7 @@ extension RPCServer {
       else {
         throw RPCError.invalidParams("attempt_id must be a UUID")
       }
-      attemptID = uuid.uuidString.lowercased()
+      attemptID = uuid.uuidString
     } else {
       guard try params.string("attempt_id") == nil else {
         throw RPCError.invalidParams("attempt_id is only supported by send.tracked")

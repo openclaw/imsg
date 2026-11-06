@@ -152,7 +152,7 @@ func injectedHelperPreservesCallerOwnedMessageGuid() throws {
   #expect(statusBody.contains(#"@"client_message_guid""#))
   #expect(sendBody.contains(#"params[@"clientMessageGuid"]"#))
   #expect(sendBody.contains("initWithUUIDString:clientMessageGuidValue"))
-  #expect(sendBody.contains("clientUUID.UUIDString.lowercaseString"))
+  #expect(sendBody.contains("clientMessageGuid = clientUUID.UUIDString;"))
   #expect(sendBody.contains("clientMessageGuid.length"))
   #expect(reserveBody.contains("trackedMessageGuidLock"))
   #expect(reserveBody.contains("trackedMessageGuids containsObject:guid"))

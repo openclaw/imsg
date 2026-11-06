@@ -50,7 +50,7 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
         if (!clientMessageGuidInitializerAvailable()) {
             return errorResponse(requestId, @"Caller-owned message GUIDs are unavailable");
         }
-        clientMessageGuid = clientUUID.UUIDString.lowercaseString;
+        clientMessageGuid = clientUUID.UUIDString;
     }
 
     if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
