@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep `send.tracked` message GUIDs in Apple's uppercase form, so tracked sends to SMS and RCS chats are delivered instead of staying unsent with error 4 (#390).
+
 ## 0.21.0 - 2026-11-05
 
 **Highlights:** Mention people in rich messages, position stickers on message bubbles, and explicitly set your Messages Name & Photo, with fixes for typing events, subjects, delivery verification, and recoverable deletion.
