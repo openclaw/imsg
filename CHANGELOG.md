@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep `send.tracked` message GUIDs in Apple's uppercase form, so tracked sends to SMS and RCS chats are delivered instead of staying unsent with error 4 (#390, thanks @thurstonsand).
+
 - Report pre-dispatch rich-link refusals as retry-safe `not_started` failures (#387, thanks @SebTardif).
 
 ## 0.21.0 - 2026-11-05
