@@ -137,8 +137,8 @@ func messageStreamsUseAssociatedMessageEmojiColumn() throws {
   let streamed = try store.messagesAfter(afterRowID: 1, chatID: nil, limit: 10).first {
     $0.rowID == 2
   }
-  #expect(history?.reaction.reactionType == .custom("🔥"))
-  #expect(streamed?.reaction.reactionType == .custom("🔥"))
+  #expect(history?.reactionType == .custom("🔥"))
+  #expect(streamed?.reactionType == .custom("🔥"))
 }
 
 private func reactionSnapshot(_ store: MessageStore, bulk: Bool) throws -> [Reaction] {
