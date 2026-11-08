@@ -133,11 +133,9 @@ func messageStreamsUseAssociatedMessageEmojiColumn() throws {
     date: now.addingTimeInterval(-500))
 
   let store = try MessageStore(connection: db, path: ":memory:")
-  let history = try store.messages(chatID: 1, limit: 10).first { $0.rowID == 2 }
-  let streamed = try store.messagesAfter(afterRowID: 1, chatID: nil, limit: 10).first {
-    $0.rowID == 2
-  }
-  #expect(history?.reactionType == .custom("🔥"))
+  let streamed = try store.messagesAfter(
+    afterRowID: 1, chatID: nil, limit: 10, includeReactions: true
+  ).first { $0.rowID == 2 }
   #expect(streamed?.reactionType == .custom("🔥"))
 }
 
