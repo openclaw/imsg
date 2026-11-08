@@ -124,6 +124,23 @@ func reactionEventsUseAssociatedMessageEmojiColumn() throws {
   #expect(events.map(\.reactionType) == [.custom("🎉")])
 }
 
+@Test
+func messageStreamsUseAssociatedMessageEmojiColumn() throws {
+  let now = Date()
+  let db = try EmojiColumnDatabase.make(withEmojiColumn: true, now: now)
+  try EmojiColumnDatabase.addReaction(
+    db, rowID: 2, text: "\"Hello world\"에 🙂 반응함", isFromMe: 0, emoji: "🔥",
+    date: now.addingTimeInterval(-500))
+
+  let store = try MessageStore(connection: db, path: ":memory:")
+  let history = try store.messages(chatID: 1, limit: 10).first { $0.rowID == 2 }
+  let streamed = try store.messagesAfter(afterRowID: 1, chatID: nil, limit: 10).first {
+    $0.rowID == 2
+  }
+  #expect(history?.reaction.reactionType == .custom("🔥"))
+  #expect(streamed?.reaction.reactionType == .custom("🔥"))
+}
+
 private func reactionSnapshot(_ store: MessageStore, bulk: Bool) throws -> [Reaction] {
   if bulk {
     let messages = try store.messages(chatID: 1, limit: 10)
