@@ -3,6 +3,7 @@ import SQLite
 struct MessageStoreSchema: Sendable {
   let hasAttributedBody: Bool
   let hasReactionColumns: Bool
+  let hasAssociatedMessageEmojiColumn: Bool
   let hasThreadOriginatorGUIDColumn: Bool
   let hasThreadOriginatorPartColumn: Bool
   let hasDestinationCallerID: Bool
@@ -36,6 +37,7 @@ struct MessageStoreSchema: Sendable {
 
     self.hasAttributedBody = messageColumns.contains("attributedbody")
     self.hasReactionColumns = MessageStore.reactionColumnsPresent(in: messageColumns)
+    self.hasAssociatedMessageEmojiColumn = messageColumns.contains("associated_message_emoji")
     self.hasThreadOriginatorGUIDColumn = messageColumns.contains("thread_originator_guid")
     self.hasThreadOriginatorPartColumn = messageColumns.contains("thread_originator_part")
     self.hasDestinationCallerID = messageColumns.contains("destination_caller_id")
@@ -93,6 +95,7 @@ struct MessageStoreSchema: Sendable {
   ) {
     self.hasAttributedBody = hasAttributedBody ?? base.hasAttributedBody
     self.hasReactionColumns = hasReactionColumns ?? base.hasReactionColumns
+    self.hasAssociatedMessageEmojiColumn = base.hasAssociatedMessageEmojiColumn
     self.hasThreadOriginatorGUIDColumn =
       hasThreadOriginatorGUIDColumn ?? base.hasThreadOriginatorGUIDColumn
     self.hasThreadOriginatorPartColumn =
