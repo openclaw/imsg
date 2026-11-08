@@ -278,11 +278,17 @@ public struct MessageSender {
           return "IMSG_RESULT" & tab & "ok" & tab & "completed" & tab & "0"
           on error errorMessage number errorNumber
           if dispatchPhase is "pre_dispatch" then
-              return "IMSG_RESULT" & tab & "failure" & tab & "not_started" & tab & errorNumber
+              return "IMSG_RESULT" & tab & "failure" & tab & "not_started" & tab & (my asciiNumber(errorNumber))
           end if
-          return "IMSG_RESULT" & tab & "failure" & tab & "may_have_completed" & tab & errorNumber
+          return "IMSG_RESULT" & tab & "failure" & tab & "may_have_completed" & tab & (my asciiNumber(errorNumber))
           end try
       end run
+
+      -- Number-to-text coercion follows the user's locale; sv_SE yields U+2212 for the sign.
+      on asciiNumber(n)
+          if n < 0 then return "-" & ((0 - n) as text)
+          return n as text
+      end asciiNumber
       """
   }
 
