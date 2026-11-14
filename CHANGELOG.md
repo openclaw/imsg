@@ -7,7 +7,6 @@
 - Require an exact persisted outgoing GUID before `send.tracked` reports success; rewritten or missing identities now remain retry-unsafe uncertainty (#385, thanks @thurstonsand).
 
 - Recover stale direct-chat attachment targets and verify receipts in the recovered account-bound conversation without accepting conflicting matches (#388, #394, thanks @lockhartheavyindustries and @sukhdeepjohar).
-- Require an exact persisted outgoing GUID before `send.tracked` reports success; rewritten or missing identities now remain retry-unsafe uncertainty (#385, thanks @thurstonsand).
 
 - Read custom emoji reactions from `message.associated_message_emoji` when the column is present, falling back to the summary text only when it is missing or empty (#392, thanks @tahodev and @privatenumber).
 
