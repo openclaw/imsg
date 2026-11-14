@@ -596,7 +596,7 @@ retries after an uncertain bridge result.
 
 Params are the text-send subset of `send`, plus:
 
-- `attempt_id` (UUID string, required) — becomes the outgoing `IMMessage` GUID.
+- `attempt_id` (UUID string, required) — becomes the outgoing `IMMessage` GUID. Input is case-insensitive; the helper and response use Apple's canonical uppercase UUID form.
 
 Attachments are rejected. The method is advertised by `imsg status --json`
 only when the running injected helper reports caller-owned GUID preservation
