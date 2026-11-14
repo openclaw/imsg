@@ -17,6 +17,7 @@ private func trackedRequest(id: String, attemptID: String = trackedAttemptID) ->
 @Test
 func rpcTrackedSendForwardsCallerOwnedGuidAndReturnsCanonicalUppercaseIdentity() async throws {
   let store = try CommandTestDatabase.makeStoreForRPCDirectChat()
+  _ = try store.withConnection { try $0.run("ALTER TABLE message ADD COLUMN guid TEXT") }
   let output = TestRPCOutput()
   var appleScriptCalled = false
   var capturedActions: [BridgeAction] = []
@@ -36,6 +37,12 @@ func rpcTrackedSendForwardsCallerOwnedGuidAndReturnsCanonicalUppercaseIdentity()
         return ["selectors": ["clientMessageGuidReservation": true]]
       }
       capturedParams = params
+      try store.withConnection { db in
+        try db.run(
+          "INSERT INTO message(ROWID, handle_id, text, guid, date, is_from_me, service) VALUES (99, 1, 'once', ?, 1, 1, 'iMessage')",
+          trackedAttemptID.uppercased())
+        try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 99)")
+      }
       return [
         "messageGuid": trackedAttemptID.uppercased(),
         "chatGuid": "iMessage;-;+123",

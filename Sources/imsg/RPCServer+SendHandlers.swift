@@ -173,6 +173,12 @@ extension RPCServer {
         store: database?.store, resolvedTarget: resolvedTarget, directChatInfo: directChatInfo)
     )
     let sentAt = Date()
+    let trackedAfterRowID: Int64?
+    if tracked, let database {
+      trackedAfterRowID = try database.store.maxRowID()
+    } else {
+      trackedAfterRowID = nil
+    }
 
     if let bridgeChatGUID = bridgeChatGUID(
       resolvedTarget: resolvedTarget, directChatInfo: directChatInfo),
@@ -188,6 +194,18 @@ extension RPCServer {
           textFormatting: textFormatting,
           clientMessageGuid: attemptID
         )
+        if let attemptID, let database, let trackedAfterRowID {
+          guard let acknowledgedGUID = data["messageGuid"] as? String,
+            acknowledgedGUID.caseInsensitiveCompare(attemptID) == .orderedSame
+          else {
+            throw TrackedSendVerifier.failure(
+              "The helper did not acknowledge the requested tracked GUID. Do not retry this attempt."
+            )
+          }
+          try await TrackedSendVerifier.verify(
+            store: database.store, guid: attemptID, chatTarget: bridgeChatGUID,
+            afterRowID: trackedAfterRowID)
+        }
         var result: [String: Any] = ["ok": true, "transport": "bridge"]
         if let guid = data["messageGuid"] as? String, !guid.isEmpty {
           result["guid"] = guid
