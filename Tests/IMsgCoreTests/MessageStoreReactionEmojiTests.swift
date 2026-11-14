@@ -100,12 +100,12 @@ func customReactionFallsBackToSummaryTextWithoutEmojiColumn() throws {
   #expect(try store.reactions(for: 1).map(\.reactionType) == [.custom("🎉")])
 }
 
-@Test
-func emptyEmojiColumnFallsBackToSummaryText() throws {
+@Test(arguments: [nil, ""] as [String?])
+func emptyEmojiColumnFallsBackToSummaryText(emoji: String?) throws {
   let now = Date()
   let db = try EmojiColumnDatabase.make(withEmojiColumn: true, now: now)
   try EmojiColumnDatabase.addReaction(
-    db, rowID: 2, text: "Reacted 🎉 to \"Hello world\"", isFromMe: 0, emoji: "",
+    db, rowID: 2, text: "Reacted 🎉 to \"Hello world\"", isFromMe: 0, emoji: emoji,
     date: now.addingTimeInterval(-500))
 
   let store = try MessageStore(connection: db, path: ":memory:")
@@ -145,4 +145,24 @@ private func reactionSnapshot(_ store: MessageStore, bulk: Bool) throws -> [Reac
     return try store.reactions(for: messages)[1] ?? []
   }
   return try store.reactions(for: 1)
+}
+
+@Test(arguments: [false, true])
+func customReactionRemovalUsesEmojiColumn(bulk: Bool) throws {
+  let now = Date()
+  let db = try EmojiColumnDatabase.make(withEmojiColumn: true, now: now)
+  try EmojiColumnDatabase.addReaction(
+    db, rowID: 2, text: "", isFromMe: 0, emoji: "🎉", date: now.addingTimeInterval(-2))
+  try EmojiColumnDatabase.addReaction(
+    db, rowID: 3, text: "Réaction retirée", isFromMe: 0, emoji: "🎉", date: now)
+  try db.run("UPDATE message SET associated_message_type = 3006 WHERE ROWID = 3")
+  let store = try MessageStore(connection: db, path: ":memory:")
+  #expect(try reactionSnapshot(store, bulk: bulk).isEmpty)
+  let events = try store.reactionEventsAfter(afterRowID: 0, chatID: nil, limit: 10)
+  #expect(events.map(\.reactionType) == [.custom("🎉"), .custom("🎉")])
+  #expect(events.map(\.isAdd) == [true, false])
+  let streamed = try store.messagesAfter(
+    afterRowID: 2, chatID: nil, limit: 10, includeReactions: true)
+  #expect(streamed.first?.reactionType == .custom("🎉"))
+  #expect(streamed.first?.isReactionAdd == false)
 }

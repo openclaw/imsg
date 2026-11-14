@@ -166,6 +166,8 @@ Present on standalone reaction rows emitted by `imsg watch --reactions`,
 | `is_reaction_add` | bool | `true` for add, `false` for remove. |
 | `reacted_to_guid` | string | The message guid this tapback targets. |
 
+Custom emoji are read from `message.associated_message_emoji` when available, so localized or missing summary text does not hide the reaction. Older databases and empty emoji fields retain the summary-text fallback.
+
 `history` deliberately hides standalone reaction rows so they don't duplicate
 the reacted message. Live watch surfaces emit them only when reactions are
 enabled; `messages.after` includes them in ROWID order only when
