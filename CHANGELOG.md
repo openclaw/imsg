@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Read custom emoji reactions from `message.associated_message_emoji` when the column is present, falling back to the summary text only when it is missing or empty (#392, thanks @tahodev and @privatenumber).
+
 - Report AppleScript send error numbers with an ASCII minus, so delivery results no longer carry U+2212 under locales such as sv_SE (thanks @niXta1).
 
 - Keep `send.tracked` message GUIDs in Apple's uppercase form, so tracked sends to SMS and RCS chats are delivered instead of staying unsent with error 4 (#390, thanks @thurstonsand).

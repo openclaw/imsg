@@ -8,10 +8,12 @@ private struct CurrentReactionsQuery {
   init(messageID: MessageID, schema: MessageStoreSchema) {
     let bodyColumn = schema.hasAttributedBody ? "r.attributedBody" : "NULL"
     let destinationCallerColumn = schema.hasDestinationCallerID ? "r.destination_caller_id" : "NULL"
+    let emojiColumn = schema.hasAssociatedMessageEmojiColumn ? "r.associated_message_emoji" : "NULL"
     self.sql = """
       SELECT r.ROWID AS reaction_rowid, r.associated_message_type AS associated_message_type,
              h.id AS sender, r.is_from_me AS is_from_me, r.date AS date, IFNULL(r.text, '') AS text,
-             \(destinationCallerColumn) AS destination_caller_id, \(bodyColumn) AS body
+             \(destinationCallerColumn) AS destination_caller_id, \(bodyColumn) AS body,
+             \(emojiColumn) AS associated_emoji
       FROM message m
       JOIN message r ON r.associated_message_guid = m.guid COLLATE NOCASE
         OR r.associated_message_guid LIKE '%/' || m.guid
@@ -33,6 +35,7 @@ struct ReactionRow {
   let isFromMe: Bool
   let timestamp: Int64
   let resolvedText: String
+  let associatedEmoji: String
   let messageID: Int64
 }
 
@@ -97,6 +100,7 @@ extension MessageStore {
       isFromMe: isFromMe,
       timestamp: try int64Value(row, "date") ?? 0,
       resolvedText: text.isEmpty ? TypedStreamParser.parseAttributedBody(body) : text,
+      associatedEmoji: try stringValue(row, "associated_emoji"),
       messageID: messageID)
   }
 
@@ -104,7 +108,8 @@ extension MessageStore {
     let removal = ReactionType.isReactionRemove(row.typeValue)
     let emoji =
       row.typeValue == 2006 || row.typeValue == 3006
-      ? extractCustomEmoji(from: row.resolvedText) : nil
+      ? (row.associatedEmoji.isEmpty
+        ? extractCustomEmoji(from: row.resolvedText) : row.associatedEmoji) : nil
     let type =
       removal
       ? ReactionType.fromRemoval(row.typeValue, customEmoji: emoji)

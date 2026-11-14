@@ -90,7 +90,8 @@ extension MessageStore {
   func decodeReaction(
     associatedType: Int?,
     associatedGUID: String,
-    text: String
+    text: String,
+    associatedEmoji: String = ""
   ) -> DecodedReaction {
     guard let typeValue = associatedType, ReactionType.isReaction(typeValue) else {
       return DecodedReaction(
@@ -103,7 +104,9 @@ extension MessageStore {
 
     let isAdd = ReactionType.isReactionAdd(typeValue)
     let rawType = isAdd ? typeValue : typeValue - 1000
-    let customEmoji = (rawType == 2006) ? extractCustomEmoji(from: text) : nil
+    let customEmoji =
+      (rawType == 2006)
+      ? (associatedEmoji.isEmpty ? extractCustomEmoji(from: text) : associatedEmoji) : nil
     guard let reactionType = ReactionType(rawValue: rawType, customEmoji: customEmoji) else {
       return DecodedReaction(
         isReaction: true,

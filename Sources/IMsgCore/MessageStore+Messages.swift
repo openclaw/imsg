@@ -381,6 +381,7 @@ extension MessageStore {
     let guid = try stringValue(row, columns.guid)
     let associatedGUID = try stringValue(row, columns.associatedGUID)
     let associatedType = try intValue(row, columns.associatedType)
+    let associatedEmoji = try stringValue(row, columns.associatedEmoji)
     let attachments = try intValue(row, columns.attachments) ?? 0
     let body = try dataValue(row, columns.body)
     let threadOriginatorGUID = try stringValue(row, columns.threadOriginatorGUID)
@@ -445,6 +446,7 @@ extension MessageStore {
       guid: guid,
       associatedGUID: associatedGUID,
       associatedType: associatedType,
+      associatedEmoji: associatedEmoji,
       attachments: unsentAt == nil ? attachments : 0,
       threadOriginatorGUID: threadOriginatorGUID,
       threadOriginatorPart: threadOriginatorPart,

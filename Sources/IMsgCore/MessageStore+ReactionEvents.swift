@@ -61,6 +61,7 @@ extension MessageStore {
     let bodyColumn = schema.hasAttributedBody ? "m.attributedBody" : "NULL"
     let destinationCallerColumn =
       schema.hasDestinationCallerID ? "m.destination_caller_id" : "NULL"
+    let emojiColumn = schema.hasAssociatedMessageEmojiColumn ? "m.associated_message_emoji" : "NULL"
     let chatColumn = chatID == nil ? MessageRowSelection.canonicalChatID : "NULL"
 
     var sql = """
@@ -71,6 +72,7 @@ extension MessageStore {
              m.date AS date, IFNULL(m.text, '') AS text,
              \(destinationCallerColumn) AS destination_caller_id,
              \(bodyColumn) AS body,
+             \(emojiColumn) AS associated_emoji,
              orig.ROWID AS orig_rowid
       FROM message m
       \(chatID == nil ? "" : MessageRowSelection.scopedChatJoin)
@@ -112,7 +114,8 @@ extension MessageStore {
         let decoded = decodeReaction(
           associatedType: typeValue,
           associatedGUID: associatedGUID,
-          text: resolvedText
+          text: resolvedText,
+          associatedEmoji: try stringValue(row, "associated_emoji")
         )
         guard let reactionType = decoded.reactionType, let isAdd = decoded.isReactionAdd else {
           continue

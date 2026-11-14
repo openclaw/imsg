@@ -254,7 +254,8 @@ extension MessageStore {
         let reaction = decodeReaction(
           associatedType: decoded.associatedType,
           associatedGUID: decoded.associatedGUID,
-          text: decoded.text
+          text: decoded.text,
+          associatedEmoji: decoded.associatedEmoji
         )
         let message = Message(
           rowID: decoded.rowID,

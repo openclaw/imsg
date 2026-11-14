@@ -18,6 +18,7 @@ struct MessageRowColumns {
   let guid: String
   let associatedGUID: String
   let associatedType: String
+  let associatedEmoji: String
   let attachments: String
   let body: String
   let threadOriginatorGUID: String
@@ -45,6 +46,7 @@ struct MessageRowColumns {
       guid: "guid",
       associatedGUID: "associated_guid",
       associatedType: "associated_type",
+      associatedEmoji: "associated_emoji",
       attachments: "attachments",
       body: "body",
       threadOriginatorGUID: "thread_originator_guid",
@@ -73,6 +75,7 @@ struct DecodedMessageRow {
   let guid: String
   let associatedGUID: String
   let associatedType: Int?
+  let associatedEmoji: String
   let attachments: Int
   let threadOriginatorGUID: String
   let threadOriginatorPart: String
@@ -110,6 +113,8 @@ struct MessageRowSelection {
     let guidColumn = schema.hasReactionColumns ? "m.guid" : "NULL"
     let associatedGuidColumn = schema.hasReactionColumns ? "m.associated_message_guid" : "NULL"
     let associatedTypeColumn = schema.hasReactionColumns ? "m.associated_message_type" : "NULL"
+    let associatedEmojiColumn =
+      schema.hasAssociatedMessageEmojiColumn ? "m.associated_message_emoji" : "NULL"
     let destinationCallerColumn =
       schema.hasDestinationCallerID ? "m.destination_caller_id" : "NULL"
     let audioMessageColumn = schema.hasAudioMessageColumn ? "m.is_audio_message" : "0"
@@ -144,6 +149,7 @@ struct MessageRowSelection {
              \(destinationCallerColumn) AS \(columns.destinationCallerID),
              \(guidColumn) AS \(columns.guid), \(associatedGuidColumn) AS \(columns.associatedGUID),
              \(associatedTypeColumn) AS \(columns.associatedType),
+             \(associatedEmojiColumn) AS \(columns.associatedEmoji),
              (SELECT COUNT(*) FROM message_attachment_join maj WHERE maj.message_id = m.ROWID) AS \(columns.attachments),
              \(bodyColumn) AS \(columns.body),
              \(threadOriginatorColumn) AS \(columns.threadOriginatorGUID),
