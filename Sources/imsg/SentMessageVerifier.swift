@@ -88,14 +88,34 @@ enum SentMessageVerifier {
   ) throws -> Message? {
     let verificationChatID = try chatID ?? self.verificationChatID(store: store, options: options)
     guard let verificationChatID else { return nil }
+    var chatIDs = [verificationChatID]
+    if options.usedDirectParticipantRecovery, let target = options.directParticipantTarget {
+      let prefix = target.service == .sms ? "SMS" : "iMessage"
+      for guid in [target.chatGUID, "\(prefix);-;\(target.recipient)", "any;-;\(target.recipient)"]
+      {
+        guard let chat = try store.chatInfo(matchingExactGUID: guid),
+          chat.identifier == target.recipient, chat.accountID == target.accountID,
+          try store.participants(chatID: chat.id) == [target.recipient]
+        else { continue }
+        if !chatIDs.contains(chat.id) { chatIDs.append(chat.id) }
+      }
+    }
 
     if options.text.isEmpty, !options.attachmentPath.isEmpty {
       return try store.sentAttachmentReceipt(
-        matchingPath: options.attachmentPath, chatID: verificationChatID, since: date,
+        matchingPath: options.attachmentPath, chatIDs: chatIDs, since: date,
         service: options.service)
     }
-    return try store.latestSentMessage(
-      matchingText: options.text, chatID: verificationChatID, since: date, service: options.service)
+    var receipt: Message?
+    for candidateID in chatIDs {
+      if let candidate = try store.latestSentMessage(
+        matchingText: options.text, chatID: candidateID, since: date, service: options.service)
+      {
+        if let receipt, receipt.rowID != candidate.rowID { return nil }
+        receipt = candidate
+      }
+    }
+    return receipt
   }
 
   static func verificationChatID(store: MessageStore, options: MessageSendOptions) throws -> Int64?

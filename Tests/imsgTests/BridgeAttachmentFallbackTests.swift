@@ -12,6 +12,7 @@ private func attachmentValues(
   var options: [String: [String]] = [
     "chat": ["iMessage;-;+15551234567"],
     "file": ["/tmp/photo.jpg"],
+    "db": ["/nonexistent/imsg-fixture.db"],
     "transport": [transport],
   ]
   if let replyTo { options["replyTo"] = [replyTo] }
@@ -110,4 +111,30 @@ func attachmentExplicitBridgeAndRepliesRetainNoFallbackPolicy() async {
     }
     #expect(!appleScriptCalled)
   }
+}
+
+@Test(arguments: ["auto", "applescript"], [false, true])
+func attachmentFallbackSuppliesVerifiedDirectParticipant(transport: String, direct: Bool)
+  async throws
+{
+  let path = try direct ? CommandTestDatabase.makePathDirectChat() : CommandTestDatabase.makePath()
+  let chat = direct ? "iMessage;-;+123" : "iMessage;+;chat123"
+  let values = ParsedValues(
+    positional: [],
+    options: [
+      "chat": [chat], "file": ["/synthetic/photo.jpg"], "transport": [transport], "db": [path],
+    ],
+    flags: [])
+  var captured: MessageSendOptions?
+  _ = try await StdoutCapture.capture {
+    try await SendAttachmentCommand.run(
+      values: values, runtime: RuntimeOptions(parsedValues: values),
+      invokeBridge: { _, _ in throw IMsgBridgeError.bridgeNotReady("synthetic unavailable helper")
+      },
+      stageAttachment: { $0 }, sendMessage: { captured = $0 })
+  }
+  #expect(captured?.chatGUID == chat)
+  #expect(captured?.directParticipantTarget?.recipient == (direct ? "+123" : nil))
+  #expect(
+    captured?.directParticipantTarget?.accountID == (direct ? "iMessage;+;me@icloud.com" : nil))
 }

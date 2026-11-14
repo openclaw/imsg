@@ -92,7 +92,7 @@ import Testing
 
   @Test
   func staleDirectChatUsesParticipantBeforeDispatch() throws {
-    #expect(try runDirectChatScript() == "IMSG_RESULT\tok\tcompleted\t0|1|participant")
+    #expect(try runDirectChatScript() == "IMSG_RESULT\tok\trecovered\t0|1|participant")
   }
 
   @Test
@@ -103,10 +103,10 @@ import Testing
   @Test
   func staleDirectChatSendsTextAndAttachmentOnceEach() throws {
     #expect(
-      try runDirectChatScript(attachment: true) == "IMSG_RESULT\tok\tcompleted\t0|2|participant")
+      try runDirectChatScript(attachment: true) == "IMSG_RESULT\tok\trecovered\t0|2|participant")
     #expect(
       try runDirectChatScript(text: "", attachment: true)
-        == "IMSG_RESULT\tok\tcompleted\t0|1|participant")
+        == "IMSG_RESULT\tok\trecovered\t0|1|participant")
   }
 
   @Test

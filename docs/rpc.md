@@ -599,14 +599,19 @@ Params are the text-send subset of `send`, plus:
 - `attempt_id` (UUID string, required) — becomes the outgoing `IMMessage` GUID. Input is case-insensitive; the helper and response use Apple's canonical uppercase UUID form.
 
 Attachments are rejected. The method is advertised by `imsg status --json`
-only when the running injected helper reports caller-owned GUID preservation
+only when the running injected helper reports caller-owned GUID initialization
 and reservation support; the RPC method is usable only while the Messages
 database is also readable. IDs already present in message history or reserved
 by another tracked send are rejected
-before dispatch. On success, `attempt_id`, `guid`, and `message_id` all identify
-the exact same message. If the RPC response is lost, query `message.send_status`
-with that UUID instead of matching message history by recipient, text, or
-timestamp. The UUID is a correlation marker, not authorization to read or mutate
+before dispatch. After the helper acknowledges the request, the RPC waits up to
+eight seconds for a new outgoing row with that exact UUID to join the target
+chat. On success, `attempt_id`, `guid`, and `message_id` identify that locally
+persisted message; success does not imply remote delivery. If Messages rewrites
+the GUID or the receipt cannot be verified, the RPC returns `may_have_completed`
+with `retry_safe: false` instead of claiming success. It never guesses a
+replacement identity from similar text or timestamps. If the RPC response is
+lost, query `message.send_status` with the original UUID; a missing receipt is
+not permission to resend. The UUID is a correlation marker, not authorization to read or mutate
 a message.
 
 Direct `to` sends and explicit `chat_identifier` / `chat_guid` targets remain

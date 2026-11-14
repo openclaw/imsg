@@ -25,6 +25,7 @@ public struct MessageSendOptions: Sendable {
   public var chatGUID: String
   public var allowSMSFallback: Bool
   public var directParticipantTarget: DirectParticipantTarget?
+  package var usedDirectParticipantRecovery = false
 
   public init(
     recipient: String,
@@ -51,7 +52,7 @@ public struct MessageSendOptions: Sendable {
 
 public struct MessageSender {
   private let normalizer: PhoneNumberNormalizer
-  private let runner: (String, [String]) throws -> Void
+  private let runner: (String, [String]) throws -> Bool
   private let attachmentsSubdirectoryProvider: () -> URL
 
   public init() {
@@ -62,7 +63,16 @@ public struct MessageSender {
 
   init(runner: @escaping (String, [String]) throws -> Void) {
     self.normalizer = PhoneNumberNormalizer()
-    self.runner = runner
+    self.runner = { source, arguments in
+      try runner(source, arguments)
+      return false
+    }
+    self.attachmentsSubdirectoryProvider = MessageSender.defaultAttachmentsSubdirectory
+  }
+
+  init(routeRunner: @escaping (String, [String]) throws -> Bool) {
+    self.normalizer = PhoneNumberNormalizer()
+    self.runner = routeRunner
     self.attachmentsSubdirectoryProvider = MessageSender.defaultAttachmentsSubdirectory
   }
 
@@ -71,7 +81,10 @@ public struct MessageSender {
     attachmentsSubdirectoryProvider: @escaping () -> URL
   ) {
     self.normalizer = PhoneNumberNormalizer()
-    self.runner = runner
+    self.runner = { source, arguments in
+      try runner(source, arguments)
+      return false
+    }
     self.attachmentsSubdirectoryProvider = attachmentsSubdirectoryProvider
   }
 
@@ -91,6 +104,7 @@ public struct MessageSender {
         "Sending requires Messages.app automation and is only supported on macOS.")
     #else
       var resolved = options
+      resolved.usedDirectParticipantRecovery = false
       let requestedService = resolved.service
       let chatTarget = resolveChatTarget(&resolved)
       let useChat = !chatTarget.isEmpty
@@ -200,11 +214,16 @@ public struct MessageSender {
     }
 
     do {
-      try runner(script, arguments(forService: resolved.service))
-      return resolved
+      let recovered = try runner(script, arguments(forService: resolved.service))
+      var sent = resolved
+      if recovered, let directTarget {
+        sent.usedDirectParticipantRecovery = true
+        sent.service = directTarget.service
+      }
+      return sent
     } catch let failure as DeliveryFailure {
       guard smsFallbackEligible, failure.retrySafe else { throw failure }
-      try runner(script, arguments(forService: .sms, forceBuddy: true))
+      _ = try runner(script, arguments(forService: .sms, forceBuddy: true))
       var fallback = resolved
       fallback.service = .sms
       fallback.chatGUID = ""
@@ -218,6 +237,7 @@ public struct MessageSender {
     return """
       on run argv
           set dispatchPhase to "pre_dispatch"
+          set deliveryRoute to "completed"
           try
           set theRecipient to item 1 of argv
           set theMessage to item 2 of argv
@@ -246,6 +266,7 @@ public struct MessageSender {
                           if (service type of targetAccount) is not SMS then error number -1728
                       end if
                       set targetChat to get buddy directRecipient of targetAccount
+                      set deliveryRoute to "recovered"
                   end try
                   if theMessage is not "" then
                       set dispatchPhase to "dispatch_started"
@@ -275,7 +296,7 @@ public struct MessageSender {
                   end if
               end if
           end tell
-          return "IMSG_RESULT" & tab & "ok" & tab & "completed" & tab & "0"
+          return "IMSG_RESULT" & tab & "ok" & tab & deliveryRoute & tab & "0"
           on error errorMessage number errorNumber
           if dispatchPhase is "pre_dispatch" then
               return "IMSG_RESULT" & tab & "failure" & tab & "not_started" & tab & (my asciiNumber(errorNumber))
@@ -322,9 +343,9 @@ public struct MessageSender {
     return trimmed.rangeOfCharacter(from: allowed.inverted) == nil
   }
 
-  private static func runAppleScript(source: String, arguments: [String]) throws {
+  private static func runAppleScript(source: String, arguments: [String]) throws -> Bool {
     #if os(macOS)
-      try AppleScriptSendTransport.run(source: source, arguments: arguments)
+      return try AppleScriptSendTransport.run(source: source, arguments: arguments)
     #else
       _ = source
       _ = arguments

@@ -36,6 +36,8 @@ Errors during `send` still have an uncertain outcome and are never retried.
 This account-scoped recovery does not change service and is independent of
 `--no-sms-fallback`.
 
+When this recovery actually occurs, receipt verification also checks compatible direct-chat rows for that same participant and account. It still requires the effective message service and matching text or uniquely staged attachment path. Conflicting receipts remain uncertain. `send-attachment` uses the same verified participant recovery when it falls back to AppleScript.
+
 ## Group sends
 
 You'll typically want `--chat-id`:
@@ -106,7 +108,9 @@ seconds for the matching outgoing row. Text matching accepts canonically equival
 appears, `imsg` returns `may_have_completed` with no-retry guidance instead of
 reporting success. The lookup is scoped to the actual send route; after a safe SMS fallback, it verifies the SMS chat and reports that message's ID and service. A new recipient's chat must become visible before its text can be confirmed. Direct sends still retain the
 previous accepted behavior when the database is unavailable. Attachment-only
-verification is unchanged.
+verification requires a unique staged-path match across the eligible chats.
+
+Receipt matching does not provide a causal send-to-GUID guarantee. Identical concurrent text sends or matching messages synced from another device can be ambiguous. Text and file parts use separate AppleScript send actions rather than one atomic send.
 
 The [JSON-RPC `send` method](rpc.md#send) includes the rowid and GUID of the inserted message when available. RPC `send` also accepts `transport` (`auto`, `bridge`, or `applescript`) for callers that want to prefer or require the IMCore bridge.
 
@@ -142,9 +146,9 @@ Custom emoji tapbacks can be *read* in `watch --reactions` output, but `react` r
 
 ## Outgoing routing — what you can and can't control
 
-`imsg` reports per-chat routing diagnostics — `account_id`, `account_login`, `last_addressed_handle`, and per-message `destination_caller_id`. They tell you which Apple ID and which of your numbers Messages routed through.
+`imsg` reports per-chat routing diagnostics — `account_id`, `account_login`, `last_addressed_handle`, and per-message `destination_caller_id`. These are observations of stored chat/message routing metadata; they do not expose the currently selected outgoing alias or causally identify the alias used by a specific AppleScript send.
 
-You cannot use `send` to *force* a specific outgoing number when several phone numbers share one Apple ID. AppleScript's `send` has no `from` or account selector. The fields are diagnostic, not steering. If you need to force a specific number, change the default in Messages' settings.
+You cannot use `send` to *force* a specific outgoing number when several phone numbers share one Apple ID. The CLI does not expose a `from` selector, and selecting an iMessage service does not select a phone alias. The fields are diagnostic, not steering. If you need to force a specific number, change the default in Messages' settings.
 
 ## What requires what
 
