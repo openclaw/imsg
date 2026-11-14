@@ -5,7 +5,7 @@ enum AppleScriptSendTransport {
   /// the child is always bounded.
   static let timeout: TimeInterval = IMsgBridgeProtocol.defaultSendResponseTimeout
 
-  static func run(source: String, arguments: [String]) throws {
+  static func run(source: String, arguments: [String]) throws -> Bool {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
     process.arguments = ["-l", "AppleScript", "-"] + arguments
@@ -77,7 +77,9 @@ enum AppleScriptSendTransport {
     let output = (try? String(contentsOf: stdoutURL, encoding: .utf8)) ?? ""
     switch interpret(output) {
     case .success:
-      return
+      return false
+    case .recovered:
+      return true
     case .failure(let disposition, let detail):
       throw failure(disposition, detail)
     }
@@ -94,6 +96,7 @@ enum AppleScriptSendTransport {
       )
     }
     if fields[1] == "ok", fields[2] == "completed" { return .success }
+    if fields[1] == "ok", fields[2] == "recovered" { return .recovered }
     let detail = "Messages automation failed with AppleScript error \(fields[3])."
     switch fields[2] {
     case DeliveryDisposition.notStarted.rawValue:
@@ -120,5 +123,6 @@ enum AppleScriptSendTransport {
 
 enum AppleScriptTransportResult: Equatable {
   case success
+  case recovered
   case failure(DeliveryDisposition, String)
 }

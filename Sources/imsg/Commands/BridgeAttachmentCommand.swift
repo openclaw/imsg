@@ -100,12 +100,18 @@ enum SendAttachmentCommand {
       }
     }
 
+    let store = try? MessageStore(path: values.option("db") ?? MessageStore.defaultPath)
+    let directTarget = ChatTargetResolver.directParticipantTarget(
+      store: store,
+      resolvedTarget: ResolvedChatTarget(chatIdentifier: "", chatGUID: chat),
+      directChatInfo: nil)
     try sendMessage(
       MessageSendOptions(
         recipient: "",
         text: "",
         attachmentPath: expanded,
-        chatGUID: chat
+        chatGUID: chat,
+        directParticipantTarget: directTarget
       ))
     BridgeOutput.emit(
       ["success": true, "transport": "applescript"],

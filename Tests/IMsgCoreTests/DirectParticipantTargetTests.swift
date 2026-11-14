@@ -48,3 +48,25 @@ func directParticipantTargetIsBoundToOriginalChat() throws {
       directParticipantTarget: target))
   #expect(Array(captured[7...]) == ["", "", ""])
 }
+
+@Test(arguments: [false, true])
+func directParticipantRecoveryReportsTheEffectiveRoute(recovered: Bool) throws {
+  let target = try #require(participantTarget())
+  let sender = MessageSender(routeRunner: { _, _ in recovered })
+  let sent = try sender.sendResolvingRoute(
+    MessageSendOptions(
+      recipient: "", text: "fixture", chatGUID: target.chatGUID, directParticipantTarget: target))
+  #expect(sent.usedDirectParticipantRecovery == recovered)
+  #expect(sent.service == (recovered ? .imessage : .auto))
+  #expect(AppleScriptSendTransport.interpret("IMSG_RESULT\tok\trecovered\t0") == .recovered)
+}
+
+@Test
+func directParticipantRecoveryDoesNotCarryOverToAnotherChat() throws {
+  let target = try #require(participantTarget())
+  var options = MessageSendOptions(
+    recipient: "", text: "fixture", chatGUID: "iMessage;+;group", directParticipantTarget: target)
+  options.usedDirectParticipantRecovery = true
+  let sent = try MessageSender(routeRunner: { _, _ in true }).sendResolvingRoute(options)
+  #expect(!sent.usedDirectParticipantRecovery)
+}
