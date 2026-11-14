@@ -15,7 +15,7 @@ private func trackedRequest(id: String, attemptID: String = trackedAttemptID) ->
 }
 
 @Test
-func rpcTrackedSendForwardsCallerOwnedGuidAndReturnsExactIdentity() async throws {
+func rpcTrackedSendForwardsCallerOwnedGuidAndReturnsCanonicalUppercaseIdentity() async throws {
   let store = try CommandTestDatabase.makeStoreForRPCDirectChat()
   let output = TestRPCOutput()
   var appleScriptCalled = false
@@ -37,7 +37,7 @@ func rpcTrackedSendForwardsCallerOwnedGuidAndReturnsExactIdentity() async throws
       }
       capturedParams = params
       return [
-        "messageGuid": trackedAttemptID,
+        "messageGuid": trackedAttemptID.uppercased(),
         "chatGuid": "iMessage;-;+123",
         "service": "iMessage",
       ]
@@ -46,16 +46,16 @@ func rpcTrackedSendForwardsCallerOwnedGuidAndReturnsExactIdentity() async throws
   )
 
   await server.handleLineForTesting(
-    trackedRequest(id: "tracked", attemptID: trackedAttemptID.uppercased()))
+    trackedRequest(id: "tracked", attemptID: trackedAttemptID))
 
   #expect(appleScriptCalled == false)
   #expect(capturedActions == [.status, .sendMessage])
-  #expect(capturedParams["clientMessageGuid"] as? String == trackedAttemptID)
+  #expect(capturedParams["clientMessageGuid"] as? String == trackedAttemptID.uppercased())
   #expect(capturedParams["message"] as? String == "once")
   let result = output.responses.first?["result"] as? [String: Any]
-  #expect(result?["attempt_id"] as? String == trackedAttemptID)
-  #expect(result?["guid"] as? String == trackedAttemptID)
-  #expect(result?["message_id"] as? String == trackedAttemptID)
+  #expect(result?["attempt_id"] as? String == trackedAttemptID.uppercased())
+  #expect(result?["guid"] as? String == trackedAttemptID.uppercased())
+  #expect(result?["message_id"] as? String == trackedAttemptID.uppercased())
 }
 
 @Test

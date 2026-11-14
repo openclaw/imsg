@@ -248,8 +248,10 @@ int main(void) {
             @"params": @{@"chatGuid": @"group-test", @"message": @"tracked",
                          @"clientMessageGuid": attempt}
         });
-        check([tracked[@"data"][@"messageGuid"] isEqual:attempt] && dispatchedMessage != nil,
-              @"Tracked group send retains the caller GUID through the v2 envelope");
+        NSString *canonicalAttempt = attempt.uppercaseString;
+        check([tracked[@"data"][@"messageGuid"] isEqual:canonicalAttempt]
+                  && [((IdentityMessage *)dispatchedMessage).guid isEqual:canonicalAttempt],
+              @"Tracked group send uses the canonical uppercase GUID through the v2 envelope");
         dispatchedMessage = nil;
         NSDictionary *rejected = processV2Envelope(@{
             @"id": @"missing-fixture", @"action": @"send-message",
