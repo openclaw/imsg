@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update PhoneNumberKit to 5.0.14 with phone-number metadata 9.0.43, and refresh the pinned CodeQL action.
+
 - Require an exact persisted outgoing GUID before `send.tracked` reports success; rewritten or missing identities now remain retry-unsafe uncertainty (#385, thanks @thurstonsand).
 
 - Recover stale direct-chat attachment targets and verify receipts in the recovered account-bound conversation without accepting conflicting matches (#388, #394, thanks @lockhartheavyindustries and @sukhdeepjohar).

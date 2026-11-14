@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/PhoneNumberKit/PhoneNumberKit.git",
       "state" : {
-        "revision" : "eae725a2e62eb2f291d8188dd457e2a7b28d5003",
-        "version" : "5.0.13"
+        "revision" : "ff40a615c71bf3e1785562c86f7e38bdea29660a",
+        "version" : "5.0.14"
       }
     },
     {
