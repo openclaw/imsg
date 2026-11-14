@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Report AppleScript send error numbers with an ASCII minus, so delivery results no longer carry U+2212 under locales such as sv_SE (thanks @niXta1).
+
 - Keep `send.tracked` message GUIDs in Apple's uppercase form, so tracked sends to SMS and RCS chats are delivered instead of staying unsent with error 4 (#390, thanks @thurstonsand).
 
 - Report pre-dispatch rich-link refusals as retry-safe `not_started` failures (#387, thanks @SebTardif).
