@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Report pre-dispatch rich-link refusals as retry-safe `not_started` failures (#387, thanks @SebTardif).
+
 ## 0.21.0 - 2026-11-05
 
 **Highlights:** Mention people in rich messages, position stickers on message bubbles, and explicitly set your Messages Name & Photo, with fixes for typing events, subjects, delivery verification, and recoverable deletion.
