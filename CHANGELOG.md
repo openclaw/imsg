@@ -2,9 +2,13 @@
 
 ## Unreleased
 
-- Update PhoneNumberKit to 5.0.14 with phone-number metadata 9.0.43, and refresh the pinned CodeQL action.
+## 0.21.1 - 2026-11-15
+
+**Highlights:** Restore tracked SMS and RCS delivery, verify recovered attachment receipts, and read custom emoji reactions accurately.
 
 - Require an exact persisted outgoing GUID before `send.tracked` reports success; rewritten or missing identities now remain retry-unsafe uncertainty (#385, thanks @thurstonsand).
+
+- Keep `send.tracked` message GUIDs in Apple's uppercase form, so tracked sends to SMS and RCS chats are delivered instead of staying unsent with error 4 (#390, thanks @thurstonsand).
 
 - Recover stale direct-chat attachment targets and verify receipts in the recovered account-bound conversation without accepting conflicting matches (#388, #394, thanks @lockhartheavyindustries and @sukhdeepjohar).
 
@@ -12,9 +16,9 @@
 
 - Report AppleScript send error numbers with an ASCII minus, so delivery results no longer carry U+2212 under locales such as sv_SE (thanks @niXta1).
 
-- Keep `send.tracked` message GUIDs in Apple's uppercase form, so tracked sends to SMS and RCS chats are delivered instead of staying unsent with error 4 (#390, thanks @thurstonsand).
-
 - Report pre-dispatch rich-link refusals as retry-safe `not_started` failures (#387, thanks @SebTardif).
+
+- Update PhoneNumberKit to 5.0.14 with phone-number metadata 9.0.43, and refresh the pinned CodeQL action.
 
 ## 0.21.0 - 2026-11-05
 
