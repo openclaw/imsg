@@ -80,7 +80,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "26.12.1"
+          node-version: "26.13.1"
       - name: Test Linux read core and standalone release archive
         run: scripts/check-linux.sh
 
@@ -108,7 +108,7 @@ jobs:
       helper-identifier: com.steipete.imsg.bridge-helper
       macos-archive-name: imsg-macos.zip
       linux-archive-name: imsg-linux-x86_64.tar.gz
-      swift-linux-image: swift:6.4.0-noble
+      swift-linux-image: swift:6.4.1-noble@sha256:6304481cf2717966b7ba175162e397ea2f2cc3161909f2b2a5cf40036079a0f7
       ci-check-events: '["push","pull_request","workflow_dispatch"]'
     secrets:
       MACOS_SIGNING_P12: ${{ secrets.MACOS_SIGNING_P12 }}
