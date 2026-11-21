@@ -7,7 +7,7 @@ if [[ "$(uname -s)" != "Linux" ]]; then
   exit 1
 fi
 
-sudo docker run --rm -v "$ROOT:/workspace" -w /workspace swift:6.4.0-noble bash -euc '
+sudo docker run --rm -v "$ROOT:/workspace" -w /workspace swift:6.4.1-noble@sha256:6304481cf2717966b7ba175162e397ea2f2cc3161909f2b2a5cf40036079a0f7 bash -euc '
   apt-get update
   apt-get install -y --no-install-recommends python3
   scripts/generate-version.sh
