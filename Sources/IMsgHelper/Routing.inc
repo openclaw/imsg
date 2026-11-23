@@ -65,6 +65,10 @@ static NSDictionary* dispatchAction(NSInteger legacyId, NSString *action,
         return handleCheckIMessageAvailability(legacyId, params);
     if ([action isEqualToString:@"download-purged-attachment"])
         return handleDownloadPurgedAttachment(legacyId, params);
+    if ([action isEqualToString:@"get-icloud-sync-status"])
+        return handleGetICloudSyncStatus(legacyId, params);
+    if ([action isEqualToString:@"start-icloud-sync"])
+        return handleStartICloudSync(legacyId, params);
     return errorResponse(legacyId,
         [NSString stringWithFormat:@"Unknown action: %@", action]);
 }

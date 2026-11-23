@@ -107,6 +107,10 @@ extension RPCServer {
         try await handleNamePhotoSet(params: params, id: id)
       case .handlesCheck:
         try await handleHandlesCheck(params: params, id: id)
+      case .icloudStatus:
+        try await handleICloudStatus(params: params, id: id)
+      case .icloudSync:
+        try await handleICloudSync(params: params, id: id)
       }
     } catch is CancellationError {
       return .completed

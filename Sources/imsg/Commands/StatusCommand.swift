@@ -162,6 +162,7 @@ enum StatusCommand {
         )
         StdoutWriter.writeLine("  Introspect: imsg account, whois, nickname")
         StdoutWriter.writeLine("  Name & Photo: imsg name-photo status|share|set")
+        StdoutWriter.writeLine("  Messages in iCloud: imsg icloud status|sync")
         StdoutWriter.writeLine("  Local DB: imsg search")
         StdoutWriter.writeLine("  Watch with events: imsg watch --bb-events")
       } else {

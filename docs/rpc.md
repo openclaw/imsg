@@ -100,13 +100,13 @@ OpenClaw supervises `imsg` as a child process that exits cleanly when stdin clos
 
 Request execution uses three independent lanes:
 
-- Message, chat, group, poll, contact-sharing, typing, and read-state mutations
-  run through one FIFO worker. A mutation includes validation, staging, bridge
+- Message, chat, group, poll, contact-sharing, typing, read-state, and iCloud
+  sync mutations run through one FIFO worker. A mutation includes validation, staging, bridge
   work, its response, and any post-send verification before the next mutation
   starts.
 - Read-only status, history, chat, statistics, cursor, scheduled-message, send-status,
-  handle-check, and contact-sharing inspection requests run with up to four in
-  flight. Their responses may complete out of input order.
+  handle-check, contact-sharing inspection, and iCloud sync status requests run
+  with up to four in flight. Their responses may complete out of input order.
 - Initialize, parse errors, unknown methods, and watch subscribe/unsubscribe control are
   independent of both work lanes, so unsubscribe does not wait for a send or a
   saturated read lane.
@@ -196,7 +196,7 @@ independently of bridge readiness because they retain their shipped
 fallback/activation behavior. Bridge-only methods require a successful
 non-launching v2 status probe and are conservatively gated by the selectors the
 bridge reports (for example stickers, polls, editing, unsend, chat deletion,
-and Name & Photo). Aliases appear together. `supported_methods` is the compiled
+Name & Photo, and Messages in iCloud sync). Aliases appear together. `supported_methods` is the compiled
 union for protocol negotiation and does not claim current readiness.
 
 When the database is ready, `database.features` exposes feature-level booleans,
@@ -749,6 +749,38 @@ Result:
   "service": "iMessage"
 }
 ```
+
+### `icloud.status` and `icloud.sync`
+
+Read or start a Messages in iCloud sync through the IMCore bridge. Messages
+only accepts these calls from inside Messages.app, so both require
+`imsg launch`. Neither accepts params.
+
+`icloud.status` is read-only. `icloud.sync` starts a user-initiated sync and
+returns immediately, without waiting for the sync to finish. It runs on the mutation lane because a sync can
+change local history, such as removing chats deleted on another device.
+
+```json
+{"jsonrpc":"2.0","id":"sync","method":"icloud.sync"}
+{"jsonrpc":"2.0","id":"sync","result":{"ok":true,"requested":true,"syncing":true,"last_sync_at":"2026-11-03T07:06:12Z"}}
+{"jsonrpc":"2.0","id":"status","method":"icloud.status"}
+{"jsonrpc":"2.0","id":"status","result":{"ok":true,"syncing":false,"last_sync_at":"2026-11-03T16:17:23Z"}}
+```
+
+- `syncing` is whether Messages reports a sync in progress when the response
+  is written. It can still be `false` just after `icloud.sync` while the sync
+  is being scheduled.
+- `last_sync_at` is when the last sync finished, as ISO 8601, or `null` when
+  Messages has no record of one.
+- `requested` (sync only) means Messages accepted the request. It does not
+  prove that a sync ran or will finish.
+
+To wait for a sync, poll `icloud.status` until `syncing` is `false` and
+`last_sync_at` is later than its value before the sync. Status advertises
+`icloud.status` when the helper reports `selectors.icloudSyncStatus`, and
+`icloud.sync` when it reports `selectors.icloudSync`. On a macOS version
+without those selectors the helper refuses the call; `icloud.sync` then fails
+with `disposition: "not_started"` and `retry_safe: true`.
 
 ### Native polls
 

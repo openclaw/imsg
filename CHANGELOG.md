@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `imsg icloud status|sync` and the `icloud.status` / `icloud.sync` RPC methods to read and start a Messages in iCloud sync through the bridge, advertised by the `icloudSyncStatus` and `icloudSync` helper selectors (#382).
+
 ## 0.21.1 - 2026-11-15
 
 **Highlights:** Restore tracked SMS and RCS delivery, verify recovered attachment receipts, and read custom emoji reactions accurately.

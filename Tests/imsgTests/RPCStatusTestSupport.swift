@@ -57,6 +57,8 @@ func fullRPCStatusBridgeSelectors() -> [String: Bool] {
     "removeParticipant": true,
     "leaveChat": true,
     "checkIMessageAvailability": true,
+    "icloudSyncStatus": true,
+    "icloudSync": true,
     "editMessageItem": true,
     "retractMessagePart": true,
     "deleteChat": true,

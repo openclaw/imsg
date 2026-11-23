@@ -97,11 +97,16 @@ public enum BridgeAction: String, Sendable, CaseIterable {
   case checkImessageAvailability = "check-imessage-availability"
   case downloadPurgedAttachment = "download-purged-attachment"
 
+  // Messages in iCloud
+  case getICloudSyncStatus = "get-icloud-sync-status"
+  case startICloudSync = "start-icloud-sync"
+
   /// Whether invoking this action can mutate Messages state.
   public var isMutation: Bool {
     switch self {
     case .ping, .status, .listChats, .checkTypingStatus, .searchMessages, .getAccountInfo,
-      .getNicknameInfo, .shouldOfferNicknameSharing, .checkImessageAvailability:
+      .getNicknameInfo, .shouldOfferNicknameSharing, .checkImessageAvailability,
+      .getICloudSyncStatus:
       return false
     default:
       return true

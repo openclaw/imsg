@@ -17,7 +17,7 @@ func commandRouterIncludesAllBridgeCommands() {
     "chat-create", "chat-name", "chat-photo",
     "chat-add-member", "chat-remove-member",
     "chat-leave", "chat-delete", "chat-mark",
-    "account", "whois", "nickname",
+    "account", "whois", "nickname", "icloud",
   ]
   let registered = Set(router.specs.map { $0.name })
   for name in expected {

@@ -218,6 +218,17 @@ imsg name-photo set --first-name Ada --photo ~/Pictures/ada.jpg --sharing on
 
 `status` reports whether Messages would offer its native sharing action; it is not a durable record of prior sharing. `share` discloses the local profile to every chat participant and reports a request, not a delivery receipt. Call it only after explicit user confirmation of the destination. `set` replaces that local profile and reports `stored: true` once Messages holds the new record; use `share` to push it into a chat.
 
+## Messages in iCloud
+
+Check the Messages in iCloud sync state, or start a sync:
+
+```bash
+imsg icloud status
+imsg icloud sync
+```
+
+`sync` starts a user-initiated Messages in iCloud sync, which pulls down messages and deletions made on your other devices. It returns as soon as Messages accepts the request; run `status` until `syncing` is false and `last_sync_at` has advanced to see when it finishes. Messages refuses these calls from outside Messages.app, so they always go through the bridge. `status` requires `selectors.icloudSyncStatus` and `sync` requires `selectors.icloudSync`; without them the command fails instead of reporting a sync that never started.
+
 ## Live bridge events
 
 Merge bridge-pushed typing and alias events into the normal watch stream:
