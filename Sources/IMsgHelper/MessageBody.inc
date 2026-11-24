@@ -123,8 +123,29 @@ static NSAttributedString *buildPollBreadcrumbAttributed(void) {
     return [[NSAttributedString alloc] initWithString:placeholder attributes:attrs];
 }
 
+/// Text effects that animate a range of words, keyed by the names in the
+/// Messages effect picker plus three that Messages can play but the picker does
+/// not offer (stretch, squish, somersault). Values are the IMTextEffectType
+/// numbers that `IMTextEffectTypeFromName` returns on macOS 15 and later, stored
+/// under `__kIMTextEffectAttributeName`. The picker's Shake, Nod and Ripple are
+/// shakeHorizontal, shakeVertical and bounce inside IMCore.
+static NSDictionary<NSString *, NSNumber *> *textEffectTypes(void) {
+    static NSDictionary<NSString *, NSNumber *> *types;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        types = @{
+            @"stretch": @2, @"squish": @3, @"ripple": @4, @"big": @5,
+            @"bloom": @6, @"somersault": @7, @"nod": @8, @"shake": @9,
+            @"jitter": @10, @"small": @11, @"explode": @12
+        };
+    });
+    return types;
+}
+
 /// Apply a JSON-shape array of text-formatting ranges to `text`. Each entry is
 /// `{ "start": int, "length": int, "styles": ["bold"|"italic"|"underline"|"strikethrough", ...] }`.
+/// A style may also name one text effect from `textEffectTypes()`; a range
+/// carries at most one effect, so give each animated span its own range.
 /// macOS 15+ only — earlier OSes silently degrade to plain text (the private
 /// IMText* attribute names don't exist before Sequoia). Attribute names and
 /// range shape are based on BlueBubbles helper PR #50; implementation is local.
@@ -177,6 +198,14 @@ static NSMutableAttributedString *buildFormattedAttributed(NSString *text,
         }
         if ([styles containsObject:@"strikethrough"]) {
             [attr addAttribute:@"__kIMTextStrikethroughAttributeName" value:@1 range:range];
+        }
+        for (id style in styles) {
+            NSNumber *effect = [style isKindOfClass:[NSString class]]
+                ? textEffectTypes()[style]
+                : nil;
+            if (effect) {
+                [attr addAttribute:@"__kIMTextEffectAttributeName" value:effect range:range];
+            }
         }
     }
     return attr;

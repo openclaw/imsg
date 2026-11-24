@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Animate words with Messages text effects: a `--format` range may name `big`, `small`, `shake`, `nod`, `explode`, `ripple`, `bloom` or `jitter`, and also `stretch`, `squish` or `somersault`, which Messages plays but its picker hides (macOS 15+).
+
 ## 0.21.1 - 2026-11-15
 
 **Highlights:** Restore tracked SMS and RCS delivery, verify recovered attachment receipts, and read custom emoji reactions accurately.
