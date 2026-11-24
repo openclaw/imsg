@@ -32,6 +32,9 @@ enum SendRichCommand {
           .make(
             label: "formatFile", names: [.long("format-file")],
             help: "path to JSON file containing the format ranges array"),
+          .make(
+            label: "sendAt", names: [.long("send-at")],
+            help: "ISO8601 time for Messages to deliver a text (Send Later, macOS 15+)"),
         ],
         flags: [
           .make(
@@ -44,6 +47,7 @@ enum SendRichCommand {
       "imsg send-rich --chat 'iMessage;-;+15551234567' --text 'hi'",
       "imsg send-rich --chat 'iMessage;-;+15551234567' --reply-to ABCD --file ~/Desktop/pic.jpg",
       "imsg send-rich --chat 'iMessage;-;+15551234567' --text 'BOOM' --effect impact",
+      "imsg send-rich --chat 'iMessage;-;+15551234567' --text 'morning' --send-at 2026-01-02T09:00:00-08:00",
       "imsg send-rich --chat 'iMessage;-;+15551234567' --text 'pew pew' --effect lasers",
       "imsg send-rich --chat 'iMessage;-;+15551234567' --url https://imsg.sh",
       "imsg send-rich --chat ... --text 'hello world' --format '[{\"start\":0,\"length\":5,\"styles\":[\"bold\"]}]'",
@@ -134,6 +138,15 @@ enum SendRichCommand {
         throw ParsedValuesError.invalidOption("format")
       }
       params["textFormatting"] = ranges
+    }
+    if let raw = values.option("sendAt") {
+      guard file.isEmpty, richLinkURL == nil else {
+        throw ParsedValuesError.invalidOption("send-at")
+      }
+      guard let sendAt = ISO8601Parser.parse(raw) else {
+        throw IMsgError.invalidISODate(raw)
+      }
+      params["sendAt"] = sendAt.timeIntervalSince1970
     }
 
     if !file.isEmpty {

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Schedule a text with Messages' own Send Later: `imsg send-rich --send-at <ISO 8601>` holds the message in Messages and delivers it at that time, up to 14 days ahead (macOS 15+).
+
 ## 0.21.1 - 2026-11-15
 
 **Highlights:** Restore tracked SMS and RCS delivery, verify recovered attachment receipts, and read custom emoji reactions accurately.
