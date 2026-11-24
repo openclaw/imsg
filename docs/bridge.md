@@ -35,7 +35,14 @@ imsg send-rich --chat 'iMessage;-;+15551234567' --text 'hello world' \
 
 `--effect` also takes a short name. The bubble effects are `impact` (Slam), `loud`, `gentle`, and `invisibleink`. The screen effects are `echo`, `spotlight`, `balloons`, `confetti`, `love`, `lasers`, `fireworks`, `shootingstar`, and `celebration` or `sparkles` (Celebration). A value that starts with `com.apple.` is sent unchanged.
 
-Formatting requires macOS 15 or newer. Multipart messages accept a JSON array of text parts:
+A format range can also animate its words with one text effect: `big`, `small`, `shake`, `nod`, `explode`, `ripple`, `bloom` and `jitter` are the effects in the Messages picker, and `stretch`, `squish` and `somersault` play on the recipient's device although the picker does not offer them. Effects combine with the other styles; give each animated span its own range, since a range carries one effect. An unknown name leaves the range plain.
+
+```bash
+imsg send-rich --chat 'iMessage;-;+15551234567' --text 'that went well' \
+  --format '[{"start":10,"length":4,"styles":["bloom","bold"]}]'
+```
+
+Formatting and text effects require macOS 15 or newer on the sending Mac, and the recipient sees the animation on iOS 18, iPadOS 18 or macOS 15 and later. Multipart messages accept a JSON array of text parts:
 
 ```bash
 imsg send-multipart --chat 'iMessage;+;chat0000' \
