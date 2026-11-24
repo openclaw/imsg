@@ -11,6 +11,7 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
     id textFormattingValue = params[@"textFormatting"];
     id mentionsValue = params[@"mentions"];
     id clientMessageGuidValue = params[@"clientMessageGuid"];
+    id sendAtValue = params[@"sendAt"];
     if (![chatGuidValue isKindOfClass:[NSString class]] ||
         (messageValue && ![messageValue isKindOfClass:[NSString class]]) ||
         (effectIdValue && ![effectIdValue isKindOfClass:[NSString class]]) ||
@@ -24,7 +25,8 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
         (textFormattingValue && ![textFormattingValue isKindOfClass:[NSArray class]]) ||
         (mentionsValue && ![mentionsValue isKindOfClass:[NSArray class]]) ||
         (clientMessageGuidValue &&
-         ![clientMessageGuidValue isKindOfClass:[NSString class]])) {
+         ![clientMessageGuidValue isKindOfClass:[NSString class]]) ||
+        (sendAtValue && ![sendAtValue isKindOfClass:[NSNumber class]])) {
         return errorResponse(requestId, @"Invalid send-message parameter types");
     }
 
@@ -55,6 +57,20 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
 
     if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
     if (!message) message = @"";
+    NSDate *sendAt = nil;
+    if (sendAtValue) {
+        sendAt = [NSDate dateWithTimeIntervalSince1970:[sendAtValue doubleValue]];
+        NSTimeInterval lead = [sendAt timeIntervalSinceNow];
+        if (lead <= 0 || lead > kSendLaterMaxLead) {
+            return errorResponseWithDisposition(requestId,
+                @"sendAt must be in the future and at most 14 days ahead", @"not_started");
+        }
+        if (richLinkPreview || effectId.length || selectedMessageGuid.length ||
+            mentions.count || clientMessageGuid.length) {
+            return errorResponseWithDisposition(requestId,
+                @"Send Later supports text, formatting and a subject only", @"not_started");
+        }
+    }
     if (clientMessageGuid.length && richLinkPreview) {
         return errorResponseWithDisposition(requestId,
             @"Caller-owned message GUIDs support text messages only", @"not_started");
@@ -215,6 +231,12 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
                                                 : nil,
                                               nil,
                                               parentItem);
+        } else if (sendAt) {
+            imMessage = buildScheduledIMMessage(body, subjectAttr, sendAt);
+            if (!imMessage) {
+                return errorResponseWithDisposition(requestId,
+                    @"Send Later is unavailable on this macOS", @"not_started");
+            }
         } else {
             imMessage = buildIMMessage(body, subjectAttr,
                                        effectId,
@@ -267,7 +289,7 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
                 @"not_started");
         }
 
-        if (gHasSendMessageReason && ddScan) {
+        if (gHasSendMessageReason && ddScan && !sendAt) {
             // Deferred-send path on macOS 13+: sleep 100ms, then call
             // `sendMessage:reason:` so the spam filter can run on the body.
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC),
@@ -293,11 +315,12 @@ static NSDictionary *handleSendMessage(NSInteger requestId, NSDictionary *params
         NSMutableDictionary *response = [@{
             @"chatGuid": chatGuid,
             @"messageGuid": guid ?: @"",
-            @"queued": @(ddScan)
+            @"queued": @(ddScan && !sendAt)
         } mutableCopy];
         NSString *serviceName = serviceNameForChat(chat, chatGuid);
         if (serviceName.length) response[@"service"] = serviceName;
         if (richLinkPreview) response[@"richLinkImageUsed"] = @(richLinkImageUsed);
+        if (sendAt) response[@"sendAt"] = @([sendAt timeIntervalSince1970]);
         return successResponse(requestId, response);
     } @catch (NSException *exception) {
         if (!richLinkTransferRegistered) {

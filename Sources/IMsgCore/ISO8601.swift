@@ -1,7 +1,7 @@
 import Foundation
 
-enum ISO8601Parser {
-  static func parse(_ value: String) -> Date? {
+public enum ISO8601Parser {
+  public static func parse(_ value: String) -> Date? {
     if value.isEmpty { return nil }
     let fractional = ISO8601DateFormatter()
     fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

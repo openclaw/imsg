@@ -35,7 +35,16 @@ imsg send-rich --chat 'iMessage;-;+15551234567' --text 'hello world' \
 
 `--effect` also takes a short name. The bubble effects are `impact` (Slam), `loud`, `gentle`, and `invisibleink`. The screen effects are `echo`, `spotlight`, `balloons`, `confetti`, `love`, `lasers`, `fireworks`, `shootingstar`, and `celebration` or `sparkles` (Celebration). A value that starts with `com.apple.` is sent unchanged.
 
-Formatting requires macOS 15 or newer. Multipart messages accept a JSON array of text parts:
+Formatting requires macOS 15 or newer.
+
+Hand a text to Messages' own Send Later with `--send-at` and an ISO 8601 time up to 14 days ahead. Messages holds the message and delivers it at that time even if `imsg` is no longer running; `imsg scheduled` lists what is waiting. Send Later takes text, formatting and a subject; replies, bubble or screen effects, attachments and rich links are refused before anything is sent. It needs macOS 15 or newer on the sending Mac.
+
+```bash
+imsg send-rich --chat 'iMessage;-;+15551234567' --text 'see you at nine' \
+  --send-at 2026-01-02T08:30:00-08:00
+```
+
+Multipart messages accept a JSON array of text parts:
 
 ```bash
 imsg send-multipart --chat 'iMessage;+;chat0000' \

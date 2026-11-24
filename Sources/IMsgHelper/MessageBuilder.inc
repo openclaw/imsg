@@ -85,6 +85,54 @@ static void applyNormalMessageThread(id message, NSString *threadIdentifier) {
 /// IMMessageItem has empty `bodyData`, which imagent silently drops. Try the
 /// IMMessageItem-first path first; fall back to the legacy initializer for
 /// older OSes that don't expose the modern item-construction selectors.
+/// Latest delivery date accepted for a Send Later message, matching the two
+/// weeks the Messages scheduling picker offers.
+static const NSTimeInterval kSendLaterMaxLead = 14 * 24 * 60 * 60;
+
+/// Build a text message that Messages holds and delivers at `sendAt` (Send
+/// Later, macOS 15+). Apple's own scheduled-message constructor returns a
+/// message whose time is the delivery date, with scheduleType 2 and
+/// scheduleState 1; this builds the same message through the normal
+/// initializer so the body keeps its formatting. Returns nil when this macOS
+/// cannot mark a message as scheduled, so the caller never sends it at once.
+static id buildScheduledIMMessage(NSAttributedString *body,
+                                  NSAttributedString *subject,
+                                  NSDate *sendAt) {
+    Class messageClass = NSClassFromString(@"IMMessage");
+    SEL initSel = @selector(initWithSender:time:text:messageSubject:fileTransferGUIDs:flags:error:guid:subject:balloonBundleID:payloadData:expressiveSendStyleID:);
+    if (!messageClass || ![messageClass instancesRespondToSelector:initSel] ||
+        ![messageClass instancesRespondToSelector:@selector(setScheduleType:)] ||
+        ![messageClass instancesRespondToSelector:@selector(setScheduleState:)]) {
+        return nil;
+    }
+    NSArray *noTransfers = @[];
+    unsigned long long flags = flagsForMessagePayload(subject, noTransfers, NO);
+    id m = [messageClass alloc];
+    NSMethodSignature *sig = [messageClass instanceMethodSignatureForSelector:initSel];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    [inv setSelector:initSel];
+    [inv setTarget:m];
+    id nilObj = nil;
+    [inv setArgument:&nilObj atIndex:2];           // sender
+    [inv setArgument:&sendAt atIndex:3];           // time: the delivery date
+    [inv setArgument:&body atIndex:4];             // text
+    [inv setArgument:&subject atIndex:5];          // messageSubject
+    [inv setArgument:&noTransfers atIndex:6];
+    [inv setArgument:&flags atIndex:7];
+    [inv setArgument:&nilObj atIndex:8];           // error
+    [inv setArgument:&nilObj atIndex:9];           // guid
+    [inv setArgument:&nilObj atIndex:10];          // subject string
+    [inv setArgument:&nilObj atIndex:11];          // balloonBundleID
+    [inv setArgument:&nilObj atIndex:12];          // payloadData
+    [inv setArgument:&nilObj atIndex:13];          // expressiveSendStyleID
+    [inv retainArguments];
+    id result = invokeReturningObject(inv);
+    if (!result) return nil;
+    ((void (*)(id, SEL, unsigned long long))objc_msgSend)(result, @selector(setScheduleType:), 2);
+    ((void (*)(id, SEL, unsigned long long))objc_msgSend)(result, @selector(setScheduleState:), 1);
+    return result;
+}
+
 static id buildIMMessage(NSAttributedString *body,
                          NSAttributedString *subject,
                          NSString *effectId,
