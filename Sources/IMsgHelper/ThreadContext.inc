@@ -76,10 +76,16 @@ static NSString *deriveThreadIdentifier(IMChat *chat, NSString *parentGuid,
         id materialized = normalizeFoundMessageItemWithChatContext(parentItem, context);
         if (materialized && materialized != parentItem) items = @[materialized];
     }
+    // Only message-part chat items carry a thread identity. IMCore raises on
+    // other items, such as a retracted part or an associated poll vote.
+    Class partClass = NSClassFromString(@"IMMessagePartChatItem");
     id chatItem = nil;
     if ([items isKindOfClass:[NSArray class]]) {
         SEL backingItemSel = NSSelectorFromString(@"_item");
+        id firstPart = nil;
         for (id candidate in (NSArray *)items) {
+            if (partClass && ![candidate isKindOfClass:partClass]) continue;
+            if (!firstPart) firstPart = candidate;
             id backingItem = [candidate respondsToSelector:backingItemSel]
                 ? [candidate performSelector:backingItemSel] : nil;
             NSString *candidateGuid = nil;
@@ -94,13 +100,13 @@ static NSString *deriveThreadIdentifier(IMChat *chat, NSString *parentGuid,
             }
         }
         if (!chatItem) {
-            chatItem = [(NSArray *)items firstObject];
+            chatItem = firstPart;
         }
-    } else {
+    } else if (!partClass || [items isKindOfClass:partClass]) {
         chatItem = items;
     }
     if (!chatItem) {
-        debugLog(@"deriveThreadIdentifier: parent has no chat items");
+        debugLog(@"deriveThreadIdentifier: parent has no message-part chat items");
         return nil;
     }
 
@@ -110,7 +116,14 @@ static NSString *deriveThreadIdentifier(IMChat *chat, NSString *parentGuid,
         debugLog(@"deriveThreadIdentifier: IMCreateThreadIdentifier… symbol not found");
         return nil;
     }
-    NSString *result = fn(chatItem);
+    NSString *result = nil;
+    @try {
+        result = fn(chatItem);
+    } @catch (NSException *exception) {
+        debugLog(@"deriveThreadIdentifier: parent=%@ raised %@",
+                 parentGuid, exception.name);
+        return nil;
+    }
     debugLog(@"deriveThreadIdentifier: parent=%@ result=%@",
              parentGuid, result ?: @"(nil)");
     return result;
