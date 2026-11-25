@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep the bridge helper running when a reply targets a retracted message or a poll vote: text replies are refused as retry-safe `not_started` failures, and a request whose handler raises gets an uncertain error so later bridge requests keep running (#408).
+
 ## 0.21.1 - 2026-11-15
 
 **Highlights:** Restore tracked SMS and RCS delivery, verify recovered attachment receipts, and read custom emoji reactions accurately.

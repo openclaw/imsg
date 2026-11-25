@@ -92,7 +92,19 @@ static NSDictionary* processV2Envelope(NSDictionary *envelope) {
 
     NSLog(@"[imsg-bridge v2] action=%@ id=%@", action, uuid);
 
-    NSDictionary *legacy = dispatchAction(0, action, params);
+    // An exception must not unwind into the inbox timer: it would leave the
+    // claim behind and stop every later request. The handler may already
+    // have dispatched, so the outcome stays uncertain and is never replayed.
+    NSDictionary *legacy = nil;
+    @try {
+        legacy = dispatchAction(0, action, params);
+    } @catch (NSException *exception) {
+        NSLog(@"[imsg-bridge v2] action=%@ id=%@ raised %@: %@",
+              action, uuid, exception.name, exception.reason);
+        return errorResponseV2WithDisposition(uuid,
+            [NSString stringWithFormat:@"%@ failed: %@", action, exception.reason],
+            @"may_have_completed");
+    }
     if (![legacy isKindOfClass:[NSDictionary class]]) {
         return errorResponseV2(uuid, @"Internal: handler returned non-dictionary");
     }
